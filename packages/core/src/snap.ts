@@ -201,115 +201,166 @@ function computeEqualSpacing(
 	let snapDx: number | undefined;
 	let snapDy: number | undefined;
 
-	// X-axis: find left and right neighbors (entities on same horizontal band)
-	const hNeighbors = references.filter((ref) =>
-		ref.y < dragged.y + dragged.height && ref.y + ref.height > dragged.y,
-	);
-
-	// Find nearest left and right neighbors
-	let leftNeighbor: EntityBounds | null = null;
-	let leftGap = Infinity;
-	let rightNeighbor: EntityBounds | null = null;
-	let rightGap = Infinity;
-
-	for (const ref of hNeighbors) {
-		const refRight = ref.x + ref.width;
-		if (refRight <= dragged.x + threshold) {
-			const gap = dragged.x - refRight;
-			if (gap >= -threshold && gap < leftGap) {
-				leftGap = gap;
-				leftNeighbor = ref;
-			}
-		}
-		const refLeft = ref.x;
-		if (refLeft >= dragged.x + dragged.width - threshold) {
-			const gap = refLeft - (dragged.x + dragged.width);
-			if (gap >= -threshold && gap < rightGap) {
-				rightGap = gap;
-				rightNeighbor = ref;
-			}
-		}
+	// Check X-axis (horizontal spacing)
+	const xResult = checkAxisSpacing(dragged, references, threshold, 'x');
+	if (xResult) {
+		snapDx = xResult.snap;
+		indicators.push(...xResult.indicators);
 	}
 
-	// Check if left gap ≈ right gap → equal spacing on X
-	if (leftNeighbor && rightNeighbor && leftGap > 0.1 && rightGap > 0.1) {
-		const diff = Math.abs(leftGap - rightGap);
-		if (diff <= threshold) {
-			// Snap X to center between neighbors
-			const idealX = (leftNeighbor.x + leftNeighbor.width + rightNeighbor.x - dragged.width) / 2;
-			snapDx = idealX - dragged.x;
-
-			const equalGap = (rightNeighbor.x - (leftNeighbor.x + leftNeighbor.width) - dragged.width) / 2;
-			const perpY = Math.max(dragged.y, leftNeighbor.y, rightNeighbor.y) +
-				Math.min(dragged.height, leftNeighbor.height, rightNeighbor.height) / 2;
-
-			if (equalGap > 0.1) {
-				indicators.push({
-					axis: 'x',
-					gap: equalGap,
-					segments: [
-						{ from: leftNeighbor.x + leftNeighbor.width, to: idealX },
-						{ from: idealX + dragged.width, to: rightNeighbor.x },
-					],
-					perpPosition: perpY,
-				});
-			}
-		}
-	}
-
-	// Y-axis: find top and bottom neighbors (entities on same vertical band)
-	const vNeighbors = references.filter((ref) =>
-		ref.x < dragged.x + dragged.width && ref.x + ref.width > dragged.x,
-	);
-
-	let topNeighbor: EntityBounds | null = null;
-	let topGap = Infinity;
-	let bottomNeighbor: EntityBounds | null = null;
-	let bottomGap = Infinity;
-
-	for (const ref of vNeighbors) {
-		const refBottom = ref.y + ref.height;
-		if (refBottom <= dragged.y + threshold) {
-			const gap = dragged.y - refBottom;
-			if (gap >= -threshold && gap < topGap) {
-				topGap = gap;
-				topNeighbor = ref;
-			}
-		}
-		const refTop = ref.y;
-		if (refTop >= dragged.y + dragged.height - threshold) {
-			const gap = refTop - (dragged.y + dragged.height);
-			if (gap >= -threshold && gap < bottomGap) {
-				bottomGap = gap;
-				bottomNeighbor = ref;
-			}
-		}
-	}
-
-	// Check if top gap ≈ bottom gap → equal spacing on Y
-	if (topNeighbor && bottomNeighbor && topGap > 0.1 && bottomGap > 0.1) {
-		const diff = Math.abs(topGap - bottomGap);
-		if (diff <= threshold) {
-			const idealY = (topNeighbor.y + topNeighbor.height + bottomNeighbor.y - dragged.height) / 2;
-			snapDy = idealY - dragged.y;
-
-			const equalGap = (bottomNeighbor.y - (topNeighbor.y + topNeighbor.height) - dragged.height) / 2;
-			const perpX = Math.max(dragged.x, topNeighbor.x, bottomNeighbor.x) +
-				Math.min(dragged.width, topNeighbor.width, bottomNeighbor.width) / 2;
-
-			if (equalGap > 0.1) {
-				indicators.push({
-					axis: 'y',
-					gap: equalGap,
-					segments: [
-						{ from: topNeighbor.y + topNeighbor.height, to: idealY },
-						{ from: idealY + dragged.height, to: bottomNeighbor.y },
-					],
-					perpPosition: perpX,
-				});
-			}
-		}
+	// Check Y-axis (vertical spacing)
+	const yResult = checkAxisSpacing(dragged, references, threshold, 'y');
+	if (yResult) {
+		snapDy = yResult.snap;
+		indicators.push(...yResult.indicators);
 	}
 
 	return { snapDx, snapDy, indicators };
+}
+
+function checkAxisSpacing(
+	dragged: EntityBounds,
+	references: EntityBounds[],
+	threshold: number,
+	axis: 'x' | 'y',
+): { snap: number; indicators: EqualSpacingIndicator[] } | null {
+	const isX = axis === 'x';
+
+	// Get position/size accessors based on axis
+	const pos = (b: EntityBounds) => isX ? b.x : b.y;
+	const size = (b: EntityBounds) => isX ? b.width : b.height;
+	const perpPos = (b: EntityBounds) => isX ? b.y : b.x;
+	const perpSize = (b: EntityBounds) => isX ? b.height : b.width;
+	const end = (b: EntityBounds) => pos(b) + size(b);
+
+	// Filter to entities on the same perpendicular band (overlapping)
+	const neighbors = references.filter((ref) =>
+		perpPos(ref) < perpPos(dragged) + perpSize(dragged) &&
+		perpPos(ref) + perpSize(ref) > perpPos(dragged),
+	);
+
+	if (neighbors.length < 1) return null;
+
+	// Sort neighbors by position on this axis
+	const sorted = [...neighbors].sort((a, b) => pos(a) - pos(b));
+
+	// Find existing gaps between consecutive reference entities
+	const refGaps: { from: EntityBounds; to: EntityBounds; gap: number }[] = [];
+	for (let i = 0; i < sorted.length - 1; i++) {
+		const gap = pos(sorted[i + 1]) - end(sorted[i]);
+		if (gap > 0.1) {
+			refGaps.push({ from: sorted[i], to: sorted[i + 1], gap });
+		}
+	}
+
+	let bestSnap: number | null = null;
+	let bestIndicators: EqualSpacingIndicator[] = [];
+	let bestDiff = Infinity;
+
+	// Case 1: Between two neighbors (left gap ≈ right gap)
+	// Find the nearest left and right neighbors
+	let leftN: EntityBounds | null = null;
+	let rightN: EntityBounds | null = null;
+	for (const ref of sorted) {
+		if (end(ref) <= pos(dragged) + threshold) {
+			if (!leftN || end(ref) > end(leftN)) leftN = ref;
+		}
+		if (pos(ref) >= end(dragged) - threshold) {
+			if (!rightN || pos(ref) < pos(rightN)) rightN = ref;
+		}
+	}
+
+	if (leftN && rightN) {
+		const lGap = pos(dragged) - end(leftN);
+		const rGap = pos(rightN) - end(dragged);
+		const diff = Math.abs(lGap - rGap);
+		if (diff <= threshold && diff < bestDiff) {
+			const idealPos = (end(leftN) + pos(rightN) - size(dragged)) / 2;
+			const snap = idealPos - pos(dragged);
+			const equalGap = (pos(rightN) - end(leftN) - size(dragged)) / 2;
+			if (equalGap > 0.1) {
+				const perpY = computePerpCenter(dragged, [leftN, rightN], isX);
+				bestSnap = snap;
+				bestDiff = diff;
+				bestIndicators = [{
+					axis,
+					gap: equalGap,
+					segments: [
+						{ from: end(leftN), to: idealPos },
+						{ from: idealPos + size(dragged), to: pos(rightN) },
+					],
+					perpPosition: perpY,
+				}];
+			}
+		}
+	}
+
+	// Case 2: Extend pattern — dragged at the end or beginning of a row
+	// Find gaps in the existing reference layout and try to match
+	for (const refGap of refGaps) {
+		const patternGap = refGap.gap;
+
+		// Try placing dragged to the right of the rightmost entity in this pattern
+		if (rightN === null || pos(refGap.to) >= end(dragged) - threshold * 2) {
+			// Find the rightmost entity in the chain with this gap
+			let chainEnd = refGap.to;
+			// Check: dragged gap to chainEnd matches patternGap?
+			const dragGap = pos(dragged) - end(chainEnd);
+			const diff = Math.abs(dragGap - patternGap);
+			if (diff <= threshold && diff < bestDiff) {
+				const idealPos = end(chainEnd) + patternGap;
+				const snap = idealPos - pos(dragged);
+				const perpY = computePerpCenter(dragged, [refGap.from, refGap.to], isX);
+				bestSnap = snap;
+				bestDiff = diff;
+				// Show all equal gaps: the existing one + the new one
+				bestIndicators = [{
+					axis,
+					gap: patternGap,
+					segments: [
+						{ from: end(refGap.from), to: pos(refGap.to) },
+						{ from: end(chainEnd), to: idealPos },
+					],
+					perpPosition: perpY,
+				}];
+			}
+		}
+
+		// Try placing dragged to the left of the leftmost entity in this pattern
+		if (leftN === null || end(refGap.from) <= pos(dragged) + threshold * 2) {
+			let chainStart = refGap.from;
+			const dragGap = pos(chainStart) - end(dragged);
+			const diff = Math.abs(dragGap - patternGap);
+			if (diff <= threshold && diff < bestDiff) {
+				const idealPos = pos(chainStart) - patternGap - size(dragged);
+				const snap = idealPos - pos(dragged);
+				const perpY = computePerpCenter(dragged, [refGap.from, refGap.to], isX);
+				bestSnap = snap;
+				bestDiff = diff;
+				bestIndicators = [{
+					axis,
+					gap: patternGap,
+					segments: [
+						{ from: idealPos + size(dragged), to: pos(chainStart) },
+						{ from: end(refGap.from), to: pos(refGap.to) },
+					],
+					perpPosition: perpY,
+				}];
+			}
+		}
+	}
+
+	if (bestSnap !== null) {
+		return { snap: bestSnap, indicators: bestIndicators };
+	}
+	return null;
+}
+
+function computePerpCenter(dragged: EntityBounds, refs: EntityBounds[], isX: boolean): number {
+	const perpPos = (b: EntityBounds) => isX ? b.y : b.x;
+	const perpSize = (b: EntityBounds) => isX ? b.height : b.width;
+	const allBounds = [dragged, ...refs];
+	const maxStart = Math.max(...allBounds.map(perpPos));
+	const minEnd = Math.min(...allBounds.map(b => perpPos(b) + perpSize(b)));
+	return maxStart + (minEnd - maxStart) / 2;
 }
