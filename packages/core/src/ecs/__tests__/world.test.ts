@@ -155,7 +155,7 @@ describe('World', () => {
 			expect(world.queryChanged(Position)).toHaveLength(2);
 
 			// Clear dirty
-			(world as any).__clearDirty();
+			world.clearDirty();
 
 			// Only e1 is dirty after set
 			world.setComponent(e1, Position, { x: 99 });

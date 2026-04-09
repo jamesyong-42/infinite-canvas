@@ -112,6 +112,10 @@ export function createWorld(): World {
 			return currentTick;
 		},
 
+		get entityCount() {
+			return alive.size;
+		},
+
 		// === Entity lifecycle ===
 
 		createEntity(): EntityId {
@@ -327,25 +331,23 @@ export function createWorld(): World {
 			frameHandlers.add(handler);
 			return () => frameHandlers.delete(handler);
 		},
-	};
 
-	// Attach internal methods used by the engine (not on the public World interface)
-	(world as any).__incrementTick = () => {
-		currentTick++;
-	};
+		// Frame lifecycle
+		clearDirty() {
+			for (const store of components.values()) {
+				store.dirty.clear();
+				store.added.clear();
+			}
+		},
 
-	(world as any).__clearDirty = () => {
-		for (const store of components.values()) {
-			store.dirty.clear();
-			store.added.clear();
-		}
-	};
+		incrementTick() {
+			currentTick++;
+		},
 
-	(world as any).__emitFrame = () => {
-		for (const h of frameHandlers) h();
+		emitFrame() {
+			for (const h of frameHandlers) h();
+		},
 	};
-
-	(world as any).__getAlive = () => alive;
 
 	return world;
 }

@@ -56,6 +56,7 @@ export type Unsubscribe = () => void;
 /** The World interface — core ECS container */
 export interface World {
 	readonly currentTick: number;
+	readonly entityCount: number;
 
 	// Entity lifecycle
 	createEntity(): EntityId;
@@ -93,4 +94,9 @@ export interface World {
 	onTagAdded(type: TagType, handler: TagChangedHandler, entityId?: EntityId): Unsubscribe;
 	onTagRemoved(type: TagType, handler: TagChangedHandler, entityId?: EntityId): Unsubscribe;
 	onFrame(handler: FrameHandler): Unsubscribe;
+
+	// Frame lifecycle (used by engine after tick)
+	clearDirty(): void;
+	incrementTick(): void;
+	emitFrame(): void;
 }

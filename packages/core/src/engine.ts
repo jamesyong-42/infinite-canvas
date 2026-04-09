@@ -34,7 +34,7 @@ import type { Breakpoint } from './resources.js';
 import { SpatialIndex } from './spatial.js';
 import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
 import type { Command } from './commands.js';
-import { clamp, pointInAABB, screenToWorld } from './math.js';
+import { clamp, pointInAABB, screenToWorld, worldBoundsToAABB } from './math.js';
 import {
 	transformPropagateSystem,
 	spatialIndexSystem,
@@ -250,12 +250,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 
 		for (const candidate of active) {
 			const wb = world.getComponent(candidate.entityId, WorldBounds);
-			if (wb && pointInAABB(worldPos.x, worldPos.y, {
-				minX: wb.worldX,
-				minY: wb.worldY,
-				maxX: wb.worldX + wb.worldWidth,
-				maxY: wb.worldY + wb.worldHeight,
-			})) {
+			if (wb && pointInAABB(worldPos.x, worldPos.y, worldBoundsToAABB(wb))) {
 				return candidate.entityId;
 			}
 		}
@@ -644,15 +639,20 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			}
 
 			if (prevState.mode === 'resizing') {
-				// Commit entire resize as a single undoable command
+				// Capture final bounds before reverting
 				const t = world.getComponent(prevState.entityId, Transform2D);
 				if (t) {
+					const finalBounds = { x: t.x, y: t.y, width: t.width, height: t.height };
 					const sb = prevState.startBounds;
+					// Revert to start bounds so the command's execute() applies cleanly
+					world.setComponent(prevState.entityId, Transform2D, {
+						x: sb.x, y: sb.y, width: sb.w, height: sb.h,
+					});
 					commandBuffer.execute(
 						new ResizeCommand(
 							prevState.entityId,
 							{ x: sb.x, y: sb.y, width: sb.w, height: sb.h },
-							{ x: t.x, y: t.y, width: t.width, height: t.height },
+							finalBounds,
 							Transform2D,
 						),
 						world,
@@ -789,9 +789,9 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			selectionChangedThisTick = false;
 
 			// Clear dirty sets and increment tick
-			(world as any).__clearDirty();
-			(world as any).__incrementTick();
-			(world as any).__emitFrame();
+			world.clearDirty();
+			world.incrementTick();
+			world.emitFrame();
 
 			dirty = false;
 		},

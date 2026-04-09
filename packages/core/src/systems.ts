@@ -18,7 +18,7 @@ import {
 } from './resources.js';
 import type { Breakpoint } from './resources.js';
 import { SpatialIndexResource } from './engine.js';
-import { intersectsAABB } from './math.js';
+import { intersectsAABB, worldBoundsToAABB } from './math.js';
 
 /**
  * Propagate transforms down the parent-child hierarchy.
@@ -101,24 +101,14 @@ export const spatialIndexSystem = defineSystem({
 		for (const entity of world.queryChanged(WorldBounds)) {
 			const wb = world.getComponent(entity, WorldBounds);
 			if (wb) {
-				spatialIndex.upsert(entity, {
-					minX: wb.worldX,
-					minY: wb.worldY,
-					maxX: wb.worldX + wb.worldWidth,
-					maxY: wb.worldY + wb.worldHeight,
-				});
+				spatialIndex.upsert(entity, worldBoundsToAABB(wb));
 			}
 		}
 
 		for (const entity of world.queryAdded(WorldBounds)) {
 			const wb = world.getComponent(entity, WorldBounds);
 			if (wb) {
-				spatialIndex.upsert(entity, {
-					minX: wb.worldX,
-					minY: wb.worldY,
-					maxX: wb.worldX + wb.worldWidth,
-					maxY: wb.worldY + wb.worldHeight,
-				});
+				spatialIndex.upsert(entity, worldBoundsToAABB(wb));
 			}
 		}
 	},
@@ -196,16 +186,8 @@ export const cullSystem = defineSystem({
 		} else {
 			for (const entity of world.queryTagged(Active)) {
 				const wb = world.getComponent(entity, WorldBounds);
-				if (wb) {
-					const entityAABB = {
-						minX: wb.worldX,
-						minY: wb.worldY,
-						maxX: wb.worldX + wb.worldWidth,
-						maxY: wb.worldY + wb.worldHeight,
-					};
-					if (intersectsAABB(entityAABB, vpWorldAABB)) {
-						world.addTag(entity, Visible);
-					}
+				if (wb && intersectsAABB(worldBoundsToAABB(wb), vpWorldAABB)) {
+					world.addTag(entity, Visible);
 				}
 			}
 		}

@@ -56,7 +56,7 @@ export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 
 			const camera = engine.getCamera();
 			setMetrics({
-				totalEntities: engine.world.query().length,
+				totalEntities: engine.world.entityCount,
 				activeEntities: engine.world.queryTagged(Active).length,
 				visibleEntities: engine.getVisibleEntities().length,
 				selectedEntities: engine.world.queryTagged(Selected).length,

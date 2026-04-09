@@ -17,6 +17,16 @@ export interface AABB {
 	maxY: number;
 }
 
+/** Convert WorldBounds-shaped data to AABB */
+export function worldBoundsToAABB(wb: { worldX: number; worldY: number; worldWidth: number; worldHeight: number }): AABB {
+	return {
+		minX: wb.worldX,
+		minY: wb.worldY,
+		maxX: wb.worldX + wb.worldWidth,
+		maxY: wb.worldY + wb.worldHeight,
+	};
+}
+
 /** Convert a Rect to AABB */
 export function rectToAABB(r: Rect): AABB {
 	return {

@@ -63,7 +63,7 @@ export {
 export type { Breakpoint, NavigationFrame } from './resources.js';
 
 // Math
-export { screenToWorld, worldToScreen, intersectsAABB, pointInAABB, clamp } from './math.js';
+export { screenToWorld, worldToScreen, intersectsAABB, pointInAABB, worldBoundsToAABB, clamp } from './math.js';
 export type { Vec2, Rect, AABB } from './math.js';
 
 // Commands
