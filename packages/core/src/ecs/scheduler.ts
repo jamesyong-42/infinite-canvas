@@ -1,4 +1,5 @@
 import type { SystemDef, World } from './types.js';
+import type { Profiler } from '../profiler.js';
 
 /**
  * Manages system registration and ordered execution.
@@ -7,6 +8,7 @@ import type { SystemDef, World } from './types.js';
 export class SystemScheduler {
 	private systems: SystemDef[] = [];
 	private sorted: SystemDef[] | null = null;
+	profiler: Profiler | null = null;
 
 	register(system: SystemDef) {
 		// Replace if system with same name exists
@@ -27,8 +29,11 @@ export class SystemScheduler {
 		if (!this.sorted) {
 			this.sorted = this.topoSort();
 		}
+		const p = this.profiler;
 		for (const system of this.sorted) {
+			if (p) p.beginSystem(system.name);
 			system.execute(world);
+			if (p) p.endSystem(system.name);
 		}
 	}
 

@@ -34,6 +34,7 @@ import type { Breakpoint } from './resources.js';
 import { SpatialIndex } from './spatial.js';
 import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
 import type { Command } from './commands.js';
+import { Profiler } from './profiler.js';
 import { clamp, pointInAABB, screenToWorld, worldBoundsToAABB } from './math.js';
 import {
 	transformPropagateSystem,
@@ -176,6 +177,9 @@ export interface CanvasEngine {
 	// Spatial index (exposed for systems)
 	getSpatialIndex(): SpatialIndex;
 
+	// Performance profiling
+	readonly profiler: Profiler;
+
 	// Events
 	onFrame(handler: () => void): Unsubscribe;
 
@@ -187,6 +191,8 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 	const world = createWorld();
 	const scheduler = new SystemScheduler();
 	const spatialIndex = new SpatialIndex();
+	const profiler = new Profiler();
+	scheduler.profiler = profiler;
 
 	// Fix #11: Store spatial index as a proper resource
 	world.setResource(SpatialIndexResource, { instance: spatialIndex });
@@ -749,11 +755,16 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			markDirtyInternal();
 		},
 
+		profiler,
+
 		tick() {
+			profiler.beginFrame(world.currentTick);
+
 			// Run all systems
 			scheduler.execute(world);
 
 			// Compute visible entities for renderers
+			profiler.beginVisibility();
 			const newVisible: VisibleEntity[] = [];
 			const newVisibleSet = new Set<EntityId>();
 
@@ -780,6 +791,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 
 			// Sort by z-index
 			newVisible.sort((a, b) => a.zIndex - b.zIndex);
+			profiler.endVisibility();
 
 			// Compute frame changes
 			const entered: EntityId[] = [];
@@ -806,6 +818,8 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			prevVisible = newVisibleSet;
 			cameraChangedThisTick = false;
 			selectionChangedThisTick = false;
+
+			profiler.endFrame(world.entityCount, newVisible.length);
 
 			// Clear dirty sets and increment tick
 			world.clearDirty();

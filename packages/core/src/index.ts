@@ -74,5 +74,9 @@ export type { Command } from './commands.js';
 export { serializeWorld, deserializeWorld, serializeEntities } from './serialization.js';
 export type { CanvasDocument, SerializedEntity } from './serialization.js';
 
+// Profiling
+export { Profiler } from './profiler.js';
+export type { FrameSample, ProfilerStats } from './profiler.js';
+
 // Spatial
 export { SpatialIndex } from './spatial.js';
