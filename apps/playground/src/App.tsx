@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
 	createCanvasEngine,
 	Transform2D,
@@ -139,6 +139,44 @@ export function App() {
 	const { engine, registry } = useMemo(() => createDemoScene(), []);
 	const [showSettings, setShowSettings] = useState(false);
 	const [showInspector, setShowInspector] = useState(false);
+
+	// Keyboard shortcuts
+	useEffect(() => {
+		const onKeyDown = (e: KeyboardEvent) => {
+			const mod = e.metaKey || e.ctrlKey;
+
+			// Undo: Cmd/Ctrl+Z
+			if (mod && !e.shiftKey && e.key === 'z') {
+				e.preventDefault();
+				engine.undo();
+				engine.markDirty();
+			}
+			// Redo: Cmd/Ctrl+Shift+Z
+			if (mod && e.shiftKey && e.key === 'z') {
+				e.preventDefault();
+				engine.redo();
+				engine.markDirty();
+			}
+			// Exit container: Escape
+			if (e.key === 'Escape') {
+				if (engine.getNavigationDepth() > 0) {
+					engine.exitContainer();
+					engine.markDirty();
+				}
+			}
+			// Delete selected: Backspace or Delete
+			if (e.key === 'Backspace' || e.key === 'Delete') {
+				const selected = engine.getSelectedEntities();
+				for (const id of selected) {
+					engine.destroyEntity(id);
+				}
+				if (selected.length > 0) engine.markDirty();
+			}
+		};
+
+		window.addEventListener('keydown', onKeyDown);
+		return () => window.removeEventListener('keydown', onKeyDown);
+	}, [engine]);
 
 	return (
 		<div className="h-screen w-screen">

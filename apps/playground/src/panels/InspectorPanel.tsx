@@ -19,6 +19,8 @@ interface Metrics {
 	activeContainer: number | null;
 	fps: number;
 	tickTime: number;
+	undoSize: number;
+	redoSize: number;
 }
 
 export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
@@ -34,6 +36,8 @@ export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 		activeContainer: null,
 		fps: 0,
 		tickTime: 0,
+		undoSize: 0,
+		redoSize: 0,
 	});
 
 	useEffect(() => {
@@ -63,6 +67,8 @@ export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 				activeContainer: engine.getActiveContainer(),
 				fps: lastFps,
 				tickTime: 0,
+				undoSize: engine.canUndo() ? 1 : 0, // simplified — count from engine
+				redoSize: engine.canRedo() ? 1 : 0,
 			});
 		}, 200);
 
@@ -115,11 +121,24 @@ export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 					{row('container', metrics.activeContainer !== null ? `e${metrics.activeContainer}` : 'root')}
 				</div>
 
+				{/* Undo/Redo */}
+				<div>
+					<div className="mb-0.5 text-[10px] font-semibold text-neutral-300 uppercase tracking-wider">History</div>
+					{row('can undo', metrics.undoSize ? 'yes' : 'no')}
+					{row('can redo', metrics.redoSize ? 'yes' : 'no')}
+				</div>
+
 				{/* Performance */}
 				<div>
 					<div className="mb-0.5 text-[10px] font-semibold text-neutral-300 uppercase tracking-wider">Performance</div>
 					{row('fps (tick)', metrics.fps)}
 					{row('world tick', engine.world.currentTick)}
+				</div>
+
+				{/* Shortcuts */}
+				<div className="border-t border-neutral-100 pt-2 text-[9px] text-neutral-300 space-y-0.5">
+					<div>Cmd+Z undo / Cmd+Shift+Z redo</div>
+					<div>Esc exit container / Del delete</div>
 				</div>
 			</div>
 		</div>

@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import type { CanvasEngine } from '@infinite-canvas/core';
-import { ZoomConfigResource, BreakpointConfigResource } from '@infinite-canvas/core';
+import {
+	ZoomConfigResource, BreakpointConfigResource,
+	Transform2D, Widget, WidgetData, ZIndex, Selectable, Draggable, Resizable,
+} from '@infinite-canvas/core';
 
 interface SettingsPanelProps {
 	engine: CanvasEngine;
@@ -108,6 +111,52 @@ export function SettingsPanel({ engine, onClose }: SettingsPanelProps) {
 					>
 						Exit Layer
 					</button>
+				</div>
+
+				{/* Stress Test */}
+				<div className="border-t border-neutral-100 pt-2">
+					<div className="mb-1 text-neutral-400">Stress Test</div>
+					<div className="flex gap-2">
+						{[50, 200, 500].map((count) => (
+							<button
+								key={count}
+								type="button"
+								className="flex-1 rounded bg-orange-50 py-1 text-orange-600 hover:bg-orange-100"
+								onClick={() => {
+									const colors = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4'];
+									const types = ['debug-card', 'debug-interactive'];
+									const cols = Math.ceil(Math.sqrt(count));
+									for (let i = 0; i < count; i++) {
+										const col = i % cols;
+										const row = Math.floor(i / cols);
+										engine.createEntity([
+											[Transform2D, {
+												x: col * 270 + Math.random() * 20 - 10,
+												y: row * 200 + Math.random() * 20 - 10,
+												width: 220 + Math.random() * 60,
+												height: 150 + Math.random() * 40,
+												rotation: 0,
+											}],
+											[Widget, { surface: 'dom', type: types[i % types.length] }],
+											[WidgetData, { data: {
+												title: `Stress ${i}`,
+												color: colors[i % colors.length],
+												note: '',
+											} }],
+											[ZIndex, { value: i }],
+											[Selectable],
+											[Draggable],
+											[Resizable],
+										]);
+									}
+									engine.zoomToFit();
+									engine.markDirty();
+								}}
+							>
+								+{count}
+							</button>
+						))}
+					</div>
 				</div>
 			</div>
 		</div>

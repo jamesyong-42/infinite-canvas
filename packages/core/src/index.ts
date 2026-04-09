@@ -66,5 +66,13 @@ export type { Breakpoint, NavigationFrame } from './resources.js';
 export { screenToWorld, worldToScreen, intersectsAABB, pointInAABB, clamp } from './math.js';
 export type { Vec2, Rect, AABB } from './math.js';
 
+// Commands
+export { CommandBuffer, MoveCommand, ResizeCommand, SetComponentCommand } from './commands.js';
+export type { Command } from './commands.js';
+
+// Serialization
+export { serializeWorld, deserializeWorld, serializeEntities } from './serialization.js';
+export type { CanvasDocument, SerializedEntity } from './serialization.js';
+
 // Spatial
 export { SpatialIndex } from './spatial.js';

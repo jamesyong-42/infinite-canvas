@@ -32,6 +32,8 @@ import {
 } from './resources.js';
 import type { Breakpoint } from './resources.js';
 import { SpatialIndex } from './spatial.js';
+import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
+import type { Command } from './commands.js';
 import { clamp, pointInAABB, screenToWorld } from './math.js';
 import {
 	transformPropagateSystem,
@@ -153,6 +155,15 @@ export interface CanvasEngine {
 	getActiveContainer(): EntityId | null;
 	getNavigationDepth(): number;
 
+	// Commands + Undo/Redo
+	execute(command: Command): void;
+	beginCommandGroup(): void;
+	endCommandGroup(): void;
+	undo(): boolean;
+	redo(): boolean;
+	canUndo(): boolean;
+	canRedo(): boolean;
+
 	// Frame
 	markDirty(): void;
 	tick(): void;
@@ -179,6 +190,8 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 
 	// Fix #11: Store spatial index as a proper resource
 	world.setResource(SpatialIndexResource, { instance: spatialIndex });
+
+	const commandBuffer = new CommandBuffer();
 
 	// Apply config
 	if (config?.zoom) {
@@ -462,6 +475,41 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			markDirtyInternal();
 		},
 
+		// === Commands + Undo/Redo ===
+
+		execute(command: Command) {
+			commandBuffer.execute(command, world);
+			markDirtyInternal();
+		},
+
+		beginCommandGroup() {
+			commandBuffer.beginGroup();
+		},
+
+		endCommandGroup() {
+			commandBuffer.endGroup();
+		},
+
+		undo(): boolean {
+			const did = commandBuffer.undo(world);
+			if (did) markDirtyInternal();
+			return did;
+		},
+
+		redo(): boolean {
+			const did = commandBuffer.redo(world);
+			if (did) markDirtyInternal();
+			return did;
+		},
+
+		canUndo(): boolean {
+			return commandBuffer.canUndo();
+		},
+
+		canRedo(): boolean {
+			return commandBuffer.canRedo();
+		},
+
 		// === Pointer Input ===
 
 		handlePointerDown(screenX, screenY, _button, modifiers): PointerDirective {
@@ -469,6 +517,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			const handleHit = hitTestResizeHandle(screenX, screenY);
 			if (handleHit) {
 				const t = world.getComponent(handleHit.entityId, Transform2D)!;
+				commandBuffer.beginGroup(); // undo group for entire resize
 				inputState = {
 					mode: 'resizing',
 					entityId: handleHit.entityId,
@@ -518,6 +567,9 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 						world.setComponent(e, ZIndex, { value: maxZ + 1 });
 					}
 
+					// Start undo group for the entire drag operation
+					commandBuffer.beginGroup();
+
 					inputState = {
 						mode: 'dragging',
 						entityId: inputState.entityId,
@@ -538,12 +590,13 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 				inputState.lastX = screenX;
 				inputState.lastY = screenY;
 
-				// Move all selected entities
-				for (const e of world.queryTagged(Selected)) {
-					const t = world.getComponent(e, Transform2D);
-					if (t) {
-						world.setComponent(e, Transform2D, { x: t.x + dx, y: t.y + dy });
-					}
+				// Move all selected entities via command (undoable)
+				const selected = world.queryTagged(Selected);
+				if (selected.length > 0 && (dx !== 0 || dy !== 0)) {
+					commandBuffer.execute(
+						new MoveCommand(selected, dx, dy, Transform2D),
+						world,
+					);
 				}
 				markDirtyInternal();
 				return { action: 'capture-drag' };
@@ -581,15 +634,34 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 		handlePointerUp(): PointerDirective {
 			const prevState = inputState;
 
-			// Fix #5: Restore original z-indices on drag end
 			if (prevState.mode === 'dragging') {
+				// Fix #5: Restore original z-indices on drag end
 				for (const [entity, originalZ] of prevState.originalZIndices) {
 					world.setComponent(entity, ZIndex, { value: originalZ });
 				}
+				// End the undo group — all move commands become one undo step
+				commandBuffer.endGroup();
+			}
+
+			if (prevState.mode === 'resizing') {
+				// Commit entire resize as a single undoable command
+				const t = world.getComponent(prevState.entityId, Transform2D);
+				if (t) {
+					const sb = prevState.startBounds;
+					commandBuffer.execute(
+						new ResizeCommand(
+							prevState.entityId,
+							{ x: sb.x, y: sb.y, width: sb.w, height: sb.h },
+							{ x: t.x, y: t.y, width: t.width, height: t.height },
+							Transform2D,
+						),
+						world,
+					);
+				}
+				commandBuffer.endGroup();
 			}
 
 			// Fix #12: TODO — emit a 'widget-clicked' event when prevState.mode === 'tracking'
-			// (i.e., pointerdown + pointerup without exceeding the dead zone = a clean click)
 
 			inputState = { mode: 'idle' };
 
