@@ -13,7 +13,7 @@ import {
 	Parent,
 } from '@infinite-canvas/core';
 import type { EntityId } from '@infinite-canvas/core';
-import { InfiniteCanvas } from '@infinite-canvas/react';
+import { InfiniteCanvas } from '@infinite-canvas/ui';
 import { WidgetProvider, createWidgetRegistry } from '@infinite-canvas/react-widgets';
 import { DebugCard } from './widgets/DebugCard.js';
 import { DebugInteractive } from './widgets/DebugInteractive.js';

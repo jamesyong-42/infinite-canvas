@@ -29,7 +29,7 @@ export function useEngine(): CanvasEngine {
 
 // === Widget Resolver Context ===
 // Provided by @infinite-canvas/react-widgets (or custom user code).
-// The react package defines the context; the widgets package fills it.
+// The ui package defines the context; the widgets package fills it.
 
 export type WidgetResolver = (
 	entityId: EntityId,

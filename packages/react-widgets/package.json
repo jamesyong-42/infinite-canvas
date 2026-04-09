@@ -18,12 +18,12 @@
   },
   "peerDependencies": {
     "@infinite-canvas/core": "workspace:*",
-    "@infinite-canvas/react": "workspace:*",
+    "@infinite-canvas/ui": "workspace:*",
     "react": "^18.0.0 || ^19.0.0"
   },
   "devDependencies": {
     "@infinite-canvas/core": "workspace:*",
-    "@infinite-canvas/react": "workspace:*",
+    "@infinite-canvas/ui": "workspace:*",
     "@types/react": "^19.0.0",
     "react": "^19.0.0",
     "tsup": "^8.0.0"

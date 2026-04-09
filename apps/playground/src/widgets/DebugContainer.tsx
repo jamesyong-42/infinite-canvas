@@ -1,6 +1,6 @@
 import type { EntityId } from '@infinite-canvas/core';
 import { useBreakpoint, useWidgetData, useIsSelected, useWidgetChildren } from '@infinite-canvas/react-widgets';
-import { useComponent } from '@infinite-canvas/react';
+import { useComponent } from '@infinite-canvas/ui';
 import { Transform2D } from '@infinite-canvas/core';
 
 const COLOR = '#8b5cf6';

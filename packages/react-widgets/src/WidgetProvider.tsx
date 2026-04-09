@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { WidgetResolverProvider } from '@infinite-canvas/react';
+import { WidgetResolverProvider } from '@infinite-canvas/ui';
 import type { WidgetRegistry } from './registry.js';
 
 interface WidgetProviderProps {

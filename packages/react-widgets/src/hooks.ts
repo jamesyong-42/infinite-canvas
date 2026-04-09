@@ -1,4 +1,4 @@
-import { useComponent, useTag, useEngine } from '@infinite-canvas/react';
+import { useComponent, useTag, useEngine } from '@infinite-canvas/ui';
 import {
 	WidgetData,
 	WidgetBreakpoint,

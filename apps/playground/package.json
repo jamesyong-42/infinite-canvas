@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@infinite-canvas/core": "workspace:*",
-    "@infinite-canvas/react": "workspace:*",
+    "@infinite-canvas/ui": "workspace:*",
     "@infinite-canvas/react-widgets": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
