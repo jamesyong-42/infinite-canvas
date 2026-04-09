@@ -72,8 +72,8 @@ export interface Modifiers {
 type InputState =
 	| { mode: 'idle' }
 	| { mode: 'tracking'; entityId: EntityId; startX: number; startY: number }
-	| { mode: 'dragging'; entityId: EntityId; lastX: number; lastY: number; originalZIndices: Map<EntityId, number> }
-	| { mode: 'resizing'; entityId: EntityId; handle: ResizeHandlePos; startX: number; startY: number; startBounds: { x: number; y: number; w: number; h: number } }
+	| { mode: 'dragging'; entityId: EntityId; startScreenX: number; startScreenY: number; startPositions: Map<EntityId, { x: number; y: number }>; originalZIndices: Map<EntityId, number> }
+	| { mode: 'resizing'; entityId: EntityId; handle: ResizeHandlePos; startX: number; startY: number; startBounds: { x: number; y: number; width: number; height: number } }
 	| { mode: 'marquee'; startX: number; startY: number };
 
 const DEAD_ZONE_PX = 4;
@@ -519,7 +519,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 					handle: handleHit.handle,
 					startX: screenX,
 					startY: screenY,
-					startBounds: { x: t.x, y: t.y, w: t.width, h: t.height },
+					startBounds: { x: t.x, y: t.y, width: t.width, height: t.height },
 				};
 				markDirtyInternal();
 				return { action: 'capture-resize', handle: handleHit.handle };
@@ -562,14 +562,22 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 						world.setComponent(e, ZIndex, { value: maxZ + 1 });
 					}
 
+					// Capture start positions for all selected entities
+					const startPositions = new Map<EntityId, { x: number; y: number }>();
+					for (const e of world.queryTagged(Selected)) {
+						const t = world.getComponent(e, Transform2D);
+						if (t) startPositions.set(e, { x: t.x, y: t.y });
+					}
+
 					// Start undo group for the entire drag operation
 					commandBuffer.beginGroup();
 
 					inputState = {
 						mode: 'dragging',
 						entityId: inputState.entityId,
-						lastX: screenX,
-						lastY: screenY,
+						startScreenX: screenX,
+						startScreenY: screenY,
+						startPositions,
 						originalZIndices,
 					};
 					markDirtyInternal();
@@ -580,18 +588,15 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 
 			if (inputState.mode === 'dragging') {
 				const camera = world.getResource(CameraResource);
-				const dx = (screenX - inputState.lastX) / camera.zoom;
-				const dy = (screenY - inputState.lastY) / camera.zoom;
-				inputState.lastX = screenX;
-				inputState.lastY = screenY;
+				const totalDx = (screenX - inputState.startScreenX) / camera.zoom;
+				const totalDy = (screenY - inputState.startScreenY) / camera.zoom;
 
-				// Move all selected entities via command (undoable)
-				const selected = world.queryTagged(Selected);
-				if (selected.length > 0 && (dx !== 0 || dy !== 0)) {
-					commandBuffer.execute(
-						new MoveCommand(selected, dx, dy, Transform2D),
-						world,
-					);
+				// Set absolute positions from start + total delta (no rounding accumulation)
+				for (const [e, start] of inputState.startPositions) {
+					world.setComponent(e, Transform2D, {
+						x: start.x + totalDx,
+						y: start.y + totalDy,
+					});
 				}
 				markDirtyInternal();
 				return { action: 'capture-drag' };
@@ -601,15 +606,16 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 				const camera = world.getResource(CameraResource);
 				const dx = (screenX - inputState.startX) / camera.zoom;
 				const dy = (screenY - inputState.startY) / camera.zoom;
-				const { x, y, w, h } = inputState.startBounds;
+				const { x, y, width: w, height: h } = inputState.startBounds;
 				const handle = inputState.handle;
+				const MIN_SIZE = 20;
 
 				let newX = x, newY = y, newW = w, newH = h;
 
-				if (handle.includes('e')) { newW = Math.max(20, w + dx); }
-				if (handle.includes('w')) { newX = x + dx; newW = Math.max(20, w - dx); }
-				if (handle.includes('s')) { newH = Math.max(20, h + dy); }
-				if (handle.includes('n')) { newY = y + dy; newH = Math.max(20, h - dy); }
+				if (handle.includes('e')) { newW = Math.max(MIN_SIZE, w + dx); }
+				if (handle.includes('w')) { newX = x + dx; newW = Math.max(MIN_SIZE, w - dx); }
+				if (handle.includes('s')) { newH = Math.max(MIN_SIZE, h + dy); }
+				if (handle.includes('n')) { newY = y + dy; newH = Math.max(MIN_SIZE, h - dy); }
 
 				world.setComponent(inputState.entityId, Transform2D, {
 					x: newX, y: newY, width: newW, height: newH,
@@ -634,7 +640,27 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 				for (const [entity, originalZ] of prevState.originalZIndices) {
 					world.setComponent(entity, ZIndex, { value: originalZ });
 				}
-				// End the undo group — all move commands become one undo step
+				// Compute total delta from any moved entity
+				const entityIds = [...prevState.startPositions.keys()];
+				if (entityIds.length > 0) {
+					const firstId = entityIds[0];
+					const start = prevState.startPositions.get(firstId)!;
+					const current = world.getComponent(firstId, Transform2D);
+					if (current) {
+						const totalDx = current.x - start.x;
+						const totalDy = current.y - start.y;
+						if (totalDx !== 0 || totalDy !== 0) {
+							// Revert all to start positions, then commit as single command
+							for (const [e, s] of prevState.startPositions) {
+								world.setComponent(e, Transform2D, { x: s.x, y: s.y });
+							}
+							commandBuffer.execute(
+								new MoveCommand(entityIds, totalDx, totalDy, Transform2D),
+								world,
+							);
+						}
+					}
+				}
 				commandBuffer.endGroup();
 			}
 
@@ -645,16 +671,9 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 					const finalBounds = { x: t.x, y: t.y, width: t.width, height: t.height };
 					const sb = prevState.startBounds;
 					// Revert to start bounds so the command's execute() applies cleanly
-					world.setComponent(prevState.entityId, Transform2D, {
-						x: sb.x, y: sb.y, width: sb.w, height: sb.h,
-					});
+					world.setComponent(prevState.entityId, Transform2D, sb);
 					commandBuffer.execute(
-						new ResizeCommand(
-							prevState.entityId,
-							{ x: sb.x, y: sb.y, width: sb.w, height: sb.h },
-							finalBounds,
-							Transform2D,
-						),
+						new ResizeCommand(prevState.entityId, sb, finalBounds, Transform2D),
 						world,
 					);
 				}

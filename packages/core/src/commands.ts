@@ -119,12 +119,21 @@ export class MoveCommand implements Command {
 }
 
 export class ResizeCommand implements Command {
+	static readonly MIN_SIZE = 20;
+
 	constructor(
 		private entityId: EntityId,
 		private before: { x: number; y: number; width: number; height: number },
 		private after: { x: number; y: number; width: number; height: number },
 		private transformType: ComponentType<{ x: number; y: number; width: number; height: number }>,
-	) {}
+	) {
+		// Enforce min-size so redo always produces valid bounds
+		this.after = {
+			...after,
+			width: Math.max(ResizeCommand.MIN_SIZE, after.width),
+			height: Math.max(ResizeCommand.MIN_SIZE, after.height),
+		};
+	}
 
 	execute(world: World) {
 		world.setComponent(this.entityId, this.transformType, this.after);
