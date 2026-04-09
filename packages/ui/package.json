@@ -25,9 +25,15 @@
     "@infinite-canvas/core": "workspace:*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.183.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.0.0"
   },
-  "files": ["dist"]
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "three": "^0.183.2"
+  }
 }

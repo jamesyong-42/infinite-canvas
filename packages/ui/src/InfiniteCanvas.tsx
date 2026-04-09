@@ -9,6 +9,7 @@ import type { CanvasEngine, EntityId } from '@infinite-canvas/core';
 import { WorldBounds } from '@infinite-canvas/core';
 import { EngineProvider, ContainerRefProvider } from './context.js';
 import { WidgetSlot } from './WidgetSlot.js';
+import { GridRenderer } from './webgl/GridRenderer.js';
 
 interface InfiniteCanvasProps {
 	engine: CanvasEngine;
@@ -19,6 +20,8 @@ interface InfiniteCanvasProps {
 
 export function InfiniteCanvas({ engine, className, style, children }: InfiniteCanvasProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
+	const webglCanvasRef = useRef<HTMLCanvasElement>(null);
+	const gridRendererRef = useRef<GridRenderer | null>(null);
 	const cameraLayerRef = useRef<HTMLDivElement>(null);
 	const slotRefs = useRef(new Map<EntityId, HTMLDivElement>());
 	const [visibleEntities, setVisibleEntities] = useState<EntityId[]>([]);
@@ -32,20 +35,32 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 		}
 	}, []);
 
-	// Set viewport size on mount and resize
+	// Initialize GridRenderer + set viewport size on mount/resize
 	useLayoutEffect(() => {
 		const container = containerRef.current;
-		if (!container) return;
+		const canvas = webglCanvasRef.current;
+		if (!container || !canvas) return;
+
+		const grid = new GridRenderer(canvas);
+		gridRendererRef.current = grid;
 
 		const updateSize = () => {
 			const rect = container.getBoundingClientRect();
-			engine.setViewport(rect.width, rect.height, window.devicePixelRatio);
+			const dpr = window.devicePixelRatio;
+			engine.setViewport(rect.width, rect.height, dpr);
+			canvas.style.width = `${rect.width}px`;
+			canvas.style.height = `${rect.height}px`;
+			grid.setSize(rect.width, rect.height, dpr);
 		};
 
 		updateSize();
 		const observer = new ResizeObserver(updateSize);
 		observer.observe(container);
-		return () => observer.disconnect();
+		return () => {
+			observer.disconnect();
+			grid.dispose();
+			gridRendererRef.current = null;
+		};
 	}, [engine]);
 
 	// Wheel handler — pan/zoom (gesture channel, always active)
@@ -370,17 +385,10 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 						`scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`;
 				}
 
-				// 1b. Update dot grid to match camera
-				if (containerRef.current) {
-					const gridSpacing = 24;
-					const size = gridSpacing * camera.zoom;
-					const offsetX = (-camera.x * camera.zoom) % size;
-					const offsetY = (-camera.y * camera.zoom) % size;
-					const dotSize = Math.max(0.5, Math.min(1.5, camera.zoom));
-					containerRef.current.style.backgroundImage =
-						`radial-gradient(circle, var(--canvas-dot, rgba(0,0,0,0.16)) ${dotSize}px, transparent ${dotSize}px)`;
-					containerRef.current.style.backgroundSize = `${size}px ${size}px`;
-					containerRef.current.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
+				// 1b. Render WebGL dot grid
+				if (gridRendererRef.current) {
+					const isDark = document.documentElement.classList.contains('dark');
+					gridRendererRef.current.render(camera.x, camera.y, camera.zoom, isDark);
 				}
 
 				// 2. Fix #1: Use WorldBounds (world-space) not Transform2D (local/parent-relative)
@@ -415,11 +423,10 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 			cameraLayerRef.current.style.transform =
 				`scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`;
 		}
-		if (containerRef.current) {
-			const size = 24 * camera.zoom;
-			containerRef.current.style.backgroundImage =
-				`radial-gradient(circle, var(--canvas-dot, rgba(0,0,0,0.16)) 1px, transparent 1px)`;
-			containerRef.current.style.backgroundSize = `${size}px ${size}px`;
+		// Initial WebGL grid render
+		if (gridRendererRef.current) {
+			const isDark = document.documentElement.classList.contains('dark');
+			gridRendererRef.current.render(camera.x, camera.y, camera.zoom, isDark);
 		}
 
 		// Set initial slot positions
@@ -466,6 +473,12 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 						backgroundColor: 'var(--canvas-bg, #fafafa)',
 					}}
 				>
+					{/* WebGL layer — dot grid, selection overlays, connections */}
+					<canvas
+						ref={webglCanvasRef}
+						className="absolute inset-0 pointer-events-none"
+					/>
+
 					{/* Background — handles empty-space pointer events (deselect, marquee) */}
 					<div
 						className="absolute inset-0"
