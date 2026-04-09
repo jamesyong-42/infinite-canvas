@@ -35,6 +35,8 @@ import { SpatialIndex } from './spatial.js';
 import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
 import type { Command } from './commands.js';
 import { Profiler } from './profiler.js';
+import { computeSnapGuides } from './snap.js';
+import type { SnapResult, SnapGuide, DistanceIndicator } from './snap.js';
 import { clamp, pointInAABB, screenToWorld, worldBoundsToAABB } from './math.js';
 import {
 	transformPropagateSystem,
@@ -178,6 +180,12 @@ export interface CanvasEngine {
 	// Spatial index (exposed for systems)
 	getSpatialIndex(): SpatialIndex;
 
+	// Snap guides
+	getSnapGuides(): SnapGuide[];
+	getDistanceIndicators(): DistanceIndicator[];
+	setSnapEnabled(on: boolean): void;
+	setSnapThreshold(worldPx: number): void;
+
 	// Performance profiling
 	readonly profiler: Profiler;
 
@@ -222,6 +230,9 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 	// State
 	let inputState: InputState = { mode: 'idle' };
 	let hoveredEntity: EntityId | null = null;
+	let snapEnabled = true;
+	let snapThreshold = 5; // world units
+	let currentSnap: SnapResult = { snapDx: 0, snapDy: 0, guides: [], distances: [] };
 	let dirty = false;
 	let cameraChangedThisTick = false;
 	let selectionChangedThisTick = false; // Fix #2: proper selection tracking
@@ -599,11 +610,44 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 				const totalDx = (screenX - inputState.startScreenX) / camera.zoom;
 				const totalDy = (screenY - inputState.startScreenY) / camera.zoom;
 
-				// Set absolute positions from start + total delta (no rounding accumulation)
+				// Compute snap guides against visible non-dragged entities
+				if (snapEnabled && inputState.startPositions.size > 0) {
+					// Build dragged bounds (use first entity as reference for snap)
+					const draggedIds = new Set(inputState.startPositions.keys());
+					const firstId = inputState.startPositions.keys().next().value!;
+					const firstStart = inputState.startPositions.get(firstId)!;
+					const firstT = world.getComponent(firstId, Transform2D);
+					if (firstT) {
+						const draggedBounds = {
+							x: firstStart.x + totalDx,
+							y: firstStart.y + totalDy,
+							width: firstT.width,
+							height: firstT.height,
+						};
+
+						// Collect reference bounds from visible entities
+						const refs = [];
+						for (const entity of world.queryTagged(Active)) {
+							if (draggedIds.has(entity)) continue;
+							const wb = world.getComponent(entity, WorldBounds);
+							if (wb) {
+								refs.push({ x: wb.worldX, y: wb.worldY, width: wb.worldWidth, height: wb.worldHeight });
+							}
+						}
+
+						currentSnap = computeSnapGuides(draggedBounds, refs, snapThreshold / camera.zoom);
+					}
+				} else {
+					currentSnap = { snapDx: 0, snapDy: 0, guides: [], distances: [] };
+				}
+
+				// Apply snap-corrected positions
+				const finalDx = totalDx + currentSnap.snapDx;
+				const finalDy = totalDy + currentSnap.snapDy;
 				for (const [e, start] of inputState.startPositions) {
 					world.setComponent(e, Transform2D, {
-						x: start.x + totalDx,
-						y: start.y + totalDy,
+						x: start.x + finalDx,
+						y: start.y + finalDy,
 					});
 				}
 				markDirtyInternal();
@@ -679,6 +723,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 					}
 				}
 				commandBuffer.endGroup();
+				currentSnap = { snapDx: 0, snapDy: 0, guides: [], distances: [] };
 			}
 
 			if (prevState.mode === 'resizing') {
@@ -716,6 +761,24 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 
 		getHoveredEntity(): EntityId | null {
 			return hoveredEntity;
+		},
+
+		// === Snap Guides ===
+
+		getSnapGuides(): SnapGuide[] {
+			return currentSnap.guides;
+		},
+
+		getDistanceIndicators(): DistanceIndicator[] {
+			return currentSnap.distances;
+		},
+
+		setSnapEnabled(on: boolean) {
+			snapEnabled = on;
+		},
+
+		setSnapThreshold(worldPx: number) {
+			snapThreshold = worldPx;
 		},
 
 		// === Navigation ===

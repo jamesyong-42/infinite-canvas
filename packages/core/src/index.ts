@@ -74,6 +74,10 @@ export type { Command } from './commands.js';
 export { serializeWorld, deserializeWorld, serializeEntities } from './serialization.js';
 export type { CanvasDocument, SerializedEntity } from './serialization.js';
 
+// Snap guides
+export { computeSnapGuides } from './snap.js';
+export type { SnapGuide, DistanceIndicator, SnapResult, EntityBounds } from './snap.js';
+
 // Profiling
 export { Profiler } from './profiler.js';
 export type { FrameSample, ProfilerStats } from './profiler.js';

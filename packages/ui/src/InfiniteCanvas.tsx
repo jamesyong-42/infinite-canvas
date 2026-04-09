@@ -451,6 +451,8 @@ export function InfiniteCanvas({ engine, grid, selection, className, style, chil
 						gridRendererRef.current.getWebGLRenderer(),
 						camera.x, camera.y, camera.zoom,
 						selBounds, hovBounds,
+						engine.getSnapGuides(),
+						engine.getDistanceIndicators(),
 					);
 				}
 

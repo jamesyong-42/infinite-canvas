@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { SnapGuide, DistanceIndicator } from '@infinite-canvas/core';
 
 // === Public config (Figma-style defaults) ===
 
@@ -68,6 +69,13 @@ uniform vec4 u_bounds[${MAX_ENTITIES}];   // (worldX, worldY, width, height)
 uniform int u_hoverIdx;                   // -1 = none
 uniform vec4 u_groupBounds;              // group bbox (0 if count <= 1)
 uniform int u_hasGroup;
+
+// Snap guides
+uniform int u_guideCount;
+uniform vec4 u_guides[16];               // (axis: 0=x/1=y, position, 0, 0)
+uniform int u_distCount;
+uniform vec4 u_dists[16];                // (axis: 0=x/1=y, from, to, perpPos)
+uniform vec3 u_guideColor;
 
 // Style
 uniform vec3 u_outlineColor;
@@ -188,6 +196,50 @@ void main() {
 		color = max(color, vec4(u_outlineColor, lineAlpha * 0.5));
 	}
 
+	// --- Snap guide lines ---
+	for (int i = 0; i < 16; i++) {
+		if (i >= u_guideCount) break;
+		vec4 g = u_guides[i];
+		float guideWidth = 0.5 * pxToWorld;
+		float dist;
+		if (g.x < 0.5) {
+			// Vertical line (x-axis alignment)
+			dist = abs(worldPos.x - g.y);
+		} else {
+			// Horizontal line (y-axis alignment)
+			dist = abs(worldPos.y - g.y);
+		}
+		float guideAlpha = 1.0 - smoothstep(guideWidth - pxToWorld * 0.3, guideWidth + pxToWorld * 0.3, dist);
+		color = max(color, vec4(u_guideColor, guideAlpha * 0.8));
+	}
+
+	// --- Distance indicators ---
+	for (int i = 0; i < 16; i++) {
+		if (i >= u_distCount) break;
+		vec4 d = u_dists[i];
+		float lineWidth = 0.5 * pxToWorld;
+		if (d.x < 0.5) {
+			// Horizontal distance line (x-axis)
+			float yDist = abs(worldPos.y - d.w);
+			float xInRange = step(d.y, worldPos.x) * step(worldPos.x, d.z);
+			float lineAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, yDist)) * xInRange;
+			// End caps
+			float capLeft = 1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, length(worldPos - vec2(d.y, d.w)));
+			float capRight = 1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, length(worldPos - vec2(d.z, d.w)));
+			float distAlpha = max(lineAlpha, max(capLeft, capRight));
+			color = max(color, vec4(u_guideColor, distAlpha * 0.6));
+		} else {
+			// Vertical distance line (y-axis)
+			float xDist = abs(worldPos.x - d.w);
+			float yInRange = step(d.y, worldPos.y) * step(worldPos.y, d.z);
+			float lineAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, xDist)) * yInRange;
+			float capTop = 1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, length(worldPos - vec2(d.w, d.y)));
+			float capBot = 1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, length(worldPos - vec2(d.w, d.z)));
+			float distAlpha = max(lineAlpha, max(capTop, capBot));
+			color = max(color, vec4(u_guideColor, distAlpha * 0.6));
+		}
+	}
+
 	if (color.a < 0.01) discard;
 	gl_FragColor = color;
 }
@@ -233,6 +285,12 @@ export class SelectionRenderer {
 				u_handleBorder: { value: new THREE.Vector3(...DEFAULT_SELECTION_CONFIG.handleBorder) },
 				u_handleBorderWidth: { value: DEFAULT_SELECTION_CONFIG.handleBorderWidth },
 				u_groupDash: { value: DEFAULT_SELECTION_CONFIG.groupDash },
+				// Snap guides
+				u_guideCount: { value: 0 },
+				u_guides: { value: Array.from({ length: 16 }, () => new THREE.Vector4(0, 0, 0, 0)) },
+				u_distCount: { value: 0 },
+				u_dists: { value: Array.from({ length: 16 }, () => new THREE.Vector4(0, 0, 0, 0)) },
+				u_guideColor: { value: new THREE.Vector3(1.0, 0.0, 0.55) }, // magenta/pink
 			},
 			transparent: true,
 			depthTest: false,
@@ -272,6 +330,8 @@ export class SelectionRenderer {
 		zoom: number,
 		selected: SelectionBounds[],
 		hovered: SelectionBounds | null,
+		guides: SnapGuide[] = [],
+		distances: DistanceIndicator[] = [],
 	) {
 		const u = this.material.uniforms;
 		u.u_camera.value.set(cameraX, cameraY);
@@ -321,6 +381,22 @@ export class SelectionRenderer {
 			u.u_hasGroup.value = 1;
 		} else {
 			u.u_hasGroup.value = 0;
+		}
+
+		// Upload snap guides
+		const gCount = Math.min(guides.length, 16);
+		u.u_guideCount.value = gCount;
+		for (let i = 0; i < gCount; i++) {
+			const g = guides[i];
+			u.u_guides.value[i].set(g.axis === 'x' ? 0 : 1, g.position, 0, 0);
+		}
+
+		// Upload distance indicators
+		const dCount = Math.min(distances.length, 16);
+		u.u_distCount.value = dCount;
+		for (let i = 0; i < dCount; i++) {
+			const d = distances[i];
+			u.u_dists.value[i].set(d.axis === 'x' ? 0 : 1, d.from, d.to, d.perpPosition);
 		}
 
 		// Render without clearing (composites on top of grid)
