@@ -45,6 +45,13 @@ export const WidgetSlot = memo(function WidgetSlot({ entityId, slotRef }: Widget
 	// This ensures we always get pointerup even if the cursor leaves the window.
 	const onPointerDown = useCallback(
 		(e: React.PointerEvent) => {
+			// Don't intercept clicks on interactive elements inside widgets
+			const target = e.target as HTMLElement;
+			if (target.closest('button, input, textarea, select, [contenteditable]')) {
+				e.stopPropagation(); // still prevent background handler
+				return;
+			}
+
 			const { x, y } = toLocal(e);
 			const directive = engine.handlePointerDown(x, y, e.button, getMods(e));
 

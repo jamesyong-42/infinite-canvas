@@ -181,8 +181,10 @@ export function App() {
 					engine.markDirty();
 				}
 			}
-			// Delete selected: Backspace or Delete
+			// Delete selected: Backspace or Delete (skip when focus is on an input)
 			if (e.key === 'Backspace' || e.key === 'Delete') {
+				const el = document.activeElement;
+				if (el && el.closest('input, textarea, select, [contenteditable]')) return;
 				const selected = engine.getSelectedEntities();
 				for (const id of selected) {
 					engine.destroyEntity(id);
