@@ -13,7 +13,8 @@ import {
 	Parent,
 } from '@infinite-canvas/core';
 import type { EntityId } from '@infinite-canvas/core';
-import { InfiniteCanvas } from '@infinite-canvas/ui';
+import { InfiniteCanvas, DEFAULT_GRID_CONFIG } from '@infinite-canvas/ui';
+import type { GridConfig } from '@infinite-canvas/ui';
 import { WidgetProvider, createWidgetRegistry } from '@infinite-canvas/react-widgets';
 import { DebugCard } from './widgets/DebugCard.js';
 import { DebugInteractive } from './widgets/DebugInteractive.js';
@@ -148,10 +149,12 @@ export function App() {
 		return false;
 	});
 
+	const [gridConfig, setGridConfig] = useState<GridConfig>({ ...DEFAULT_GRID_CONFIG });
+
 	useEffect(() => {
 		document.documentElement.classList.toggle('dark', dark);
 		localStorage.setItem('ic-dark-mode', String(dark));
-		engine.markDirty(); // re-render canvas with new dot grid colors
+		engine.markDirty();
 	}, [dark, engine]);
 
 	// Keyboard shortcuts
@@ -195,7 +198,7 @@ export function App() {
 	return (
 		<div className="h-screen w-screen">
 			<WidgetProvider registry={registry}>
-				<InfiniteCanvas engine={engine} className="h-full w-full" />
+				<InfiniteCanvas engine={engine} grid={gridConfig} className="h-full w-full" />
 			</WidgetProvider>
 
 			{/* Dark mode toggle */}
@@ -250,7 +253,7 @@ export function App() {
 
 			{/* Panels */}
 			{showSettings && (
-				<SettingsPanel engine={engine} onClose={() => setShowSettings(false)} />
+				<SettingsPanel engine={engine} gridConfig={gridConfig} onGridChange={setGridConfig} onClose={() => setShowSettings(false)} />
 			)}
 			{showInspector && (
 				<InspectorPanel engine={engine} onClose={() => setShowInspector(false)} />
