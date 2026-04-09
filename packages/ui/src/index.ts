@@ -27,5 +27,7 @@ export { SelectionOverlaySlot } from './SelectionOverlaySlot.js';
 // WebGL
 export { GridRenderer, DEFAULT_GRID_CONFIG } from './webgl/GridRenderer.js';
 export type { GridConfig } from './webgl/GridRenderer.js';
+export { SelectionRenderer, DEFAULT_SELECTION_CONFIG } from './webgl/SelectionRenderer.js';
+export type { SelectionConfig, SelectionBounds } from './webgl/SelectionRenderer.js';
 export { WebGLWidgetLayer } from './webgl/WebGLWidgetLayer.js';
 export { WebGLWidgetSlot } from './webgl/WebGLWidgetSlot.js';

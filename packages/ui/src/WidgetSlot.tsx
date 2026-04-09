@@ -1,9 +1,8 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import type { EntityId, Modifiers } from '@infinite-canvas/core';
-import { Widget, Selected, WorldBounds } from '@infinite-canvas/core';
+import { Widget, WorldBounds } from '@infinite-canvas/core';
 import { useEngine, useWidgetResolver, useContainerRef } from './context.js';
-import { useComponent, useTag } from './hooks.js';
-import { SelectionFrame } from './SelectionFrame.js';
+import { useComponent } from './hooks.js';
 
 interface WidgetSlotProps {
 	entityId: EntityId;
@@ -21,7 +20,6 @@ export const WidgetSlot = memo(function WidgetSlot({ entityId, slotRef }: Widget
 	const resolve = useWidgetResolver();
 
 	const widgetComp = useComponent(entityId, Widget);
-	const isSelected = useTag(entityId, Selected);
 
 	const resolved = resolve?.(entityId, widgetComp?.type ?? '');
 	const WidgetComponent = resolved?.component ?? null;
@@ -137,7 +135,6 @@ export const WidgetSlot = memo(function WidgetSlot({ entityId, slotRef }: Widget
 			onDoubleClick={onDoubleClick}
 		>
 			{content}
-			{isSelected && <SelectionFrame entityId={entityId} />}
 		</div>
 	);
 });

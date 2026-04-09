@@ -1,9 +1,7 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import type { EntityId, Modifiers } from '@infinite-canvas/core';
-import { Selected, WorldBounds } from '@infinite-canvas/core';
+import { WorldBounds } from '@infinite-canvas/core';
 import { useEngine, useContainerRef } from './context.js';
-import { useTag } from './hooks.js';
-import { SelectionFrame } from './SelectionFrame.js';
 
 interface SelectionOverlaySlotProps {
 	entityId: EntityId;
@@ -22,7 +20,6 @@ export const SelectionOverlaySlot = memo(function SelectionOverlaySlot({ entityI
 	const wrapperRef = useRef<HTMLDivElement>(null);
 	const engine = useEngine();
 	const containerRefObj = useContainerRef();
-	const isSelected = useTag(entityId, Selected);
 
 	useEffect(() => {
 		slotRef(entityId, wrapperRef.current);
@@ -105,8 +102,6 @@ export const SelectionOverlaySlot = memo(function SelectionOverlaySlot({ entityI
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			onDoubleClick={onDoubleClick}
-		>
-			{isSelected && <SelectionFrame entityId={entityId} />}
-		</div>
+		/>
 	);
 });

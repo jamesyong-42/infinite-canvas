@@ -147,8 +147,9 @@ export interface CanvasEngine {
 	handlePointerMove(screenX: number, screenY: number, modifiers: Modifiers): PointerDirective;
 	handlePointerUp(): PointerDirective;
 
-	// Selection
+	// Selection & Hover
 	getSelectedEntities(): EntityId[];
+	getHoveredEntity(): EntityId | null;
 
 	// Navigation
 	enterContainer(entity: EntityId): void;
@@ -220,6 +221,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 
 	// State
 	let inputState: InputState = { mode: 'idle' };
+	let hoveredEntity: EntityId | null = null;
 	let dirty = false;
 	let cameraChangedThisTick = false;
 	let selectionChangedThisTick = false; // Fix #2: proper selection tracking
@@ -635,6 +637,15 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 				return { action: 'capture-marquee' };
 			}
 
+			// Hover tracking in idle mode
+			if (inputState.mode === 'idle') {
+				const hit = hitTest(screenX, screenY);
+				if (hit !== hoveredEntity) {
+					hoveredEntity = hit;
+					markDirtyInternal();
+				}
+			}
+
 			return { action: 'passthrough' };
 		},
 
@@ -701,6 +712,10 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 
 		getSelectedEntities(): EntityId[] {
 			return world.queryTagged(Selected);
+		},
+
+		getHoveredEntity(): EntityId | null {
+			return hoveredEntity;
 		},
 
 		// === Navigation ===

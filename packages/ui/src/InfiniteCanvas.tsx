@@ -14,20 +14,26 @@ import { SelectionOverlaySlot } from './SelectionOverlaySlot.js';
 import { WebGLWidgetLayer } from './webgl/WebGLWidgetLayer.js';
 import { GridRenderer } from './webgl/GridRenderer.js';
 import type { GridConfig } from './webgl/GridRenderer.js';
+import { SelectionRenderer } from './webgl/SelectionRenderer.js';
+import type { SelectionConfig, SelectionBounds } from './webgl/SelectionRenderer.js';
+import { Vector2 } from 'three';
 
 interface InfiniteCanvasProps {
 	engine: CanvasEngine;
 	/** Grid configuration. Pass `false` to disable the grid entirely. */
 	grid?: Partial<GridConfig> | false;
+	/** Selection style configuration. */
+	selection?: Partial<SelectionConfig>;
 	className?: string;
 	style?: React.CSSProperties;
 	children?: React.ReactNode;
 }
 
-export function InfiniteCanvas({ engine, grid, className, style, children }: InfiniteCanvasProps) {
+export function InfiniteCanvas({ engine, grid, selection, className, style, children }: InfiniteCanvasProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const webglCanvasRef = useRef<HTMLCanvasElement>(null);
 	const gridRendererRef = useRef<GridRenderer | null>(null);
+	const selectionRendererRef = useRef<SelectionRenderer | null>(null);
 	const cameraLayerRef = useRef<HTMLDivElement>(null);
 	const slotRefs = useRef(new Map<EntityId, HTMLDivElement>());
 	const [visibleEntities, setVisibleEntities] = useState<EntityId[]>([]);
@@ -54,15 +60,20 @@ export function InfiniteCanvas({ engine, grid, className, style, children }: Inf
 			gridRendererRef.current = gridInst;
 		}
 
+		// SelectionRenderer shares the WebGLRenderer from GridRenderer
+		const selInst = new SelectionRenderer();
+		selectionRendererRef.current = selInst;
+
 		const updateSize = () => {
 			const rect = container.getBoundingClientRect();
 			const dpr = window.devicePixelRatio;
 			engine.setViewport(rect.width, rect.height, dpr);
+			canvas.style.width = `${rect.width}px`;
+			canvas.style.height = `${rect.height}px`;
 			if (gridInst) {
-				canvas.style.width = `${rect.width}px`;
-				canvas.style.height = `${rect.height}px`;
 				gridInst.setSize(rect.width, rect.height, dpr);
 			}
+			selInst.setSize(new Vector2(rect.width * dpr, rect.height * dpr), dpr);
 		};
 
 		updateSize();
@@ -74,20 +85,26 @@ export function InfiniteCanvas({ engine, grid, className, style, children }: Inf
 				gridInst.dispose();
 				gridRendererRef.current = null;
 			}
+			selInst.dispose();
+			selectionRendererRef.current = null;
 		};
 	}, [engine, grid]);
 
-	// Apply grid config (user overrides + dark mode defaults) on every render
+	// Apply grid + selection config on every render
 	useEffect(() => {
-		const renderer = gridRendererRef.current;
-		if (!renderer || grid === false) return;
-		const isDark = document.documentElement.classList.contains('dark');
-		renderer.setConfig({
-			// Dark mode defaults, then user overrides on top
-			dotColor: isDark ? [1, 1, 1] : [0, 0, 0],
-			dotAlpha: isDark ? 0.12 : 0.18,
-			...grid,
-		});
+		const gridR = gridRendererRef.current;
+		if (gridR && grid !== false) {
+			const isDark = document.documentElement.classList.contains('dark');
+			gridR.setConfig({
+				dotColor: isDark ? [1, 1, 1] : [0, 0, 0],
+				dotAlpha: isDark ? 0.12 : 0.18,
+				...grid,
+			});
+		}
+		const selR = selectionRendererRef.current;
+		if (selR && selection) {
+			selR.setConfig(selection);
+		}
 		engine.markDirty();
 	});
 
@@ -413,9 +430,28 @@ export function InfiniteCanvas({ engine, grid, className, style, children }: Inf
 						`scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`;
 				}
 
-				// 1b. Render WebGL dot grid
+				// 1b. Render WebGL dot grid + selection
 				if (gridRendererRef.current) {
 					gridRendererRef.current.render(camera.x, camera.y, camera.zoom);
+				}
+				if (selectionRendererRef.current && gridRendererRef.current) {
+					const selected = engine.getSelectedEntities();
+					const selBounds: SelectionBounds[] = [];
+					for (const id of selected) {
+						const wb = engine.get(id, WorldBounds);
+						if (wb) selBounds.push({ x: wb.worldX, y: wb.worldY, width: wb.worldWidth, height: wb.worldHeight });
+					}
+					const hovId = engine.getHoveredEntity();
+					let hovBounds: SelectionBounds | null = null;
+					if (hovId !== null) {
+						const wb = engine.get(hovId, WorldBounds);
+						if (wb) hovBounds = { x: wb.worldX, y: wb.worldY, width: wb.worldWidth, height: wb.worldHeight };
+					}
+					selectionRendererRef.current.render(
+						gridRendererRef.current.getWebGLRenderer(),
+						camera.x, camera.y, camera.zoom,
+						selBounds, hovBounds,
+					);
 				}
 
 				// 2. Fix #1: Use WorldBounds (world-space) not Transform2D (local/parent-relative)
