@@ -120,6 +120,7 @@ export const WidgetSlot = memo(function WidgetSlot({ entityId, slotRef }: Widget
 	return (
 		<div
 			ref={wrapperRef}
+			data-widget-slot=""
 			className="absolute left-0 top-0 origin-top-left will-change-transform"
 			style={initialStyle}
 			onPointerDown={onPointerDown}

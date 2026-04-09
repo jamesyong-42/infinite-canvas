@@ -69,6 +69,250 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 		return () => container.removeEventListener('wheel', onWheel);
 	}, [engine]);
 
+	// Touch gesture handler — iOS Freeform-style interactions
+	// 1 finger on background → pan; 1 finger on entity → select/drag;
+	// 2 fingers → pinch-to-zoom + pan; double-tap → zoom step / enter container
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container) return;
+
+		type TouchGesture =
+			| { type: 'idle' }
+			| { type: 'pending-pan'; x: number; y: number; time: number }
+			| { type: 'panning'; lastX: number; lastY: number }
+			| { type: 'pending-entity'; x: number; y: number; time: number }
+			| { type: 'entity-dragging' }
+			| { type: 'pinching'; lastDist: number; lastCx: number; lastCy: number };
+
+		let gesture: TouchGesture = { type: 'idle' };
+		let lastTapTime = 0;
+		let lastTapX = 0;
+		let lastTapY = 0;
+		const DEAD_ZONE = 8;
+		const DOUBLE_TAP_MS = 300;
+		const DOUBLE_TAP_DIST = 30;
+
+		function isOnWidget(target: EventTarget | null): boolean {
+			let el = target as HTMLElement | null;
+			while (el && el !== container) {
+				if (el.hasAttribute('data-widget-slot')) return true;
+				el = el.parentElement;
+			}
+			return false;
+		}
+
+		function isInteractive(target: EventTarget | null): boolean {
+			const el = target as HTMLElement | null;
+			if (!el) return false;
+			const tag = el.tagName;
+			return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'SELECT'
+				|| el.isContentEditable || el.closest('button') !== null;
+		}
+
+		function getRect() {
+			return container!.getBoundingClientRect();
+		}
+
+		function touchDist(t1: Touch, t2: Touch) {
+			const dx = t1.clientX - t2.clientX;
+			const dy = t1.clientY - t2.clientY;
+			return Math.sqrt(dx * dx + dy * dy);
+		}
+
+		function touchCenter(t1: Touch, t2: Touch, rect: DOMRect) {
+			return {
+				x: (t1.clientX + t2.clientX) / 2 - rect.left,
+				y: (t1.clientY + t2.clientY) / 2 - rect.top,
+			};
+		}
+
+		function cancelEngineGesture() {
+			if (gesture.type === 'pending-entity' || gesture.type === 'entity-dragging') {
+				engine.handlePointerUp();
+			}
+		}
+
+		const noMods = { shift: false, ctrl: false, alt: false, meta: false };
+
+		function onTouchStart(e: TouchEvent) {
+			const rect = getRect();
+			const touches = e.touches;
+
+			// --- 2+ fingers → pinch (override everything) ---
+			if (touches.length >= 2) {
+				e.preventDefault();
+				cancelEngineGesture();
+				const dist = touchDist(touches[0], touches[1]);
+				const center = touchCenter(touches[0], touches[1], rect);
+				gesture = { type: 'pinching', lastDist: dist, lastCx: center.x, lastCy: center.y };
+				return;
+			}
+
+			// --- 1 finger ---
+			const touch = touches[0];
+			const x = touch.clientX - rect.left;
+			const y = touch.clientY - rect.top;
+
+			// Let interactive elements (buttons, inputs) handle their own touch
+			if (isInteractive(e.target)) return;
+
+			e.preventDefault();
+
+			// Double-tap detection
+			const now = Date.now();
+			if (now - lastTapTime < DOUBLE_TAP_MS
+				&& Math.abs(x - lastTapX) < DOUBLE_TAP_DIST
+				&& Math.abs(y - lastTapY) < DOUBLE_TAP_DIST) {
+				lastTapTime = 0;
+				// Hit test to check for entity
+				const directive = engine.handlePointerDown(x, y, 0, noMods);
+				if (directive.action === 'passthrough-track-drag') {
+					// Double-tap on entity → enter container
+					const selected = engine.getSelectedEntities();
+					engine.handlePointerUp();
+					if (selected.length === 1) {
+						engine.enterContainer(selected[0]);
+					}
+				} else {
+					// Double-tap on empty → zoom step
+					engine.handlePointerUp();
+					const camera = engine.getCamera();
+					const target = camera.zoom < 0.9 ? 1 : camera.zoom < 1.8 ? 2 : 1;
+					engine.zoomAtPoint(x, y, (target - camera.zoom) / camera.zoom);
+				}
+				engine.markDirty();
+				gesture = { type: 'idle' };
+				return;
+			}
+
+			if (isOnWidget(e.target)) {
+				// Touch on entity → delegate to engine
+				engine.handlePointerDown(x, y, 0, noMods);
+				gesture = { type: 'pending-entity', x, y, time: now };
+			} else {
+				// Touch on empty space → prepare to pan (don't tell engine yet)
+				gesture = { type: 'pending-pan', x, y, time: now };
+			}
+		}
+
+		function onTouchMove(e: TouchEvent) {
+			e.preventDefault();
+			const rect = getRect();
+			const touches = e.touches;
+
+			// --- Pinch ---
+			if (gesture.type === 'pinching' && touches.length >= 2) {
+				const dist = touchDist(touches[0], touches[1]);
+				const center = touchCenter(touches[0], touches[1], rect);
+				const scale = dist / gesture.lastDist;
+				engine.zoomAtPoint(center.x, center.y, scale - 1);
+				engine.panBy(center.x - gesture.lastCx, center.y - gesture.lastCy);
+				gesture.lastDist = dist;
+				gesture.lastCx = center.x;
+				gesture.lastCy = center.y;
+				return;
+			}
+
+			// Transition to pinch if second finger added
+			if (touches.length >= 2) {
+				cancelEngineGesture();
+				const dist = touchDist(touches[0], touches[1]);
+				const center = touchCenter(touches[0], touches[1], rect);
+				gesture = { type: 'pinching', lastDist: dist, lastCx: center.x, lastCy: center.y };
+				return;
+			}
+
+			if (touches.length < 1) return;
+			const touch = touches[0];
+			const x = touch.clientX - rect.left;
+			const y = touch.clientY - rect.top;
+
+			// Pending pan → check dead zone
+			if (gesture.type === 'pending-pan') {
+				if (Math.abs(x - gesture.x) > DEAD_ZONE || Math.abs(y - gesture.y) > DEAD_ZONE) {
+					gesture = { type: 'panning', lastX: x, lastY: y };
+				}
+				return;
+			}
+
+			// Active panning
+			if (gesture.type === 'panning') {
+				engine.panBy(x - gesture.lastX, y - gesture.lastY);
+				gesture.lastX = x;
+				gesture.lastY = y;
+				return;
+			}
+
+			// Entity drag → delegate to engine
+			if (gesture.type === 'pending-entity' || gesture.type === 'entity-dragging') {
+				engine.handlePointerMove(x, y, noMods);
+				if (gesture.type === 'pending-entity') {
+					if (Math.abs(x - gesture.x) > DEAD_ZONE || Math.abs(y - gesture.y) > DEAD_ZONE) {
+						gesture = { type: 'entity-dragging' };
+					}
+				}
+			}
+		}
+
+		function onTouchEnd(e: TouchEvent) {
+			e.preventDefault();
+			const remaining = e.touches.length;
+			const rect = getRect();
+
+			// Pinch → transition based on remaining fingers
+			if (gesture.type === 'pinching') {
+				if (remaining === 1) {
+					const t = e.touches[0];
+					gesture = { type: 'panning', lastX: t.clientX - rect.left, lastY: t.clientY - rect.top };
+				} else if (remaining === 0) {
+					gesture = { type: 'idle' };
+				}
+				return;
+			}
+
+			if (remaining > 0) return;
+
+			// Tap on empty space → deselect
+			if (gesture.type === 'pending-pan') {
+				engine.handlePointerDown(gesture.x, gesture.y, 0, noMods);
+				engine.handlePointerUp();
+				engine.markDirty();
+				lastTapTime = Date.now();
+				lastTapX = gesture.x;
+				lastTapY = gesture.y;
+			}
+
+			// Tap on entity (no drag) → selection already happened
+			if (gesture.type === 'pending-entity') {
+				engine.handlePointerUp();
+				engine.markDirty();
+				lastTapTime = Date.now();
+				lastTapX = gesture.x;
+				lastTapY = gesture.y;
+			}
+
+			// Entity drag end
+			if (gesture.type === 'entity-dragging') {
+				engine.handlePointerUp();
+				engine.markDirty();
+			}
+
+			gesture = { type: 'idle' };
+		}
+
+		container.addEventListener('touchstart', onTouchStart, { passive: false });
+		container.addEventListener('touchmove', onTouchMove, { passive: false });
+		container.addEventListener('touchend', onTouchEnd, { passive: false });
+		container.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+		return () => {
+			container.removeEventListener('touchstart', onTouchStart);
+			container.removeEventListener('touchmove', onTouchMove);
+			container.removeEventListener('touchend', onTouchEnd);
+			container.removeEventListener('touchcancel', onTouchEnd);
+		};
+	}, [engine]);
+
 	// Canvas background pointer — empty-space clicks
 	const onBackgroundPointerDown = useCallback(
 		(e: React.PointerEvent) => {
