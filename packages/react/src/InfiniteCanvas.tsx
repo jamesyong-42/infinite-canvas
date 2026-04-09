@@ -133,9 +133,8 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 					const offsetX = (-camera.x * camera.zoom) % size;
 					const offsetY = (-camera.y * camera.zoom) % size;
 					const dotSize = Math.max(0.5, Math.min(1.5, camera.zoom));
-					const opacity = Math.max(0, Math.min(1, camera.zoom * 0.8));
 					containerRef.current.style.backgroundImage =
-						`radial-gradient(circle, rgba(0,0,0,${opacity * 0.2}) ${dotSize}px, transparent ${dotSize}px)`;
+						`radial-gradient(circle, var(--canvas-dot, rgba(0,0,0,0.16)) ${dotSize}px, transparent ${dotSize}px)`;
 					containerRef.current.style.backgroundSize = `${size}px ${size}px`;
 					containerRef.current.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
 				}
@@ -175,7 +174,7 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 		if (containerRef.current) {
 			const size = 24 * camera.zoom;
 			containerRef.current.style.backgroundImage =
-				`radial-gradient(circle, rgba(0,0,0,0.16) 1px, transparent 1px)`;
+				`radial-gradient(circle, var(--canvas-dot, rgba(0,0,0,0.16)) 1px, transparent 1px)`;
 			containerRef.current.style.backgroundSize = `${size}px ${size}px`;
 		}
 
@@ -220,7 +219,7 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 					style={{
 						...style,
 						touchAction: 'none',
-						backgroundColor: '#fafafa',
+						backgroundColor: 'var(--canvas-bg, #fafafa)',
 					}}
 				>
 					{/* Background — handles empty-space pointer events (deselect, marquee) */}

@@ -50,11 +50,11 @@ export function DebugContainer({ entityId }: { entityId: EntityId }) {
 				<span style={{ color: COLOR }} className="font-semibold truncate">
 					{data.title ?? 'Container'}
 				</span>
-				<span className="text-[9px] text-neutral-400">e{entityId} [{children.length}]</span>
+				<span className="text-[9px] text-neutral-400 dark:text-neutral-500">e{entityId} [{children.length}]</span>
 			</div>
 
 			{/* Body */}
-			<div className="flex-1 px-2 py-1.5 text-neutral-500 space-y-0.5">
+			<div className="flex-1 px-2 py-1.5 text-neutral-500 space-y-0.5 dark:text-neutral-400">
 				<div className="flex justify-between">
 					<span className="text-neutral-400">bp</span>
 					<span style={{ color: COLOR }}>{breakpoint}</span>

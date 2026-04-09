@@ -1,1 +1,12 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+	--canvas-bg: #fafafa;
+	--canvas-dot: rgba(0, 0, 0, 0.16);
+}
+.dark {
+	--canvas-bg: #171717;
+	--canvas-dot: rgba(255, 255, 255, 0.08);
+}

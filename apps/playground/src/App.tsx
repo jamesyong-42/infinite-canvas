@@ -139,6 +139,20 @@ export function App() {
 	const { engine, registry } = useMemo(() => createDemoScene(), []);
 	const [showSettings, setShowSettings] = useState(false);
 	const [showInspector, setShowInspector] = useState(false);
+	const [dark, setDark] = useState(() => {
+		if (typeof window !== 'undefined') {
+			const saved = localStorage.getItem('ic-dark-mode');
+			if (saved !== null) return saved === 'true';
+			return window.matchMedia('(prefers-color-scheme: dark)').matches;
+		}
+		return false;
+	});
+
+	useEffect(() => {
+		document.documentElement.classList.toggle('dark', dark);
+		localStorage.setItem('ic-dark-mode', String(dark));
+		engine.markDirty(); // re-render canvas with new dot grid colors
+	}, [dark, engine]);
 
 	// Keyboard shortcuts
 	useEffect(() => {
@@ -184,14 +198,32 @@ export function App() {
 				<InfiniteCanvas engine={engine} className="h-full w-full" />
 			</WidgetProvider>
 
+			{/* Dark mode toggle */}
+			<button
+				type="button"
+				onClick={() => setDark((d) => !d)}
+				className="absolute top-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-colors bg-white text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200"
+				title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+			>
+				{dark ? (
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+						<circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+					</svg>
+				) : (
+					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+						<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+					</svg>
+				)}
+			</button>
+
 			{/* Floating buttons */}
 			<button
 				type="button"
 				onClick={() => setShowSettings((s) => !s)}
 				className={`absolute bottom-4 left-4 z-50 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-colors ${
 					showSettings
-						? 'bg-neutral-800 text-white'
-						: 'bg-white text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700'
+						? 'bg-neutral-800 text-white dark:bg-white dark:text-neutral-800'
+						: 'bg-white text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200'
 				}`}
 				title="Settings"
 			>
@@ -206,8 +238,8 @@ export function App() {
 				onClick={() => setShowInspector((s) => !s)}
 				className={`absolute bottom-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-colors ${
 					showInspector
-						? 'bg-neutral-800 text-white'
-						: 'bg-white text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700'
+						? 'bg-neutral-800 text-white dark:bg-white dark:text-neutral-800'
+						: 'bg-white text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200'
 				}`}
 				title="Inspector"
 			>

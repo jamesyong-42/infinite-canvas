@@ -52,7 +52,7 @@ export function DebugInteractive({ entityId }: { entityId: EntityId }) {
 				<span style={{ color: COLOR }} className="font-semibold truncate">
 					{data.title ?? 'Interactive'}
 				</span>
-				<span className="text-[9px] text-neutral-400">e{entityId}</span>
+				<span className="text-[9px] text-neutral-400 dark:text-neutral-500">e{entityId}</span>
 			</div>
 
 			{/* Body */}
@@ -84,7 +84,7 @@ export function DebugInteractive({ entityId }: { entityId: EntityId }) {
 							onChange={(e) => updateData({ note: e.target.value })}
 							onClick={(e) => e.stopPropagation()}
 						/>
-						<div className="text-neutral-400 space-y-0.5">
+						<div className="text-neutral-400 space-y-0.5 dark:text-neutral-500">
 							<div className="flex justify-between">
 								<span>bp</span>
 								<span style={{ color: COLOR }}>{breakpoint}</span>
