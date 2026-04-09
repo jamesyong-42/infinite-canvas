@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { SnapGuide, DistanceIndicator } from '@infinite-canvas/core';
+import type { SnapGuide, EqualSpacingIndicator } from '@infinite-canvas/core';
 
 // === Public config (Figma-style defaults) ===
 
@@ -73,8 +73,8 @@ uniform int u_hasGroup;
 // Snap guides
 uniform int u_guideCount;
 uniform vec4 u_guides[16];               // (axis: 0=x/1=y, position, 0, 0)
-uniform int u_distCount;
-uniform vec4 u_dists[16];                // (axis: 0=x/1=y, from, to, perpPos)
+uniform int u_spacingCount;
+uniform vec4 u_spacings[8];              // equal-spacing segments: (axis, from, to, perpPos)
 uniform vec3 u_guideColor;
 
 // Style
@@ -213,31 +213,40 @@ void main() {
 		color = max(color, vec4(u_guideColor, guideAlpha * 0.8));
 	}
 
-	// --- Distance indicators ---
-	for (int i = 0; i < 16; i++) {
-		if (i >= u_distCount) break;
-		vec4 d = u_dists[i];
+	// --- Equal spacing indicators ---
+	for (int i = 0; i < 8; i++) {
+		if (i >= u_spacingCount) break;
+		vec4 s = u_spacings[i];
 		float lineWidth = 0.5 * pxToWorld;
-		if (d.x < 0.5) {
-			// Horizontal distance line (x-axis)
-			float yDist = abs(worldPos.y - d.w);
-			float xInRange = step(d.y, worldPos.x) * step(worldPos.x, d.z);
-			float lineAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, yDist)) * xInRange;
-			// End caps
-			float capLeft = 1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, length(worldPos - vec2(d.y, d.w)));
-			float capRight = 1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, length(worldPos - vec2(d.z, d.w)));
-			float distAlpha = max(lineAlpha, max(capLeft, capRight));
-			color = max(color, vec4(u_guideColor, distAlpha * 0.6));
+		float segAlpha = 0.0;
+		if (s.x < 0.5) {
+			// Horizontal segment (x-axis gap)
+			float yDist = abs(worldPos.y - s.w);
+			float xInRange = step(s.y, worldPos.x) * step(worldPos.x, s.z);
+			// Center line
+			segAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, yDist)) * xInRange;
+			// End bars (perpendicular marks at from and to)
+			float barHeight = 4.0 * pxToWorld;
+			float barFromDist = abs(worldPos.x - s.y);
+			float barFromAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, barFromDist))
+				* (1.0 - smoothstep(barHeight, barHeight + pxToWorld, abs(worldPos.y - s.w)));
+			float barToDist = abs(worldPos.x - s.z);
+			float barToAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, barToDist))
+				* (1.0 - smoothstep(barHeight, barHeight + pxToWorld, abs(worldPos.y - s.w)));
+			segAlpha = max(segAlpha, max(barFromAlpha, barToAlpha));
 		} else {
-			// Vertical distance line (y-axis)
-			float xDist = abs(worldPos.x - d.w);
-			float yInRange = step(d.y, worldPos.y) * step(worldPos.y, d.z);
-			float lineAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, xDist)) * yInRange;
-			float capTop = 1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, length(worldPos - vec2(d.w, d.y)));
-			float capBot = 1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, length(worldPos - vec2(d.w, d.z)));
-			float distAlpha = max(lineAlpha, max(capTop, capBot));
-			color = max(color, vec4(u_guideColor, distAlpha * 0.6));
+			// Vertical segment (y-axis gap)
+			float xDist = abs(worldPos.x - s.w);
+			float yInRange = step(s.y, worldPos.y) * step(worldPos.y, s.z);
+			segAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, xDist)) * yInRange;
+			float barWidth = 4.0 * pxToWorld;
+			float barFromAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, abs(worldPos.y - s.y)))
+				* (1.0 - smoothstep(barWidth, barWidth + pxToWorld, abs(worldPos.x - s.w)));
+			float barToAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, abs(worldPos.y - s.z)))
+				* (1.0 - smoothstep(barWidth, barWidth + pxToWorld, abs(worldPos.x - s.w)));
+			segAlpha = max(segAlpha, max(barFromAlpha, barToAlpha));
 		}
+		color = max(color, vec4(u_guideColor, segAlpha * 0.7));
 	}
 
 	if (color.a < 0.01) discard;
@@ -288,8 +297,8 @@ export class SelectionRenderer {
 				// Snap guides
 				u_guideCount: { value: 0 },
 				u_guides: { value: Array.from({ length: 16 }, () => new THREE.Vector4(0, 0, 0, 0)) },
-				u_distCount: { value: 0 },
-				u_dists: { value: Array.from({ length: 16 }, () => new THREE.Vector4(0, 0, 0, 0)) },
+				u_spacingCount: { value: 0 },
+				u_spacings: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0)) },
 				u_guideColor: { value: new THREE.Vector3(1.0, 0.0, 0.55) }, // magenta/pink
 			},
 			transparent: true,
@@ -331,7 +340,7 @@ export class SelectionRenderer {
 		selected: SelectionBounds[],
 		hovered: SelectionBounds | null,
 		guides: SnapGuide[] = [],
-		distances: DistanceIndicator[] = [],
+		spacings: EqualSpacingIndicator[] = [],
 	) {
 		const u = this.material.uniforms;
 		u.u_camera.value.set(cameraX, cameraY);
@@ -391,13 +400,16 @@ export class SelectionRenderer {
 			u.u_guides.value[i].set(g.axis === 'x' ? 0 : 1, g.position, 0, 0);
 		}
 
-		// Upload distance indicators
-		const dCount = Math.min(distances.length, 16);
-		u.u_distCount.value = dCount;
-		for (let i = 0; i < dCount; i++) {
-			const d = distances[i];
-			u.u_dists.value[i].set(d.axis === 'x' ? 0 : 1, d.from, d.to, d.perpPosition);
+		// Upload equal spacing segments
+		let sIdx = 0;
+		for (const sp of spacings) {
+			for (const seg of sp.segments) {
+				if (sIdx >= 8) break;
+				u.u_spacings.value[sIdx].set(sp.axis === 'x' ? 0 : 1, seg.from, seg.to, sp.perpPosition);
+				sIdx++;
+			}
 		}
+		u.u_spacingCount.value = sIdx;
 
 		// Render without clearing (composites on top of grid)
 		const prevAutoClear = renderer.autoClear;

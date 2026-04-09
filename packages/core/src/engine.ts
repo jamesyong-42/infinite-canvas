@@ -36,7 +36,7 @@ import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
 import type { Command } from './commands.js';
 import { Profiler } from './profiler.js';
 import { computeSnapGuides } from './snap.js';
-import type { SnapResult, SnapGuide, DistanceIndicator } from './snap.js';
+import type { SnapResult, SnapGuide, EqualSpacingIndicator } from './snap.js';
 import { clamp, pointInAABB, screenToWorld, worldBoundsToAABB } from './math.js';
 import {
 	transformPropagateSystem,
@@ -182,7 +182,7 @@ export interface CanvasEngine {
 
 	// Snap guides
 	getSnapGuides(): SnapGuide[];
-	getDistanceIndicators(): DistanceIndicator[];
+	getEqualSpacing(): EqualSpacingIndicator[];
 	setSnapEnabled(on: boolean): void;
 	setSnapThreshold(worldPx: number): void;
 
@@ -232,7 +232,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 	let hoveredEntity: EntityId | null = null;
 	let snapEnabled = true;
 	let snapThreshold = 5; // world units
-	let currentSnap: SnapResult = { snapDx: 0, snapDy: 0, guides: [], distances: [] };
+	let currentSnap: SnapResult = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
 	let dirty = false;
 	let cameraChangedThisTick = false;
 	let selectionChangedThisTick = false; // Fix #2: proper selection tracking
@@ -638,7 +638,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 						currentSnap = computeSnapGuides(draggedBounds, refs, snapThreshold / camera.zoom);
 					}
 				} else {
-					currentSnap = { snapDx: 0, snapDy: 0, guides: [], distances: [] };
+					currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
 				}
 
 				// Apply snap-corrected positions
@@ -723,7 +723,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 					}
 				}
 				commandBuffer.endGroup();
-				currentSnap = { snapDx: 0, snapDy: 0, guides: [], distances: [] };
+				currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
 			}
 
 			if (prevState.mode === 'resizing') {
@@ -769,8 +769,8 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			return currentSnap.guides;
 		},
 
-		getDistanceIndicators(): DistanceIndicator[] {
-			return currentSnap.distances;
+		getEqualSpacing(): EqualSpacingIndicator[] {
+			return currentSnap.spacings;
 		},
 
 		setSnapEnabled(on: boolean) {

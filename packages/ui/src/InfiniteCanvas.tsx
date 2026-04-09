@@ -452,7 +452,7 @@ export function InfiniteCanvas({ engine, grid, selection, className, style, chil
 						camera.x, camera.y, camera.zoom,
 						selBounds, hovBounds,
 						engine.getSnapGuides(),
-						engine.getDistanceIndicators(),
+						engine.getEqualSpacing(),
 					);
 				}
 

@@ -76,7 +76,7 @@ export type { CanvasDocument, SerializedEntity } from './serialization.js';
 
 // Snap guides
 export { computeSnapGuides } from './snap.js';
-export type { SnapGuide, DistanceIndicator, SnapResult, EntityBounds } from './snap.js';
+export type { SnapGuide, EqualSpacingIndicator, SnapResult, EntityBounds } from './snap.js';
 
 // Profiling
 export { Profiler } from './profiler.js';
