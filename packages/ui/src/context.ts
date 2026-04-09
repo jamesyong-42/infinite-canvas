@@ -31,10 +31,17 @@ export function useEngine(): CanvasEngine {
 // Provided by @infinite-canvas/react-widgets (or custom user code).
 // The ui package defines the context; the widgets package fills it.
 
+export type WidgetSurface = 'dom' | 'webgl';
+
+export interface ResolvedWidget {
+	component: React.ComponentType<{ entityId: EntityId }>;
+	surface: WidgetSurface;
+}
+
 export type WidgetResolver = (
 	entityId: EntityId,
 	widgetType: string,
-) => React.ComponentType<{ entityId: EntityId }> | null;
+) => ResolvedWidget | null;
 
 const WidgetResolverContext = createContext<WidgetResolver | null>(null);
 

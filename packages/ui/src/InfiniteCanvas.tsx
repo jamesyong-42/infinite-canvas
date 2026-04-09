@@ -2,13 +2,15 @@ import {
 	useCallback,
 	useEffect,
 	useLayoutEffect,
+	useMemo,
 	useRef,
 	useState,
 } from 'react';
 import type { CanvasEngine, EntityId } from '@infinite-canvas/core';
-import { WorldBounds } from '@infinite-canvas/core';
-import { EngineProvider, ContainerRefProvider } from './context.js';
+import { Widget, WorldBounds } from '@infinite-canvas/core';
+import { EngineProvider, ContainerRefProvider, useWidgetResolver } from './context.js';
 import { WidgetSlot } from './WidgetSlot.js';
+import { WebGLWidgetLayer } from './webgl/WebGLWidgetLayer.js';
 import { GridRenderer } from './webgl/GridRenderer.js';
 import type { GridConfig } from './webgl/GridRenderer.js';
 
@@ -484,6 +486,21 @@ export function InfiniteCanvas({ engine, grid, className, style, children }: Inf
 		}
 	}, [visibleEntities, engine]);
 
+	// Split visible entities by surface
+	const { domEntities, webglEntities } = useMemo(() => {
+		const dom: EntityId[] = [];
+		const webgl: EntityId[] = [];
+		for (const id of visibleEntities) {
+			const w = engine.get(id, Widget);
+			if (w?.surface === 'webgl') {
+				webgl.push(id);
+			} else {
+				dom.push(id);
+			}
+		}
+		return { domEntities: dom, webglEntities: webgl };
+	}, [visibleEntities, engine]);
+
 	return (
 		<EngineProvider value={engine}>
 			<ContainerRefProvider value={containerRef}>
@@ -502,6 +519,11 @@ export function InfiniteCanvas({ engine, grid, className, style, children }: Inf
 						className="absolute inset-0 pointer-events-none"
 					/>
 
+					{/* R3F layer — WebGL widgets (lazy, only when webgl entities exist) */}
+					{webglEntities.length > 0 && (
+						<WebGLWidgetBridge engine={engine} entities={webglEntities} />
+					)}
+
 					{/* Background — handles empty-space pointer events (deselect, marquee) */}
 					<div
 						className="absolute inset-0"
@@ -510,12 +532,12 @@ export function InfiniteCanvas({ engine, grid, className, style, children }: Inf
 						onPointerUp={onBackgroundPointerUp}
 					/>
 
-					{/* Camera transform layer — world-space positioning */}
+					{/* Camera transform layer — DOM widgets */}
 					<div
 						ref={cameraLayerRef}
 						className="absolute left-0 top-0 origin-top-left will-change-transform"
 					>
-						{visibleEntities.map((entityId) => (
+						{domEntities.map((entityId) => (
 							<WidgetSlot
 								key={entityId}
 								entityId={entityId}
@@ -524,10 +546,27 @@ export function InfiniteCanvas({ engine, grid, className, style, children }: Inf
 						))}
 					</div>
 
-					{/* Children: widget providers, R3F layer, toolbars, etc. */}
+					{/* Children: widget providers, toolbars, etc. */}
 					{children}
 				</div>
 			</ContainerRefProvider>
 		</EngineProvider>
 	);
+}
+
+/** Bridge component — reads widget resolver from context and passes to WebGLWidgetLayer */
+function WebGLWidgetBridge({ engine, entities }: { engine: CanvasEngine; entities: EntityId[] }) {
+	const resolver = useWidgetResolver();
+	const resolve = useCallback(
+		(entityId: EntityId) => {
+			if (!resolver) return null;
+			const w = engine.get(entityId, Widget);
+			return resolver(entityId, w?.type ?? '');
+		},
+		[resolver, engine],
+	);
+
+	if (!resolver) return null;
+
+	return <WebGLWidgetLayer engine={engine} entities={entities} resolve={resolve} />;
 }

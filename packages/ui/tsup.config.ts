@@ -6,5 +6,5 @@ export default defineConfig({
 	dts: true,
 	sourcemap: true,
 	clean: true,
-	external: ['react', 'react-dom', '@infinite-canvas/core'],
+	external: ['react', 'react-dom', '@infinite-canvas/core', 'three', '@react-three/fiber'],
 });

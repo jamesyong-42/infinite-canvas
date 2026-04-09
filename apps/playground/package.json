@@ -8,10 +8,12 @@
   },
   "dependencies": {
     "@infinite-canvas/core": "workspace:*",
-    "@infinite-canvas/ui": "workspace:*",
     "@infinite-canvas/react-widgets": "workspace:*",
+    "@infinite-canvas/ui": "workspace:*",
+    "@react-three/fiber": "^9.5.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",

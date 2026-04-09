@@ -23,7 +23,8 @@ export const WidgetSlot = memo(function WidgetSlot({ entityId, slotRef }: Widget
 	const widgetComp = useComponent(entityId, Widget);
 	const isSelected = useTag(entityId, Selected);
 
-	const WidgetComponent = resolve?.(entityId, widgetComp?.type ?? '');
+	const resolved = resolve?.(entityId, widgetComp?.type ?? '');
+	const WidgetComponent = resolved?.component ?? null;
 
 	// Register wrapper ref with the batch updater
 	useEffect(() => {

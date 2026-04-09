@@ -1,7 +1,11 @@
 import type { EntityId } from '@infinite-canvas/core';
 
+export type WidgetSurface = 'dom' | 'webgl';
+
 export interface WidgetDef {
 	type: string;
+	/** Rendering surface — 'dom' (default) or 'webgl' (R3F). */
+	surface?: WidgetSurface;
 	component: React.ComponentType<{ entityId: EntityId }>;
 	defaultSize?: { width: number; height: number };
 	minSize?: { width: number; height: number };

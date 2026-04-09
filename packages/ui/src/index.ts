@@ -8,7 +8,7 @@ export {
 	WidgetResolverProvider,
 	useWidgetResolver,
 } from './context.js';
-export type { WidgetResolver } from './context.js';
+export type { WidgetResolver, ResolvedWidget, WidgetSurface } from './context.js';
 
 // Generic ECS hooks (the primitives — widget packages build on these)
 export {
@@ -26,3 +26,5 @@ export { SelectionFrame } from './SelectionFrame.js';
 // WebGL
 export { GridRenderer, DEFAULT_GRID_CONFIG } from './webgl/GridRenderer.js';
 export type { GridConfig } from './webgl/GridRenderer.js';
+export { WebGLWidgetLayer } from './webgl/WebGLWidgetLayer.js';
+export { WebGLWidgetSlot } from './webgl/WebGLWidgetSlot.js';

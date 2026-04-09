@@ -19,6 +19,7 @@ import { WidgetProvider, createWidgetRegistry } from '@infinite-canvas/react-wid
 import { DebugCard } from './widgets/DebugCard.js';
 import { DebugInteractive } from './widgets/DebugInteractive.js';
 import { DebugContainer } from './widgets/DebugContainer.js';
+import { Debug3D } from './widgets/Debug3D.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
 import { InspectorPanel } from './panels/InspectorPanel.js';
 
@@ -31,6 +32,7 @@ function createDemoScene() {
 		{ type: 'debug-card', component: DebugCard, defaultSize: { width: 250, height: 180 } },
 		{ type: 'debug-interactive', component: DebugInteractive, defaultSize: { width: 280, height: 200 } },
 		{ type: 'debug-container', component: DebugContainer, defaultSize: { width: 400, height: 300 } },
+		{ type: 'debug-3d', surface: 'webgl', component: Debug3D as any, defaultSize: { width: 250, height: 250 } },
 	]);
 
 	// Helper to create a widget entity
@@ -42,10 +44,11 @@ function createDemoScene() {
 		height: number,
 		data: Record<string, any>,
 		zIndex = 0,
+		surface: 'dom' | 'webgl' = 'dom',
 	): EntityId {
 		return engine.createEntity([
 			[Transform2D, { x, y, width, height, rotation: 0 }],
-			[Widget, { surface: 'dom', type }],
+			[Widget, { surface, type }],
 			[WidgetData, { data }],
 			[ZIndex, { value: zIndex }],
 			[Selectable],
@@ -132,6 +135,17 @@ function createDemoScene() {
 		color: '#84cc16',
 		description: 'I live in negative coordinates.',
 	}, 8);
+
+	// WebGL 3D widgets
+	addWidget('debug-3d', 700, 530, 250, 250, {
+		title: '3D Cube',
+		color: '#ec4899',
+	}, 9, 'webgl');
+
+	addWidget('debug-3d', 1000, 530, 200, 200, {
+		title: '3D Blue',
+		color: '#3b82f6',
+	}, 10, 'webgl');
 
 	return { engine, registry };
 }

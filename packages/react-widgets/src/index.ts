@@ -1,6 +1,6 @@
 // Widget registry
 export { createWidgetRegistry } from './registry.js';
-export type { WidgetDef, WidgetRegistry } from './registry.js';
+export type { WidgetDef, WidgetSurface, WidgetRegistry } from './registry.js';
 
 // Provider (connects registry to InfiniteCanvas)
 export { WidgetProvider } from './WidgetProvider.js';

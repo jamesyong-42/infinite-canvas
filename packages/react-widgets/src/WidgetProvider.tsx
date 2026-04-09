@@ -16,7 +16,8 @@ export function WidgetProvider({ registry, children }: WidgetProviderProps) {
 	const resolver = useCallback(
 		(_entityId: number, widgetType: string) => {
 			const def = registry.get(widgetType);
-			return def?.component ?? null;
+			if (!def) return null;
+			return { component: def.component, surface: def.surface ?? 'dom' as const };
 		},
 		[registry],
 	);
