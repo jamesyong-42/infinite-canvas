@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { WidgetResolverProvider } from '@infinite-canvas/react';
 import type { WidgetRegistry } from './registry.js';
@@ -9,14 +10,16 @@ interface WidgetProviderProps {
 
 /**
  * Connects a WidgetRegistry to the InfiniteCanvas.
- * The WidgetSlots in @infinite-canvas/react will use this registry
- * to resolve widget type strings to React components.
+ * Fix #9: Memoize the resolver so context consumers don't re-render on every parent render.
  */
 export function WidgetProvider({ registry, children }: WidgetProviderProps) {
-	const resolver = (_entityId: number, widgetType: string) => {
-		const def = registry.get(widgetType);
-		return def?.component ?? null;
-	};
+	const resolver = useCallback(
+		(_entityId: number, widgetType: string) => {
+			const def = registry.get(widgetType);
+			return def?.component ?? null;
+		},
+		[registry],
+	);
 
 	return (
 		<WidgetResolverProvider value={resolver}>

@@ -21,7 +21,8 @@ export class SpatialIndex {
 	upsert(entityId: EntityId, bounds: AABB) {
 		const existing = this.entries.get(entityId);
 		if (existing) {
-			this.tree.remove(existing, (a: SpatialEntry, b: SpatialEntry) => a.entityId === b.entityId);
+			// Fix #8: Pass known reference directly — O(log n) instead of O(n) comparator scan
+			this.tree.remove(existing);
 		}
 		const entry: SpatialEntry = { ...bounds, entityId };
 		this.entries.set(entityId, entry);
@@ -31,7 +32,7 @@ export class SpatialIndex {
 	remove(entityId: EntityId) {
 		const existing = this.entries.get(entityId);
 		if (existing) {
-			this.tree.remove(existing, (a: SpatialEntry, b: SpatialEntry) => a.entityId === b.entityId);
+			this.tree.remove(existing);
 			this.entries.delete(entityId);
 		}
 	}

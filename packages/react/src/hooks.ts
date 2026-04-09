@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type {
 	ComponentType,
 	TagType,
@@ -16,10 +16,8 @@ export function useComponent<T>(entity: EntityId, type: ComponentType<T>): T | u
 	const [value, setValue] = useState<T | undefined>(() => engine.get(entity, type));
 
 	useEffect(() => {
-		// Read fresh on mount
 		setValue(engine.get(entity, type));
 
-		// Subscribe to changes for this entity+component
 		const unsub = engine.world.onComponentChanged(type, (_id, _prev, next) => {
 			setValue({ ...next });
 		}, entity);
@@ -51,17 +49,22 @@ export function useTag(entity: EntityId, type: TagType): boolean {
 }
 
 /**
- * Subscribe to a resource. Re-renders when the resource changes.
- * Note: resources are mutated in-place, so this uses the frame event to check.
+ * Subscribe to a resource. Re-renders only when the resource actually changes.
+ * Fix #6: Caches previous value and compares before triggering re-render.
  */
 export function useResource<T>(type: ResourceType<T>): T {
 	const engine = useEngine();
 	const [value, setValue] = useState<T>(() => ({ ...engine.world.getResource(type) }));
+	const prevRef = useRef<string>('');
 
 	useEffect(() => {
 		const unsub = engine.onFrame(() => {
 			const current = engine.world.getResource(type);
-			setValue({ ...current });
+			const serialized = JSON.stringify(current);
+			if (serialized !== prevRef.current) {
+				prevRef.current = serialized;
+				setValue({ ...current });
+			}
 		});
 		return unsub;
 	}, [engine, type]);
@@ -71,10 +74,13 @@ export function useResource<T>(type: ResourceType<T>): T {
 
 /**
  * Query entities matching component/tag types.
- * Re-renders when the result set changes (entities enter/exit the query).
+ * Re-renders when the result set changes.
+ * Fix #7: Uses a stable key instead of spreading types into deps array.
  */
 export function useQuery(...types: (ComponentType | TagType)[]): EntityId[] {
 	const engine = useEngine();
+	// Create a stable key from type names for the dependency
+	const typeKey = types.map((t) => t.name).join(',');
 	const [result, setResult] = useState<EntityId[]>(() => engine.world.query(...types));
 
 	useEffect(() => {
@@ -84,11 +90,12 @@ export function useQuery(...types: (ComponentType | TagType)[]): EntityId[] {
 				if (prev.length !== next.length || prev.some((id, i) => id !== next[i])) {
 					return next;
 				}
-				return prev; // referential stability
+				return prev;
 			});
 		});
 		return unsub;
-	}, [engine, ...types]);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [engine, typeKey]);
 
 	return result;
 }

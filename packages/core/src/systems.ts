@@ -9,7 +9,6 @@ import {
 	WidgetBreakpoint,
 	Active,
 	Visible,
-	Container,
 } from './components.js';
 import {
 	CameraResource,
@@ -18,8 +17,8 @@ import {
 	NavigationStackResource,
 } from './resources.js';
 import type { Breakpoint } from './resources.js';
-import type { SpatialIndex } from './spatial.js';
-import { intersectsAABB, screenToWorld } from './math.js';
+import { SpatialIndexResource } from './engine.js';
+import { intersectsAABB } from './math.js';
 
 /**
  * Propagate transforms down the parent-child hierarchy.
@@ -29,7 +28,6 @@ import { intersectsAABB, screenToWorld } from './math.js';
 export const transformPropagateSystem = defineSystem({
 	name: 'transformPropagate',
 	execute: (world: World) => {
-		// Process entities with Transform2D that changed, or whose parent changed
 		const changed = world.queryChanged(Transform2D);
 		const processed = new Set<number>();
 
@@ -37,7 +35,6 @@ export const transformPropagateSystem = defineSystem({
 			propagateEntity(world, entity, processed);
 		}
 
-		// Also propagate for newly added Transform2D
 		for (const entity of world.queryAdded(Transform2D)) {
 			if (!processed.has(entity)) {
 				propagateEntity(world, entity, processed);
@@ -53,7 +50,6 @@ function propagateEntity(world: World, entity: number, processed: Set<number>) {
 	const transform = world.getComponent(entity, Transform2D);
 	if (!transform) return;
 
-	// Compute world position (walk up parent chain)
 	let worldX = transform.x;
 	let worldY = transform.y;
 
@@ -66,7 +62,6 @@ function propagateEntity(world: World, entity: number, processed: Set<number>) {
 		}
 	}
 
-	// Write WorldBounds
 	if (!world.hasComponent(entity, WorldBounds)) {
 		world.addComponent(entity, WorldBounds, {
 			worldX,
@@ -83,7 +78,6 @@ function propagateEntity(world: World, entity: number, processed: Set<number>) {
 		});
 	}
 
-	// Propagate to children
 	const children = world.getComponent(entity, Children);
 	if (children) {
 		for (const childId of children.ids) {
@@ -94,12 +88,14 @@ function propagateEntity(world: World, entity: number, processed: Set<number>) {
 
 /**
  * Update the spatial index for entities whose WorldBounds changed.
+ * Fix #11: Uses SpatialIndexResource instead of __spatialIndex escape hatch.
  */
 export const spatialIndexSystem = defineSystem({
 	name: 'spatialIndex',
 	after: 'transformPropagate',
 	execute: (world: World) => {
-		const spatialIndex = (world as any).__spatialIndex as SpatialIndex | undefined;
+		const res = world.getResource(SpatialIndexResource);
+		const spatialIndex = res.instance;
 		if (!spatialIndex) return;
 
 		for (const entity of world.queryChanged(WorldBounds)) {
@@ -114,7 +110,6 @@ export const spatialIndexSystem = defineSystem({
 			}
 		}
 
-		// Also handle newly added
 		for (const entity of world.queryAdded(WorldBounds)) {
 			const wb = world.getComponent(entity, WorldBounds);
 			if (wb) {
@@ -142,20 +137,17 @@ export const navigationFilterSystem = defineSystem({
 
 		const currentFrame = navStack.frames[navStack.frames.length - 1];
 
-		// Clear all Active tags
 		for (const entity of world.queryTagged(Active)) {
 			world.removeTag(entity, Active);
 		}
 
 		if (currentFrame.containerId === null) {
-			// Root level: activate entities with Transform2D but no Parent
 			for (const entity of world.query(Transform2D)) {
 				if (!world.hasComponent(entity, Parent)) {
 					world.addTag(entity, Active);
 				}
 			}
 		} else {
-			// Inside a container: activate only its direct children
 			const children = world.getComponent(currentFrame.containerId, Children);
 			if (children) {
 				for (const childId of children.ids) {
@@ -179,9 +171,9 @@ export const cullSystem = defineSystem({
 		const viewport = world.getResource(ViewportResource);
 		if (viewport.width === 0 || viewport.height === 0) return;
 
-		const spatialIndex = (world as any).__spatialIndex as SpatialIndex | undefined;
+		const res = world.getResource(SpatialIndexResource);
+		const spatialIndex = res.instance;
 
-		// Viewport in world space (with overscan)
 		const overscan = 200 / camera.zoom;
 		const vpWorldAABB = {
 			minX: camera.x - overscan,
@@ -190,13 +182,11 @@ export const cullSystem = defineSystem({
 			maxY: camera.y + viewport.height / camera.zoom + overscan,
 		};
 
-		// Clear all Visible tags
 		for (const entity of world.queryTagged(Visible)) {
 			world.removeTag(entity, Visible);
 		}
 
 		if (spatialIndex && spatialIndex.size > 0) {
-			// Use spatial index for efficient culling
 			const candidates = spatialIndex.search(vpWorldAABB);
 			for (const entry of candidates) {
 				if (world.hasTag(entry.entityId, Active)) {
@@ -204,7 +194,6 @@ export const cullSystem = defineSystem({
 				}
 			}
 		} else {
-			// Fallback: brute force for entities without spatial index
 			for (const entity of world.queryTagged(Active)) {
 				const wb = world.getComponent(entity, WorldBounds);
 				if (wb) {
@@ -225,6 +214,7 @@ export const cullSystem = defineSystem({
 
 /**
  * Compute breakpoints for visible widgets based on screen size.
+ * Fix #10: Always update screenWidth/screenHeight even if breakpoint tier doesn't change.
  */
 export const breakpointSystem = defineSystem({
 	name: 'breakpoint',
@@ -254,27 +244,32 @@ export const breakpointSystem = defineSystem({
 					screenWidth,
 					screenHeight,
 				});
-			} else if (existing.current !== bp) {
-				world.setComponent(entity, WidgetBreakpoint, {
-					current: bp,
-					screenWidth,
-					screenHeight,
-				});
+			} else {
+				// Fix #10: Update if breakpoint tier changed OR screen dimensions changed significantly
+				const bpChanged = existing.current !== bp;
+				const sizeChanged =
+					Math.abs(existing.screenWidth - screenWidth) > 1 ||
+					Math.abs(existing.screenHeight - screenHeight) > 1;
+
+				if (bpChanged || sizeChanged) {
+					world.setComponent(entity, WidgetBreakpoint, {
+						current: bp,
+						screenWidth,
+						screenHeight,
+					});
+				}
 			}
 		}
 	},
 });
 
 /**
- * Sort visible entities by z-index.
- * Stores result in a resource for renderers to read.
+ * Sort visible entities by z-index (handled in engine.tick()).
  */
 export const sortSystem = defineSystem({
 	name: 'sort',
 	after: 'breakpoint',
-	execute: (world: World) => {
-		// The sorted list is computed here and stored for renderers
-		// Renderers access it via engine.getVisibleEntities()
-		// Implementation is in the engine layer that wraps the world
+	execute: (_world: World) => {
+		// Sorting is done in engine.tick() after systems run
 	},
 });

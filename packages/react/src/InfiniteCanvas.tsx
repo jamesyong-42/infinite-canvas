@@ -6,8 +6,8 @@ import {
 	useState,
 } from 'react';
 import type { CanvasEngine, EntityId } from '@infinite-canvas/core';
-import { Transform2D } from '@infinite-canvas/core';
-import { EngineProvider } from './context.js';
+import { WorldBounds } from '@infinite-canvas/core';
+import { EngineProvider, ContainerRefProvider } from './context.js';
 import { WidgetSlot } from './WidgetSlot.js';
 
 interface InfiniteCanvasProps {
@@ -140,15 +140,15 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 					containerRef.current.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
 				}
 
-				// 2. Update only slots whose world position changed (O(changed) for drag)
+				// 2. Fix #1: Use WorldBounds (world-space) not Transform2D (local/parent-relative)
 				for (const entityId of changes.positionsChanged) {
 					const el = slotRefs.current.get(entityId);
 					if (!el) continue;
-					const t = engine.get(entityId, Transform2D);
-					if (!t) continue;
-					el.style.transform = `translate(${t.x}px, ${t.y}px)`;
-					el.style.width = `${t.width}px`;
-					el.style.height = `${t.height}px`;
+					const wb = engine.get(entityId, WorldBounds);
+					if (!wb) continue;
+					el.style.transform = `translate(${wb.worldX}px, ${wb.worldY}px)`;
+					el.style.width = `${wb.worldWidth}px`;
+					el.style.height = `${wb.worldHeight}px`;
 				}
 
 				// 3. Update visible entity list if entities entered/exited
@@ -197,50 +197,58 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 		};
 	}, [engine]);
 
-	// Initial position for newly mounted slots
-	useEffect(() => {
+	// Fix #4: useLayoutEffect to set initial positions BEFORE browser paint
+	// Prevents one-frame flash at (0,0) when new widgets enter the viewport
+	useLayoutEffect(() => {
 		for (const entityId of visibleEntities) {
 			const el = slotRefs.current.get(entityId);
 			if (!el) continue;
-			const t = engine.get(entityId, Transform2D);
-			if (!t) continue;
-			el.style.transform = `translate(${t.x}px, ${t.y}px)`;
-			el.style.width = `${t.width}px`;
-			el.style.height = `${t.height}px`;
+			const wb = engine.get(entityId, WorldBounds);
+			if (!wb) continue;
+			el.style.transform = `translate(${wb.worldX}px, ${wb.worldY}px)`;
+			el.style.width = `${wb.worldWidth}px`;
+			el.style.height = `${wb.worldHeight}px`;
 		}
 	}, [visibleEntities, engine]);
 
 	return (
 		<EngineProvider value={engine}>
-			<div
-				ref={containerRef}
-				className={`relative overflow-hidden ${className ?? ''}`}
-				style={{
-					...style,
-					touchAction: 'none',
-					backgroundColor: '#fafafa',
-				}}
-				onPointerDown={onBackgroundPointerDown}
-				onPointerMove={onBackgroundPointerMove}
-				onPointerUp={onBackgroundPointerUp}
-			>
-				{/* Camera transform layer — world-space positioning */}
+			<ContainerRefProvider value={containerRef}>
 				<div
-					ref={cameraLayerRef}
-					className="absolute left-0 top-0 origin-top-left will-change-transform"
+					ref={containerRef}
+					className={`relative overflow-hidden ${className ?? ''}`}
+					style={{
+						...style,
+						touchAction: 'none',
+						backgroundColor: '#fafafa',
+					}}
 				>
-					{visibleEntities.map((entityId) => (
-						<WidgetSlot
-							key={entityId}
-							entityId={entityId}
-							slotRef={registerSlotRef}
-						/>
-					))}
-				</div>
+					{/* Background — handles empty-space pointer events (deselect, marquee) */}
+					<div
+						className="absolute inset-0"
+						onPointerDown={onBackgroundPointerDown}
+						onPointerMove={onBackgroundPointerMove}
+						onPointerUp={onBackgroundPointerUp}
+					/>
 
-				{/* Children: widget providers, R3F layer, toolbars, etc. */}
-				{children}
-			</div>
+					{/* Camera transform layer — world-space positioning */}
+					<div
+						ref={cameraLayerRef}
+						className="absolute left-0 top-0 origin-top-left will-change-transform"
+					>
+						{visibleEntities.map((entityId) => (
+							<WidgetSlot
+								key={entityId}
+								entityId={entityId}
+								slotRef={registerSlotRef}
+							/>
+						))}
+					</div>
+
+					{/* Children: widget providers, R3F layer, toolbars, etc. */}
+					{children}
+				</div>
+			</ContainerRefProvider>
 		</EngineProvider>
 	);
 }

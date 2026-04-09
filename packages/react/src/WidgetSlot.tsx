@@ -1,13 +1,12 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
 import type { EntityId, Modifiers } from '@infinite-canvas/core';
-import { Widget, Selected } from '@infinite-canvas/core';
-import { useEngine, useWidgetResolver } from './context.js';
+import { Widget, Selected, WorldBounds } from '@infinite-canvas/core';
+import { useEngine, useWidgetResolver, useContainerRef } from './context.js';
 import { useComponent, useTag } from './hooks.js';
 import { SelectionFrame } from './SelectionFrame.js';
 
 interface WidgetSlotProps {
 	entityId: EntityId;
-	/** Called by the batch updater to set the ref for imperative positioning */
 	slotRef: (entityId: EntityId, el: HTMLDivElement | null) => void;
 }
 
@@ -18,6 +17,7 @@ function getMods(e: React.PointerEvent): Modifiers {
 export const WidgetSlot = memo(function WidgetSlot({ entityId, slotRef }: WidgetSlotProps) {
 	const wrapperRef = useRef<HTMLDivElement>(null);
 	const engine = useEngine();
+	const containerRefObj = useContainerRef();
 	const resolve = useWidgetResolver();
 
 	const widgetComp = useComponent(entityId, Widget);
@@ -31,70 +31,103 @@ export const WidgetSlot = memo(function WidgetSlot({ entityId, slotRef }: Widget
 		return () => slotRef(entityId, null);
 	}, [entityId, slotRef]);
 
-	// Pointer routing — ask engine what to do
+	// Convert clientX/Y to container-relative coords
+	const toLocal = useCallback(
+		(e: React.PointerEvent): { x: number; y: number } => {
+			const rect = containerRefObj?.current?.getBoundingClientRect();
+			if (!rect) return { x: e.clientX, y: e.clientY };
+			return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+		},
+		[containerRefObj],
+	);
+
+	// Fix #3: Capture pointer immediately on pointerdown for any widget interaction.
+	// This ensures we always get pointerup even if the cursor leaves the window.
 	const onPointerDown = useCallback(
 		(e: React.PointerEvent) => {
-			const directive = engine.handlePointerDown(e.clientX, e.clientY, e.button, getMods(e));
-			if (directive.action === 'capture-resize' || directive.action === 'capture-marquee') {
-				e.stopPropagation();
-				e.preventDefault();
+			const { x, y } = toLocal(e);
+			const directive = engine.handlePointerDown(x, y, e.button, getMods(e));
+
+			// Always stop propagation — prevent background handler from double-processing
+			e.stopPropagation();
+
+			if (directive.action === 'capture-resize' || directive.action === 'passthrough-track-drag') {
+				// Capture pointer for both resize AND tracking (so we get pointerup reliably)
 				wrapperRef.current?.setPointerCapture(e.pointerId);
 			}
-			// passthrough-track-drag: widget gets the click, engine watches for drag
+			if (directive.action === 'capture-resize') {
+				e.preventDefault();
+			}
 		},
-		[engine],
+		[engine, toLocal],
 	);
+
+	const capturedRef = useRef(false);
 
 	const onPointerMove = useCallback(
 		(e: React.PointerEvent) => {
-			const directive = engine.handlePointerMove(e.clientX, e.clientY, getMods(e));
-			if (directive.action === 'capture-drag') {
-				wrapperRef.current?.setPointerCapture(e.pointerId);
+			const { x, y } = toLocal(e);
+			const directive = engine.handlePointerMove(x, y, getMods(e));
+
+			// Fix #3: Only call setPointerCapture once when drag starts (not every move)
+			if (directive.action === 'capture-drag' && !capturedRef.current) {
+				capturedRef.current = true;
 				e.stopPropagation();
 			}
 		},
-		[engine],
+		[engine, toLocal],
 	);
 
 	const onPointerUp = useCallback(
-		(_e: React.PointerEvent) => {
+		(e: React.PointerEvent) => {
+			e.stopPropagation();
+			capturedRef.current = false;
+			// Release pointer capture (browser does this automatically, but be explicit)
+			if (wrapperRef.current?.hasPointerCapture(e.pointerId)) {
+				wrapperRef.current.releasePointerCapture(e.pointerId);
+			}
 			engine.handlePointerUp();
 		},
 		[engine],
 	);
 
-	// Double-click to enter container
-	const onDoubleClick = useCallback(() => {
-		engine.enterContainer(entityId);
-	}, [engine, entityId]);
+	const onDoubleClick = useCallback(
+		(e: React.MouseEvent) => {
+			e.stopPropagation();
+			engine.enterContainer(entityId);
+		},
+		[engine, entityId],
+	);
 
-	if (!WidgetComponent) {
-		// No resolver or unknown widget type — render a placeholder
-		return (
-			<div
-				ref={wrapperRef}
-				className="absolute left-0 top-0 origin-top-left will-change-transform"
-				onPointerDown={onPointerDown}
-				onPointerMove={onPointerMove}
-				onPointerUp={onPointerUp}
-				onDoubleClick={onDoubleClick}
-			>
-				<div className="h-full w-full rounded border border-dashed border-gray-300 bg-gray-50" />
-				{isSelected && <SelectionFrame entityId={entityId} />}
-			</div>
-		);
-	}
+	// Read WorldBounds at render time for initial inline position.
+	// This ensures the div has the correct position on its very first paint —
+	// no flash at (0,0). Subsequent updates come from the batch updater (rAF).
+	const wb = engine.get(entityId, WorldBounds);
+	const initialStyle: React.CSSProperties = wb
+		? {
+				transform: `translate(${wb.worldX}px, ${wb.worldY}px)`,
+				width: `${wb.worldWidth}px`,
+				height: `${wb.worldHeight}px`,
+			}
+		: {};
+
+	const content = WidgetComponent ? (
+		<WidgetComponent entityId={entityId} />
+	) : (
+		<div className="h-full w-full rounded border border-dashed border-gray-300 bg-gray-50" />
+	);
 
 	return (
 		<div
 			ref={wrapperRef}
 			className="absolute left-0 top-0 origin-top-left will-change-transform"
+			style={initialStyle}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			onDoubleClick={onDoubleClick}
 		>
-			<WidgetComponent entityId={entityId} />
+			{content}
 			{isSelected && <SelectionFrame entityId={entityId} />}
 		</div>
 	);

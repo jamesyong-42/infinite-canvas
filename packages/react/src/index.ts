@@ -4,6 +4,7 @@ export { InfiniteCanvas } from './InfiniteCanvas.js';
 // Context (for widget packages to provide resolvers)
 export {
 	useEngine,
+	useContainerRef,
 	WidgetResolverProvider,
 	useWidgetResolver,
 } from './context.js';

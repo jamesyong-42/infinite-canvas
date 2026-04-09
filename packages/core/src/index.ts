@@ -21,7 +21,7 @@ export type {
 } from './ecs/index.js';
 
 // Engine
-export { createCanvasEngine } from './engine.js';
+export { createCanvasEngine, SpatialIndexResource } from './engine.js';
 export type {
 	CanvasEngine,
 	CanvasEngineConfig,

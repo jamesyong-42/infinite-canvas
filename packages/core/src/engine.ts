@@ -7,7 +7,7 @@ import type {
 	Unsubscribe,
 	World,
 } from './ecs/index.js';
-import { createWorld, SystemScheduler } from './ecs/index.js';
+import { createWorld, SystemScheduler, defineResource } from './ecs/index.js';
 import {
 	Transform2D,
 	WorldBounds,
@@ -42,6 +42,11 @@ import {
 	sortSystem,
 } from './systems.js';
 
+// === Fix #11: SpatialIndex as a proper resource ===
+export const SpatialIndexResource = defineResource('SpatialIndex', {
+	instance: null as SpatialIndex | null,
+});
+
 // === Pointer Directives ===
 
 export type PointerDirective =
@@ -65,7 +70,7 @@ export interface Modifiers {
 type InputState =
 	| { mode: 'idle' }
 	| { mode: 'tracking'; entityId: EntityId; startX: number; startY: number }
-	| { mode: 'dragging'; entityId: EntityId; lastX: number; lastY: number }
+	| { mode: 'dragging'; entityId: EntityId; lastX: number; lastY: number; originalZIndices: Map<EntityId, number> }
 	| { mode: 'resizing'; entityId: EntityId; handle: ResizeHandlePos; startX: number; startY: number; startBounds: { x: number; y: number; w: number; h: number } }
 	| { mode: 'marquee'; startX: number; startY: number };
 
@@ -157,6 +162,9 @@ export interface CanvasEngine {
 	getVisibleEntities(): VisibleEntity[];
 	getFrameChanges(): FrameChanges;
 
+	// Spatial index (exposed for systems)
+	getSpatialIndex(): SpatialIndex;
+
 	// Events
 	onFrame(handler: () => void): Unsubscribe;
 
@@ -168,7 +176,9 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 	const world = createWorld();
 	const scheduler = new SystemScheduler();
 	const spatialIndex = new SpatialIndex();
-	(world as any).__spatialIndex = spatialIndex;
+
+	// Fix #11: Store spatial index as a proper resource
+	world.setResource(SpatialIndexResource, { instance: spatialIndex });
 
 	// Apply config
 	if (config?.zoom) {
@@ -193,6 +203,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 	let inputState: InputState = { mode: 'idle' };
 	let dirty = false;
 	let cameraChangedThisTick = false;
+	let selectionChangedThisTick = false; // Fix #2: proper selection tracking
 	let prevVisible = new Set<EntityId>();
 	let currentVisible: VisibleEntity[] = [];
 	let frameChanges: FrameChanges = {
@@ -280,6 +291,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 		return null;
 	}
 
+	// Fix #2: track selection changes explicitly
 	function selectEntity(entity: EntityId, additive: boolean) {
 		if (!world.hasTag(entity, Selectable)) return;
 
@@ -290,17 +302,21 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 				world.addTag(entity, Selected);
 			}
 		} else {
-			// Clear existing selection, then select this one
 			for (const e of world.queryTagged(Selected)) {
 				if (e !== entity) world.removeTag(e, Selected);
 			}
 			world.addTag(entity, Selected);
 		}
+		selectionChangedThisTick = true;
 	}
 
 	function clearSelection() {
-		for (const e of world.queryTagged(Selected)) {
-			world.removeTag(e, Selected);
+		const selected = world.queryTagged(Selected);
+		if (selected.length > 0) {
+			for (const e of selected) {
+				world.removeTag(e, Selected);
+			}
+			selectionChangedThisTick = true;
 		}
 	}
 
@@ -385,7 +401,6 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			const worldBefore = screenToWorld(screenX, screenY, camera);
 			const newZoom = clamp(camera.zoom * (1 + delta), zoomConfig.min, zoomConfig.max);
 			camera.zoom = newZoom;
-			// Adjust position so the world point stays under the cursor
 			camera.x = worldBefore.x - screenX / newZoom;
 			camera.y = worldBefore.y - screenY / newZoom;
 			cameraChangedThisTick = true;
@@ -396,7 +411,6 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			const camera = world.getResource(CameraResource);
 			const zoomConfig = world.getResource(ZoomConfigResource);
 			const viewport = world.getResource(ViewportResource);
-			// Zoom toward center
 			const centerWorldX = camera.x + viewport.width / (2 * camera.zoom);
 			const centerWorldY = camera.y + viewport.height / (2 * camera.zoom);
 			camera.zoom = clamp(zoom, zoomConfig.min, zoomConfig.max);
@@ -491,11 +505,25 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 				const dx = screenX - inputState.startX;
 				const dy = screenY - inputState.startY;
 				if (Math.abs(dx) > DEAD_ZONE_PX || Math.abs(dy) > DEAD_ZONE_PX) {
+					// Fix #5: Save original z-indices, temporarily bring to top
+					const originalZIndices = new Map<EntityId, number>();
+					let maxZ = 0;
+					for (const e of world.queryTagged(Active)) {
+						const z = world.getComponent(e, ZIndex);
+						if (z && z.value > maxZ) maxZ = z.value;
+					}
+					for (const e of world.queryTagged(Selected)) {
+						const z = world.getComponent(e, ZIndex);
+						originalZIndices.set(e, z?.value ?? 0);
+						world.setComponent(e, ZIndex, { value: maxZ + 1 });
+					}
+
 					inputState = {
 						mode: 'dragging',
 						entityId: inputState.entityId,
 						lastX: screenX,
 						lastY: screenY,
+						originalZIndices,
 					};
 					markDirtyInternal();
 					return { action: 'capture-drag' };
@@ -551,14 +579,21 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 		},
 
 		handlePointerUp(): PointerDirective {
-			const wasMode = inputState.mode;
+			const prevState = inputState;
 
-			// Double-click container detection: if we were tracking (not dragging) on a container
-			// The renderer handles the double-click timing and calls enterContainer directly.
+			// Fix #5: Restore original z-indices on drag end
+			if (prevState.mode === 'dragging') {
+				for (const [entity, originalZ] of prevState.originalZIndices) {
+					world.setComponent(entity, ZIndex, { value: originalZ });
+				}
+			}
+
+			// Fix #12: TODO — emit a 'widget-clicked' event when prevState.mode === 'tracking'
+			// (i.e., pointerdown + pointerup without exceeding the dead zone = a clean click)
 
 			inputState = { mode: 'idle' };
 
-			if (wasMode === 'dragging' || wasMode === 'resizing') {
+			if (prevState.mode === 'dragging' || prevState.mode === 'resizing') {
 				markDirtyInternal();
 			}
 
@@ -580,11 +615,9 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			const navStack = world.getResource(NavigationStackResource);
 			const camera = world.getResource(CameraResource);
 
-			// Save current camera to top of stack
 			const currentFrame = navStack.frames[navStack.frames.length - 1];
 			currentFrame.camera = { x: camera.x, y: camera.y, zoom: camera.zoom };
 
-			// Push new frame
 			navStack.frames.push({ containerId: entity, camera: { x: camera.x, y: camera.y, zoom: camera.zoom } });
 			navStack.changed = true;
 
@@ -599,7 +632,6 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 			navStack.frames.pop();
 			navStack.changed = true;
 
-			// Restore camera from parent frame
 			const parentFrame = navStack.frames[navStack.frames.length - 1];
 			const camera = world.getResource(CameraResource);
 			camera.x = parentFrame.camera.x;
@@ -668,6 +700,7 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 				if (!newVisibleSet.has(entity)) exited.push(entity);
 			}
 
+			// Fix #2: Use selectionChangedThisTick instead of wrong breakpoint check
 			frameChanges = {
 				positionsChanged: world.queryChanged(WorldBounds),
 				breakpointsChanged: world.queryChanged(WidgetBreakpoint),
@@ -675,12 +708,13 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 				exited,
 				cameraChanged: cameraChangedThisTick,
 				navigationChanged: false,
-				selectionChanged: world.queryChanged(WidgetBreakpoint).length > 0, // simplified
+				selectionChanged: selectionChangedThisTick,
 			};
 
 			currentVisible = newVisible;
 			prevVisible = newVisibleSet;
 			cameraChangedThisTick = false;
+			selectionChangedThisTick = false;
 
 			// Clear dirty sets and increment tick
 			(world as any).__clearDirty();
@@ -704,6 +738,11 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 
 		getFrameChanges(): FrameChanges {
 			return frameChanges;
+		},
+
+		// Fix #11: Expose spatial index properly
+		getSpatialIndex(): SpatialIndex {
+			return spatialIndex;
 		},
 
 		// === Events ===

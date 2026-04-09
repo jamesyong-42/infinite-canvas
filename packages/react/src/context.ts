@@ -8,6 +8,17 @@ const EngineContext = createContext<CanvasEngine | null>(null);
 
 export const EngineProvider = EngineContext.Provider;
 
+// === Container Ref Context ===
+// Shared so WidgetSlot can compute container-relative pointer coordinates.
+
+const ContainerRefContext = createContext<React.RefObject<HTMLDivElement | null> | null>(null);
+
+export const ContainerRefProvider = ContainerRefContext.Provider;
+
+export function useContainerRef(): React.RefObject<HTMLDivElement | null> | null {
+	return useContext(ContainerRefContext);
+}
+
 export function useEngine(): CanvasEngine {
 	const engine = useContext(EngineContext);
 	if (!engine) {
