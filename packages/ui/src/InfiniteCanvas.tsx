@@ -10,15 +10,18 @@ import { WorldBounds } from '@infinite-canvas/core';
 import { EngineProvider, ContainerRefProvider } from './context.js';
 import { WidgetSlot } from './WidgetSlot.js';
 import { GridRenderer } from './webgl/GridRenderer.js';
+import type { GridConfig } from './webgl/GridRenderer.js';
 
 interface InfiniteCanvasProps {
 	engine: CanvasEngine;
+	/** Grid configuration. Pass `false` to disable the grid entirely. */
+	grid?: Partial<GridConfig> | false;
 	className?: string;
 	style?: React.CSSProperties;
 	children?: React.ReactNode;
 }
 
-export function InfiniteCanvas({ engine, className, style, children }: InfiniteCanvasProps) {
+export function InfiniteCanvas({ engine, grid, className, style, children }: InfiniteCanvasProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const webglCanvasRef = useRef<HTMLCanvasElement>(null);
 	const gridRendererRef = useRef<GridRenderer | null>(null);
@@ -41,16 +44,22 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 		const canvas = webglCanvasRef.current;
 		if (!container || !canvas) return;
 
-		const grid = new GridRenderer(canvas);
-		gridRendererRef.current = grid;
+		const gridEnabled = grid !== false;
+		let gridInst: GridRenderer | null = null;
+		if (gridEnabled) {
+			gridInst = new GridRenderer(canvas);
+			gridRendererRef.current = gridInst;
+		}
 
 		const updateSize = () => {
 			const rect = container.getBoundingClientRect();
 			const dpr = window.devicePixelRatio;
 			engine.setViewport(rect.width, rect.height, dpr);
-			canvas.style.width = `${rect.width}px`;
-			canvas.style.height = `${rect.height}px`;
-			grid.setSize(rect.width, rect.height, dpr);
+			if (gridInst) {
+				canvas.style.width = `${rect.width}px`;
+				canvas.style.height = `${rect.height}px`;
+				gridInst.setSize(rect.width, rect.height, dpr);
+			}
 		};
 
 		updateSize();
@@ -58,10 +67,26 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 		observer.observe(container);
 		return () => {
 			observer.disconnect();
-			grid.dispose();
-			gridRendererRef.current = null;
+			if (gridInst) {
+				gridInst.dispose();
+				gridRendererRef.current = null;
+			}
 		};
-	}, [engine]);
+	}, [engine, grid]);
+
+	// Apply grid config (user overrides + dark mode defaults) on every render
+	useEffect(() => {
+		const renderer = gridRendererRef.current;
+		if (!renderer || grid === false) return;
+		const isDark = document.documentElement.classList.contains('dark');
+		renderer.setConfig({
+			// Dark mode defaults, then user overrides on top
+			dotColor: isDark ? [1, 1, 1] : [0, 0, 0],
+			dotAlpha: isDark ? 0.12 : 0.18,
+			...grid,
+		});
+		engine.markDirty();
+	});
 
 	// Wheel handler — pan/zoom (gesture channel, always active)
 	useEffect(() => {
@@ -387,8 +412,7 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 
 				// 1b. Render WebGL dot grid
 				if (gridRendererRef.current) {
-					const isDark = document.documentElement.classList.contains('dark');
-					gridRendererRef.current.render(camera.x, camera.y, camera.zoom, isDark);
+					gridRendererRef.current.render(camera.x, camera.y, camera.zoom);
 				}
 
 				// 2. Fix #1: Use WorldBounds (world-space) not Transform2D (local/parent-relative)
@@ -425,8 +449,7 @@ export function InfiniteCanvas({ engine, className, style, children }: InfiniteC
 		}
 		// Initial WebGL grid render
 		if (gridRendererRef.current) {
-			const isDark = document.documentElement.classList.contains('dark');
-			gridRendererRef.current.render(camera.x, camera.y, camera.zoom, isDark);
+			gridRendererRef.current.render(camera.x, camera.y, camera.zoom);
 		}
 
 		// Set initial slot positions

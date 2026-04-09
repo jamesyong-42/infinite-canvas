@@ -22,3 +22,7 @@ export {
 // Sub-components (for advanced composition)
 export { WidgetSlot } from './WidgetSlot.js';
 export { SelectionFrame } from './SelectionFrame.js';
+
+// WebGL
+export { GridRenderer, DEFAULT_GRID_CONFIG } from './webgl/GridRenderer.js';
+export type { GridConfig } from './webgl/GridRenderer.js';

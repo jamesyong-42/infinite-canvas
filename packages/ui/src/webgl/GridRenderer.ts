@@ -1,5 +1,36 @@
 import * as THREE from 'three';
 
+// === Public config ===
+
+export interface GridConfig {
+	/** World-unit spacings for up to 3 grid levels [fine, medium, coarse]. */
+	spacings: [number, number, number];
+	/** Dot RGB color as [r, g, b] in 0–1 range. */
+	dotColor: [number, number, number];
+	/** Base dot opacity multiplier (0–1). */
+	dotAlpha: number;
+	/** CSS-pixel range where a grid level fades in: [start, end]. */
+	fadeIn: [number, number];
+	/** CSS-pixel range where a grid level fades out: [start, end]. */
+	fadeOut: [number, number];
+	/** Dot radius range in CSS pixels [min, max]. Scaled by DPR internally. */
+	dotRadius: [number, number];
+	/** Per-level opacity weight: level i gets (base + i * step). */
+	levelWeight: [number, number];
+}
+
+export const DEFAULT_GRID_CONFIG: GridConfig = {
+	spacings: [8, 64, 512],
+	dotColor: [0, 0, 0],
+	dotAlpha: 0.18,
+	fadeIn: [4, 12],
+	fadeOut: [250, 500],
+	dotRadius: [0.5, 1.4],
+	levelWeight: [1.0, 0.4],
+};
+
+// === Shader source ===
+
 const vertexShader = /* glsl */ `
 void main() {
 	gl_Position = vec4(position.xy, 0.0, 1.0);
@@ -9,13 +40,17 @@ void main() {
 const fragmentShader = /* glsl */ `
 precision highp float;
 
-uniform vec2 u_resolution;   // device pixels
-uniform vec2 u_camera;       // world-space top-left
-uniform float u_zoom;        // CSS zoom
-uniform float u_dpr;         // device pixel ratio
-uniform vec3 u_spacings;     // world-unit grid spacings [8, 64, 512]
-uniform vec3 u_dotColor;     // dot RGB
-uniform float u_dotAlpha;    // dot base alpha
+uniform vec2 u_resolution;    // device pixels
+uniform vec2 u_camera;        // world-space top-left
+uniform float u_zoom;         // CSS zoom
+uniform float u_dpr;          // device pixel ratio
+uniform vec3 u_spacings;      // world-unit grid spacings
+uniform vec3 u_dotColor;      // dot RGB
+uniform float u_dotAlpha;     // dot base alpha
+uniform vec2 u_fadeIn;        // CSS-px [start, end]
+uniform vec2 u_fadeOut;       // CSS-px [start, end]
+uniform vec2 u_dotRadius;     // CSS-px [min, max]
+uniform vec2 u_levelWeight;   // [base, step]
 
 void main() {
 	vec2 devicePos = gl_FragCoord.xy;
@@ -35,14 +70,14 @@ void main() {
 		// Screen spacing in CSS pixels (DPR-independent for consistent fading)
 		float cssSpacing = spacing * u_zoom;
 
-		// Fade curve: too dense → hidden, sweet spot → full, too sparse → fade out
+		// Fade curve
 		float opacity = 0.0;
-		if (cssSpacing >= 4.0 && cssSpacing < 12.0) {
-			opacity = (cssSpacing - 4.0) / 8.0;
-		} else if (cssSpacing >= 12.0 && cssSpacing < 250.0) {
+		if (cssSpacing >= u_fadeIn.x && cssSpacing < u_fadeIn.y) {
+			opacity = (cssSpacing - u_fadeIn.x) / (u_fadeIn.y - u_fadeIn.x);
+		} else if (cssSpacing >= u_fadeIn.y && cssSpacing < u_fadeOut.x) {
 			opacity = 1.0;
-		} else if (cssSpacing >= 250.0 && cssSpacing < 500.0) {
-			opacity = 1.0 - (cssSpacing - 250.0) / 250.0;
+		} else if (cssSpacing >= u_fadeOut.x && cssSpacing < u_fadeOut.y) {
+			opacity = 1.0 - (cssSpacing - u_fadeOut.x) / (u_fadeOut.y - u_fadeOut.x);
 		}
 		if (opacity <= 0.001) continue;
 
@@ -51,19 +86,22 @@ void main() {
 		float dist = length(f) * spacing * effectiveZoom;
 
 		// Dot radius in device pixels — grows as grid becomes sparser
-		float radius = mix(0.5, 1.4, clamp((cssSpacing - 4.0) / 40.0, 0.0, 1.0)) * u_dpr;
+		float t = clamp((cssSpacing - u_fadeIn.x) / 40.0, 0.0, 1.0);
+		float radius = mix(u_dotRadius.x, u_dotRadius.y, t) * u_dpr;
 
 		// Anti-aliased dot (0.5 device pixel smoothstep)
 		float dot = 1.0 - smoothstep(radius - 0.5, radius + 0.5, dist);
 
-		// Larger grid levels get slightly stronger dots
-		float levelWeight = 1.0 + float(i) * 0.4;
-		totalAlpha += dot * opacity * levelWeight;
+		// Larger grid levels get progressively stronger dots
+		float weight = u_levelWeight.x + float(i) * u_levelWeight.y;
+		totalAlpha += dot * opacity * weight;
 	}
 
 	gl_FragColor = vec4(u_dotColor, clamp(totalAlpha * u_dotAlpha, 0.0, 1.0));
 }
 `;
+
+// === Renderer class ===
 
 export class GridRenderer {
 	private renderer: THREE.WebGLRenderer;
@@ -94,7 +132,11 @@ export class GridRenderer {
 				u_dpr: { value: 1 },
 				u_spacings: { value: new THREE.Vector3(8, 64, 512) },
 				u_dotColor: { value: new THREE.Vector3(0, 0, 0) },
-				u_dotAlpha: { value: 0.2 },
+				u_dotAlpha: { value: 0.18 },
+				u_fadeIn: { value: new THREE.Vector2(4, 12) },
+				u_fadeOut: { value: new THREE.Vector2(250, 500) },
+				u_dotRadius: { value: new THREE.Vector2(0.5, 1.4) },
+				u_levelWeight: { value: new THREE.Vector2(1.0, 0.4) },
 			},
 			transparent: true,
 			depthTest: false,
@@ -110,6 +152,18 @@ export class GridRenderer {
 		this.scene.add(this.mesh);
 	}
 
+	/** Apply a (partial) grid config. Only provided fields are updated. */
+	setConfig(config: Partial<GridConfig>) {
+		const u = this.material.uniforms;
+		if (config.spacings) u.u_spacings.value.set(...config.spacings);
+		if (config.dotColor) u.u_dotColor.value.set(...config.dotColor);
+		if (config.dotAlpha !== undefined) u.u_dotAlpha.value = config.dotAlpha;
+		if (config.fadeIn) u.u_fadeIn.value.set(...config.fadeIn);
+		if (config.fadeOut) u.u_fadeOut.value.set(...config.fadeOut);
+		if (config.dotRadius) u.u_dotRadius.value.set(...config.dotRadius);
+		if (config.levelWeight) u.u_levelWeight.value.set(...config.levelWeight);
+	}
+
 	setSize(width: number, height: number, dpr: number = 1) {
 		this.renderer.setSize(width, height, false);
 		this.renderer.setPixelRatio(dpr);
@@ -118,19 +172,10 @@ export class GridRenderer {
 		u.u_dpr.value = dpr;
 	}
 
-	render(cameraX: number, cameraY: number, zoom: number, isDark: boolean) {
+	render(cameraX: number, cameraY: number, zoom: number) {
 		const u = this.material.uniforms;
 		u.u_camera.value.set(cameraX, cameraY);
 		u.u_zoom.value = zoom;
-
-		if (isDark) {
-			u.u_dotColor.value.set(1, 1, 1);
-			u.u_dotAlpha.value = 0.12;
-		} else {
-			u.u_dotColor.value.set(0, 0, 0);
-			u.u_dotAlpha.value = 0.18;
-		}
-
 		this.renderer.render(this.scene, this.camera);
 	}
 
