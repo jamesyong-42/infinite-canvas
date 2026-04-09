@@ -10,6 +10,7 @@ import type { CanvasEngine, EntityId } from '@infinite-canvas/core';
 import { Widget, WorldBounds } from '@infinite-canvas/core';
 import { EngineProvider, ContainerRefProvider, useWidgetResolver } from './context.js';
 import { WidgetSlot } from './WidgetSlot.js';
+import { SelectionOverlaySlot } from './SelectionOverlaySlot.js';
 import { WebGLWidgetLayer } from './webgl/WebGLWidgetLayer.js';
 import { GridRenderer } from './webgl/GridRenderer.js';
 import type { GridConfig } from './webgl/GridRenderer.js';
@@ -532,13 +533,20 @@ export function InfiniteCanvas({ engine, grid, className, style, children }: Inf
 						onPointerUp={onBackgroundPointerUp}
 					/>
 
-					{/* Camera transform layer — DOM widgets */}
+					{/* Camera transform layer — DOM widgets + selection overlays for WebGL widgets */}
 					<div
 						ref={cameraLayerRef}
 						className="absolute left-0 top-0 origin-top-left will-change-transform"
 					>
 						{domEntities.map((entityId) => (
 							<WidgetSlot
+								key={entityId}
+								entityId={entityId}
+								slotRef={registerSlotRef}
+							/>
+						))}
+						{webglEntities.map((entityId) => (
+							<SelectionOverlaySlot
 								key={entityId}
 								entityId={entityId}
 								slotRef={registerSlotRef}
