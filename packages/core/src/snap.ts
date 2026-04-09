@@ -155,73 +155,70 @@ export function computeSnapGuides(
 		}
 	}
 
-	// Compute distance indicators for snapped axes
+	// Compute distance indicators — only to the nearest neighbor on each side
 	if (guides.length > 0) {
-		const snappedBounds: EntityBounds = {
+		const sb: EntityBounds = {
 			x: dragged.x + snapDx,
 			y: dragged.y + snapDy,
 			width: dragged.width,
 			height: dragged.height,
 		};
 
-		for (const ref of references) {
-			// X-axis distances (horizontal gaps)
-			if (bestSnapY <= threshold) {
-				// Check if vertically overlapping after snap
-				const overlapY = snappedBounds.y < ref.y + ref.height && snappedBounds.y + snappedBounds.height > ref.y;
-				if (overlapY) {
-					const perpY = Math.max(snappedBounds.y, ref.y) +
-						(Math.min(snappedBounds.y + snappedBounds.height, ref.y + ref.height) -
-						Math.max(snappedBounds.y, ref.y)) / 2;
+		let nearestLeft: { gap: number; ind: DistanceIndicator } | null = null;
+		let nearestRight: { gap: number; ind: DistanceIndicator } | null = null;
+		let nearestAbove: { gap: number; ind: DistanceIndicator } | null = null;
+		let nearestBelow: { gap: number; ind: DistanceIndicator } | null = null;
 
-					// Gap to the right of ref, left of dragged
-					if (snappedBounds.x > ref.x + ref.width + 0.1) {
-						distances.push({
-							axis: 'x',
-							from: ref.x + ref.width,
-							to: snappedBounds.x,
-							perpPosition: perpY,
-						});
+		for (const ref of references) {
+			// Horizontal neighbors (need vertical overlap)
+			const overlapY = sb.y < ref.y + ref.height && sb.y + sb.height > ref.y;
+			if (overlapY) {
+				const perpY = Math.max(sb.y, ref.y) +
+					(Math.min(sb.y + sb.height, ref.y + ref.height) - Math.max(sb.y, ref.y)) / 2;
+
+				// Entity to the left
+				if (ref.x + ref.width <= sb.x + 0.1) {
+					const gap = sb.x - (ref.x + ref.width);
+					if (gap > 0.1 && (!nearestLeft || gap < nearestLeft.gap)) {
+						nearestLeft = { gap, ind: { axis: 'x', from: ref.x + ref.width, to: sb.x, perpPosition: perpY } };
 					}
-					// Gap to the left of ref, right of dragged
-					if (ref.x > snappedBounds.x + snappedBounds.width + 0.1) {
-						distances.push({
-							axis: 'x',
-							from: snappedBounds.x + snappedBounds.width,
-							to: ref.x,
-							perpPosition: perpY,
-						});
+				}
+				// Entity to the right
+				if (ref.x >= sb.x + sb.width - 0.1) {
+					const gap = ref.x - (sb.x + sb.width);
+					if (gap > 0.1 && (!nearestRight || gap < nearestRight.gap)) {
+						nearestRight = { gap, ind: { axis: 'x', from: sb.x + sb.width, to: ref.x, perpPosition: perpY } };
 					}
 				}
 			}
 
-			// Y-axis distances (vertical gaps)
-			if (bestSnapX <= threshold) {
-				const overlapX = snappedBounds.x < ref.x + ref.width && snappedBounds.x + snappedBounds.width > ref.x;
-				if (overlapX) {
-					const perpX = Math.max(snappedBounds.x, ref.x) +
-						(Math.min(snappedBounds.x + snappedBounds.width, ref.x + ref.width) -
-						Math.max(snappedBounds.x, ref.x)) / 2;
+			// Vertical neighbors (need horizontal overlap)
+			const overlapX = sb.x < ref.x + ref.width && sb.x + sb.width > ref.x;
+			if (overlapX) {
+				const perpX = Math.max(sb.x, ref.x) +
+					(Math.min(sb.x + sb.width, ref.x + ref.width) - Math.max(sb.x, ref.x)) / 2;
 
-					if (snappedBounds.y > ref.y + ref.height + 0.1) {
-						distances.push({
-							axis: 'y',
-							from: ref.y + ref.height,
-							to: snappedBounds.y,
-							perpPosition: perpX,
-						});
+				// Entity above
+				if (ref.y + ref.height <= sb.y + 0.1) {
+					const gap = sb.y - (ref.y + ref.height);
+					if (gap > 0.1 && (!nearestAbove || gap < nearestAbove.gap)) {
+						nearestAbove = { gap, ind: { axis: 'y', from: ref.y + ref.height, to: sb.y, perpPosition: perpX } };
 					}
-					if (ref.y > snappedBounds.y + snappedBounds.height + 0.1) {
-						distances.push({
-							axis: 'y',
-							from: snappedBounds.y + snappedBounds.height,
-							to: ref.y,
-							perpPosition: perpX,
-						});
+				}
+				// Entity below
+				if (ref.y >= sb.y + sb.height - 0.1) {
+					const gap = ref.y - (sb.y + sb.height);
+					if (gap > 0.1 && (!nearestBelow || gap < nearestBelow.gap)) {
+						nearestBelow = { gap, ind: { axis: 'y', from: sb.y + sb.height, to: ref.y, perpPosition: perpX } };
 					}
 				}
 			}
 		}
+
+		if (nearestLeft) distances.push(nearestLeft.ind);
+		if (nearestRight) distances.push(nearestRight.ind);
+		if (nearestAbove) distances.push(nearestAbove.ind);
+		if (nearestBelow) distances.push(nearestBelow.ind);
 	}
 
 	return { snapDx, snapDy, guides, distances };
