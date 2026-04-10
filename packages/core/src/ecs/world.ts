@@ -40,6 +40,89 @@ export function createWorld(): World {
 	// Frame handlers
 	const frameHandlers = new Set<FrameHandler>();
 
+	// === Query cache ===
+	// Key: sorted type names joined by '|' (e.g., "Transform2D|Visible")
+	// Value: live Set<EntityId> of entities matching all types in the key
+	const queryCache = new Map<string, Set<EntityId>>();
+	// Reverse index: typeName → Set<queryKey> — which cached queries use this type
+	const typeToQueries = new Map<string, Set<string>>();
+	// Store the type names per query key for re-evaluation
+	const queryKeyTypes = new Map<string, { components: string[]; tags: string[] }>();
+
+	function getQueryKey(types: (ComponentType | TagType)[]): string {
+		return types.map((t) => t.name).sort().join('|');
+	}
+
+	function buildQueryResult(compNames: string[], tagNames: string[]): Set<EntityId> {
+		const result = new Set<EntityId>();
+
+		// Find smallest set to start iteration
+		let smallest: Set<EntityId> | null = null;
+		let smallestSize = Infinity;
+
+		for (const name of compNames) {
+			const store = components.get(name);
+			if (!store || store.data.size === 0) return result; // empty — no matches
+			if (store.data.size < smallestSize) {
+				smallestSize = store.data.size;
+				smallest = new Set(store.data.keys());
+			}
+		}
+		for (const name of tagNames) {
+			const store = tags.get(name);
+			if (!store || store.entities.size === 0) return result;
+			if (store.entities.size < smallestSize) {
+				smallestSize = store.entities.size;
+				smallest = store.entities;
+			}
+		}
+
+		if (!smallest) return result;
+
+		for (const entity of smallest) {
+			if (!alive.has(entity)) continue;
+			if (matchesQuery(entity, compNames, tagNames)) {
+				result.add(entity);
+			}
+		}
+		return result;
+	}
+
+	function matchesQuery(entity: EntityId, compNames: string[], tagNames: string[]): boolean {
+		for (const name of compNames) {
+			const store = components.get(name);
+			if (!store || !store.data.has(entity)) return false;
+		}
+		for (const name of tagNames) {
+			const store = tags.get(name);
+			if (!store || !store.entities.has(entity)) return false;
+		}
+		return true;
+	}
+
+	/** Update all cached queries that include this type name */
+	function updateCachesForEntity(typeName: string, entity: EntityId) {
+		const queryKeys = typeToQueries.get(typeName);
+		if (!queryKeys) return;
+		for (const key of queryKeys) {
+			const cached = queryCache.get(key);
+			const types = queryKeyTypes.get(key);
+			if (!cached || !types) continue;
+			if (matchesQuery(entity, types.components, types.tags)) {
+				cached.add(entity);
+			} else {
+				cached.delete(entity);
+			}
+		}
+	}
+
+	/** Remove entity from all cached queries */
+	function removeCachesForEntity(entity: EntityId) {
+		for (const cached of queryCache.values()) {
+			cached.delete(entity);
+		}
+	}
+
 	function getComponentStore<T>(type: ComponentType<T>): ComponentStore<T> {
 		let store = components.get(type.name);
 		if (!store) {
@@ -67,18 +150,24 @@ export function createWorld(): World {
 		return store;
 	}
 
+	function hasListeners(store: ComponentStore): boolean {
+		if (store.handlers.size === 0) return false;
+		for (const set of store.handlers.values()) {
+			if (set.size > 0) return true;
+		}
+		return false;
+	}
+
 	function emitComponentChanged<T>(
 		store: ComponentStore<T>,
 		entityId: EntityId,
 		prev: T | undefined,
 		next: T,
 	) {
-		// Entity-scoped handlers
 		const entityHandlers = store.handlers.get(entityId);
 		if (entityHandlers) {
 			for (const h of entityHandlers) h(entityId, prev, next);
 		}
-		// Wildcard handlers
 		const wildcardHandlers = store.handlers.get('*');
 		if (wildcardHandlers) {
 			for (const h of wildcardHandlers) h(entityId, prev, next);
@@ -127,6 +216,8 @@ export function createWorld(): World {
 		destroyEntity(id: EntityId) {
 			if (!alive.has(id)) return;
 			alive.delete(id);
+			// Remove from all cached queries
+			removeCachesForEntity(id);
 			// Remove all components
 			for (const store of components.values()) {
 				store.data.delete(id);
@@ -154,6 +245,8 @@ export function createWorld(): World {
 			store.data.set(entity, merged);
 			store.dirty.add(entity);
 			store.added.add(entity);
+			// Update cached queries that include this component
+			updateCachesForEntity(type.name, entity);
 			emitComponentChanged(store, entity, undefined, merged);
 		},
 
@@ -161,6 +254,8 @@ export function createWorld(): World {
 			const store = getComponentStore(type);
 			store.data.delete(entity);
 			store.dirty.delete(entity);
+			// Update cached queries — entity may no longer match
+			updateCachesForEntity(type.name, entity);
 		},
 
 		getComponent<T>(entity: EntityId, type: ComponentType<T>): T | undefined {
@@ -173,15 +268,21 @@ export function createWorld(): World {
 			return store.data.has(entity);
 		},
 
+		// P2: Only allocate prev object when there are listeners
 		setComponent<T>(entity: EntityId, type: ComponentType<T>, data: Partial<T>) {
 			const store = getComponentStore(type);
 			const existing = store.data.get(entity);
 			if (!existing) return;
-			const prev = { ...existing };
-			const next = Object.assign(existing, data);
-			store.data.set(entity, next);
-			store.dirty.add(entity);
-			emitComponentChanged(store, entity, prev, next);
+			if (hasListeners(store)) {
+				const prev = { ...existing };
+				const next = Object.assign(existing, data);
+				store.data.set(entity, next);
+				store.dirty.add(entity);
+				emitComponentChanged(store, entity, prev, next);
+			} else {
+				Object.assign(existing, data);
+				store.dirty.add(entity);
+			}
 		},
 
 		// === Tag access ===
@@ -190,6 +291,8 @@ export function createWorld(): World {
 			const store = getTagStore(type);
 			if (store.entities.has(entity)) return;
 			store.entities.add(entity);
+			// Update cached queries that include this tag
+			updateCachesForEntity(type.name, entity);
 			emitTagAdded(store, entity);
 		},
 
@@ -197,6 +300,8 @@ export function createWorld(): World {
 			const store = getTagStore(type);
 			if (!store.entities.has(entity)) return;
 			store.entities.delete(entity);
+			// Update cached queries — entity may no longer match
+			updateCachesForEntity(type.name, entity);
 			emitTagRemoved(store, entity);
 		},
 
@@ -205,55 +310,40 @@ export function createWorld(): World {
 			return store.entities.has(entity);
 		},
 
-		// === Queries ===
+		// === Queries (cached) ===
 
 		query(...types: (ComponentType | TagType)[]): QueryResult {
 			if (types.length === 0) return [...alive];
 
-			// Start with the smallest set for efficiency
-			let smallest: Set<EntityId> | undefined;
-			const componentTypes: ComponentType[] = [];
-			const tagTypes: TagType[] = [];
+			const key = getQueryKey(types);
 
+			// Return from cache if available
+			let cached = queryCache.get(key);
+			if (cached) return [...cached];
+
+			// Build cache on first call
+			const compNames: string[] = [];
+			const tagNames: string[] = [];
 			for (const type of types) {
-				if (type.__kind === 'component') {
-					const store = getComponentStore(type);
-					if (!smallest || store.data.size < smallest.size) {
-						smallest = new Set(store.data.keys());
-					}
-					componentTypes.push(type);
-				} else {
-					const store = getTagStore(type);
-					if (!smallest || store.entities.size < smallest.size) {
-						smallest = store.entities;
-					}
-					tagTypes.push(type);
-				}
+				if (type.__kind === 'component') compNames.push(type.name);
+				else tagNames.push(type.name);
 			}
 
-			if (!smallest) return [];
+			cached = buildQueryResult(compNames, tagNames);
+			queryCache.set(key, cached);
+			queryKeyTypes.set(key, { components: compNames, tags: tagNames });
 
-			const result: EntityId[] = [];
-			for (const entity of smallest) {
-				if (!alive.has(entity)) continue;
-				let match = true;
-				for (const ct of componentTypes) {
-					if (!getComponentStore(ct).data.has(entity)) {
-						match = false;
-						break;
-					}
+			// Register reverse index so cache updates on add/remove
+			for (const name of [...compNames, ...tagNames]) {
+				let queryKeys = typeToQueries.get(name);
+				if (!queryKeys) {
+					queryKeys = new Set();
+					typeToQueries.set(name, queryKeys);
 				}
-				if (match) {
-					for (const tt of tagTypes) {
-						if (!getTagStore(tt).entities.has(entity)) {
-							match = false;
-							break;
-						}
-					}
-				}
-				if (match) result.push(entity);
+				queryKeys.add(key);
 			}
-			return result;
+
+			return [...cached];
 		},
 
 		queryChanged(type: ComponentType): QueryResult {

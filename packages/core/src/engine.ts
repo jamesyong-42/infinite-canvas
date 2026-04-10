@@ -40,7 +40,6 @@ import type { SnapResult, SnapGuide, EqualSpacingIndicator } from './snap.js';
 import { clamp, pointInAABB, screenToWorld, worldBoundsToAABB } from './math.js';
 import {
 	transformPropagateSystem,
-	spatialIndexSystem,
 	navigationFilterSystem,
 	cullSystem,
 	breakpointSystem,
@@ -218,11 +217,17 @@ export function createCanvasEngine(config?: CanvasEngineConfig): CanvasEngine {
 
 	// Register built-in systems
 	scheduler.register(transformPropagateSystem);
-	scheduler.register(spatialIndexSystem);
 	scheduler.register(navigationFilterSystem);
 	scheduler.register(cullSystem);
 	scheduler.register(breakpointSystem);
 	scheduler.register(sortSystem);
+
+	// P3: Wire spatial index reactively via observer instead of per-frame system scan
+	world.onComponentChanged(WorldBounds, (entityId, _prev, wb) => {
+		if (wb) {
+			spatialIndex.upsert(entityId, worldBoundsToAABB(wb));
+		}
+	});
 
 	// Initialize navigation — mark root entities as Active on first tick
 	world.setResource(NavigationStackResource, { changed: true });

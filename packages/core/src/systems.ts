@@ -87,40 +87,12 @@ function propagateEntity(world: World, entity: number, processed: Set<number>) {
 }
 
 /**
- * Update the spatial index for entities whose WorldBounds changed.
- * Fix #11: Uses SpatialIndexResource instead of __spatialIndex escape hatch.
- */
-export const spatialIndexSystem = defineSystem({
-	name: 'spatialIndex',
-	after: 'transformPropagate',
-	execute: (world: World) => {
-		const res = world.getResource(SpatialIndexResource);
-		const spatialIndex = res.instance;
-		if (!spatialIndex) return;
-
-		for (const entity of world.queryChanged(WorldBounds)) {
-			const wb = world.getComponent(entity, WorldBounds);
-			if (wb) {
-				spatialIndex.upsert(entity, worldBoundsToAABB(wb));
-			}
-		}
-
-		for (const entity of world.queryAdded(WorldBounds)) {
-			const wb = world.getComponent(entity, WorldBounds);
-			if (wb) {
-				spatialIndex.upsert(entity, worldBoundsToAABB(wb));
-			}
-		}
-	},
-});
-
-/**
  * Filter entities to the active navigation layer.
  * Only runs when navigation stack changes.
  */
 export const navigationFilterSystem = defineSystem({
 	name: 'navigationFilter',
-	after: 'spatialIndex',
+	after: 'transformPropagate',
 	execute: (world: World) => {
 		const navStack = world.getResource(NavigationStackResource);
 		if (!navStack.changed) return;
