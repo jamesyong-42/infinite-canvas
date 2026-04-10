@@ -1,7 +1,12 @@
-import type { EntityId } from '@infinite-canvas/core';
-import { useBreakpoint, useWidgetData, useIsSelected, useWidgetChildren } from '@infinite-canvas/react-widgets';
-import { useComponent } from '@infinite-canvas/ui';
-import { Transform2D } from '@infinite-canvas/core';
+import type { EntityId } from '@jamesyong42/infinite-canvas';
+import {
+	Transform2D,
+	useBreakpoint,
+	useChildren,
+	useComponent,
+	useIsSelected,
+	useWidgetData,
+} from '@jamesyong42/infinite-canvas';
 
 const COLOR = '#8b5cf6';
 
@@ -9,7 +14,7 @@ export function DebugContainer({ entityId }: { entityId: EntityId }) {
 	const breakpoint = useBreakpoint(entityId);
 	const data = useWidgetData(entityId);
 	const isSelected = useIsSelected(entityId);
-	const children = useWidgetChildren(entityId);
+	const children = useChildren(entityId);
 	const transform = useComponent(entityId, Transform2D);
 
 	const borderColor = isSelected ? '#7c3aed' : COLOR;
@@ -29,7 +34,11 @@ export function DebugContainer({ entityId }: { entityId: EntityId }) {
 		return (
 			<div
 				className="flex h-full w-full items-center gap-1 px-2 font-mono text-[10px]"
-				style={{ border: `1.5px dashed ${borderColor}`, backgroundColor: `${COLOR}06`, color: COLOR }}
+				style={{
+					border: `1.5px dashed ${borderColor}`,
+					backgroundColor: `${COLOR}06`,
+					color: COLOR,
+				}}
 			>
 				<span className="truncate">{data.title ?? 'Container'}</span>
 				<span className="ml-auto opacity-60">[{children.length}]</span>
@@ -50,7 +59,9 @@ export function DebugContainer({ entityId }: { entityId: EntityId }) {
 				<span style={{ color: COLOR }} className="font-semibold truncate">
 					{data.title ?? 'Container'}
 				</span>
-				<span className="text-[9px] text-neutral-400 dark:text-neutral-500">e{entityId} [{children.length}]</span>
+				<span className="text-[9px] text-neutral-400 dark:text-neutral-500">
+					e{entityId} [{children.length}]
+				</span>
 			</div>
 
 			{/* Body */}
@@ -63,11 +74,15 @@ export function DebugContainer({ entityId }: { entityId: EntityId }) {
 					<>
 						<div className="flex justify-between">
 							<span className="text-neutral-400">pos</span>
-							<span>{Math.round(transform.x)}, {Math.round(transform.y)}</span>
+							<span>
+								{Math.round(transform.x)}, {Math.round(transform.y)}
+							</span>
 						</div>
 						<div className="flex justify-between">
 							<span className="text-neutral-400">size</span>
-							<span>{Math.round(transform.width)} x {Math.round(transform.height)}</span>
+							<span>
+								{Math.round(transform.width)} x {Math.round(transform.height)}
+							</span>
 						</div>
 					</>
 				)}

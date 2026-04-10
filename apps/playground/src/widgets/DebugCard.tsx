@@ -1,7 +1,11 @@
-import type { EntityId } from '@infinite-canvas/core';
-import { useBreakpoint, useWidgetData, useIsSelected } from '@infinite-canvas/react-widgets';
-import { useComponent } from '@infinite-canvas/ui';
-import { Transform2D } from '@infinite-canvas/core';
+import type { EntityId } from '@jamesyong42/infinite-canvas';
+import {
+	Transform2D,
+	useBreakpoint,
+	useComponent,
+	useIsSelected,
+	useWidgetData,
+} from '@jamesyong42/infinite-canvas';
 
 export function DebugCard({ entityId }: { entityId: EntityId }) {
 	const breakpoint = useBreakpoint(entityId);
@@ -68,11 +72,15 @@ export function DebugCard({ entityId }: { entityId: EntityId }) {
 					<>
 						<div className="flex justify-between">
 							<span className="text-neutral-400">pos</span>
-							<span>{Math.round(transform.x)}, {Math.round(transform.y)}</span>
+							<span>
+								{Math.round(transform.x)}, {Math.round(transform.y)}
+							</span>
 						</div>
 						<div className="flex justify-between">
 							<span className="text-neutral-400">size</span>
-							<span>{Math.round(transform.width)} x {Math.round(transform.height)}</span>
+							<span>
+								{Math.round(transform.width)} x {Math.round(transform.height)}
+							</span>
 						</div>
 					</>
 				)}
@@ -87,7 +95,10 @@ export function DebugCard({ entityId }: { entityId: EntityId }) {
 							<span>debug-card</span>
 						</div>
 						{data.description && (
-							<div className="mt-1 pt-1 text-neutral-400" style={{ borderTop: `1px dashed ${color}20` }}>
+							<div
+								className="mt-1 pt-1 text-neutral-400"
+								style={{ borderTop: `1px dashed ${color}20` }}
+							>
 								{data.description}
 							</div>
 						)}

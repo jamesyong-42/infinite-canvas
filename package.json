@@ -1,21 +1,22 @@
 {
-  "name": "infinite-canvas-monorepo",
-  "private": true,
-  "scripts": {
-    "build": "pnpm -r build",
-    "dev": "pnpm --filter playground dev",
-    "test": "vitest",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write .",
-    "clean": "pnpm -r exec rm -rf dist"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^1.9.0",
-    "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
-  },
-  "packageManager": "pnpm@9.15.0",
-  "engines": {
-    "node": ">=20"
-  }
+	"name": "infinite-canvas-monorepo",
+	"private": true,
+	"scripts": {
+		"build": "pnpm -r build",
+		"dev": "pnpm --filter playground dev",
+		"test": "vitest",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"clean": "pnpm -r exec rm -rf dist"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.0",
+		"typescript": "^5.7.0",
+		"vitest": "^3.0.0"
+	},
+	"license": "MIT",
+	"packageManager": "pnpm@9.15.0",
+	"engines": {
+		"node": ">=20"
+	}
 }

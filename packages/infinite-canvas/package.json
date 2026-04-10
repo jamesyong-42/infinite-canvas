@@ -1,0 +1,79 @@
+{
+	"name": "@jamesyong42/infinite-canvas",
+	"version": "0.0.1",
+	"description": "Infinite canvas library with ECS layout engine, React components, and WebGL rendering",
+	"license": "MIT",
+	"author": "James Yong",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/jamesyong-42/infinite-canvas.git",
+		"directory": "packages/infinite-canvas"
+	},
+	"bugs": {
+		"url": "https://github.com/jamesyong-42/infinite-canvas/issues"
+	},
+	"homepage": "https://github.com/jamesyong-42/infinite-canvas#readme",
+	"keywords": ["infinite-canvas", "canvas", "ecs", "react", "webgl", "layout-engine"],
+	"publishConfig": {
+		"access": "public"
+	},
+	"sideEffects": false,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs"
+		},
+		"./ecs": {
+			"types": "./dist/ecs.d.ts",
+			"import": "./dist/ecs.js",
+			"require": "./dist/ecs.cjs"
+		},
+		"./advanced": {
+			"types": "./dist/advanced.d.ts",
+			"import": "./dist/advanced.js",
+			"require": "./dist/advanced.cjs"
+		}
+	},
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"scripts": {
+		"build": "tsup",
+		"dev": "tsup --watch",
+		"test": "vitest run",
+		"prepack": "cp ../../README.md ./README.md && cp ../../LICENSE ./LICENSE",
+		"postpack": "rm -f ./README.md ./LICENSE"
+	},
+	"dependencies": {
+		"rbush": "^4.0.1"
+	},
+	"peerDependencies": {
+		"@react-three/fiber": "^9.0.0",
+		"react": "^18.0.0 || ^19.0.0",
+		"react-dom": "^18.0.0 || ^19.0.0",
+		"three": ">=0.170.0"
+	},
+	"peerDependenciesMeta": {
+		"three": {
+			"optional": true
+		},
+		"@react-three/fiber": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@react-three/fiber": "^9.5.0",
+		"@types/rbush": "^4.0.0",
+		"@types/react": "^19.0.0",
+		"@types/react-dom": "^19.0.0",
+		"@types/three": "^0.183.1",
+		"react": "^19.0.0",
+		"react-dom": "^19.0.0",
+		"three": "^0.183.2",
+		"tsup": "^8.0.0",
+		"vitest": "^3.0.0"
+	},
+	"files": ["dist"]
+}

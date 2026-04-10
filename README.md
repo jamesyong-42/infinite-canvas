@@ -1,5 +1,11 @@
 # Infinite Canvas
 
+[![CI](https://github.com/jamesyong-42/infinite-canvas/actions/workflows/ci.yml/badge.svg)](https://github.com/jamesyong-42/infinite-canvas/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@jamesyong42/infinite-canvas)](https://www.npmjs.com/package/@jamesyong42/infinite-canvas)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
+**[Live Demo](https://jamesyong-42.github.io/infinite-canvas/)** | **[npm](https://www.npmjs.com/org/jamesyong42)**
+
 A high-performance infinite canvas library for React, built on an Entity Component System (ECS) architecture with WebGL-accelerated rendering.
 
 ## Features
@@ -16,26 +22,26 @@ A high-performance infinite canvas library for React, built on an Entity Compone
 - **Dark mode** — Full dark mode support across canvas, widgets, and UI panels
 - **Configurable** — Grid, selection, snap, zoom, and breakpoint parameters all exposed
 
-## Packages
+## Package
 
-| Package | Description |
-|---------|-------------|
-| `@infinite-canvas/core` | ECS engine, spatial indexing, commands, snapping, serialization |
-| `@infinite-canvas/ui` | React canvas component, WebGL renderers (grid, selection), gesture handling |
-| `@infinite-canvas/react-widgets` | Widget registry, provider, convenience hooks for widget development |
+Everything ships in a single package: **`@jamesyong42/infinite-canvas`**. It exposes three entry points:
+
+| Import | Purpose |
+|--------|---------|
+| `@jamesyong42/infinite-canvas` | Main API — `<InfiniteCanvas>`, `createLayoutEngine`, hooks, built-in components |
+| `@jamesyong42/infinite-canvas/ecs` | ECS primitives for advanced users (`defineComponent`, `defineSystem`, `World`) |
+| `@jamesyong42/infinite-canvas/advanced` | WebGL renderers, serialization, profiler, spatial index |
 
 ## Quick Start
 
 ```bash
-npm install @infinite-canvas/core @infinite-canvas/ui @infinite-canvas/react-widgets
+npm install @jamesyong42/infinite-canvas react react-dom
 # For WebGL widgets (optional):
 npm install three @react-three/fiber
 ```
 
 ```tsx
-import { createCanvasEngine, Transform2D, Widget, WidgetData, ZIndex, Selectable, Draggable, Resizable } from '@infinite-canvas/core';
-import { InfiniteCanvas } from '@infinite-canvas/ui';
-import { WidgetProvider, createWidgetRegistry } from '@infinite-canvas/react-widgets';
+import { createLayoutEngine, InfiniteCanvas, useWidgetData } from '@jamesyong42/infinite-canvas';
 
 // 1. Define your widget component
 function MyCard({ entityId }) {
@@ -43,29 +49,27 @@ function MyCard({ entityId }) {
   return <div className="p-4 bg-white rounded shadow">{data.title}</div>;
 }
 
-// 2. Create engine and registry
-const engine = createCanvasEngine({ zoom: { min: 0.05, max: 8 } });
-const registry = createWidgetRegistry([
-  { type: 'card', component: MyCard, defaultSize: { width: 250, height: 180 } },
-]);
+// 2. Create the layout engine
+const engine = createLayoutEngine({ zoom: { min: 0.05, max: 8 } });
 
-// 3. Add entities
-engine.createEntity([
-  [Transform2D, { x: 100, y: 100, width: 250, height: 180, rotation: 0 }],
-  [Widget, { surface: 'dom', type: 'card' }],
-  [WidgetData, { data: { title: 'Hello World' } }],
-  [ZIndex, { value: 1 }],
-  [Selectable],
-  [Draggable],
-  [Resizable],
-]);
+// 3. Add widgets
+engine.addWidget({
+  type: 'card',
+  position: { x: 100, y: 100 },
+  size: { width: 250, height: 180 },
+  data: { title: 'Hello World' },
+});
 
-// 4. Render
+// 4. Render — widgets prop wires up the widget types
 function App() {
   return (
-    <WidgetProvider registry={registry}>
-      <InfiniteCanvas engine={engine} className="h-screen w-screen" />
-    </WidgetProvider>
+    <InfiniteCanvas
+      engine={engine}
+      widgets={[
+        { type: 'card', component: MyCard, defaultSize: { width: 250, height: 180 } },
+      ]}
+      className="h-screen w-screen"
+    />
   );
 }
 ```
@@ -76,6 +80,7 @@ Register widgets with `surface: 'webgl'` to render 3D content via React Three Fi
 
 ```tsx
 import { useFrame } from '@react-three/fiber';
+import { useRef } from 'react';
 
 function My3DWidget({ entityId, width, height }) {
   const meshRef = useRef();
@@ -88,9 +93,12 @@ function My3DWidget({ entityId, width, height }) {
   );
 }
 
-const registry = createWidgetRegistry([
-  { type: 'my-3d', surface: 'webgl', component: My3DWidget, defaultSize: { width: 250, height: 250 } },
-]);
+<InfiniteCanvas
+  engine={engine}
+  widgets={[
+    { type: 'my-3d', surface: 'webgl', component: My3DWidget, defaultSize: { width: 250, height: 250 } },
+  ]}
+/>
 ```
 
 WebGL widgets get a transparent R3F canvas layered between the grid and DOM layers. The R3F camera is synced with the engine camera every frame. Widget components receive `entityId`, `width`, and `height` props and work in centered local coordinates.
@@ -100,20 +108,25 @@ WebGL widgets get a transparent R3F canvas layered between the grid and DOM laye
 Widgets are React components that receive `entityId` and use hooks to read/write ECS data:
 
 ```tsx
-import { useWidgetData, useBreakpoint, useIsSelected, useUpdateData } from '@infinite-canvas/react-widgets';
-import { useComponent } from '@infinite-canvas/ui';
-import { Transform2D } from '@infinite-canvas/core';
+import {
+  Transform2D,
+  useBreakpoint,
+  useComponent,
+  useIsSelected,
+  useUpdateWidget,
+  useWidgetData,
+} from '@jamesyong42/infinite-canvas';
 
 function MyWidget({ entityId }) {
-  const data = useWidgetData(entityId);          // custom widget data
-  const breakpoint = useBreakpoint(entityId);    // 'micro' | 'compact' | 'normal' | 'expanded' | 'detailed'
-  const isSelected = useIsSelected(entityId);    // selection state
+  const data = useWidgetData(entityId);            // custom widget data
+  const breakpoint = useBreakpoint(entityId);      // 'micro' | 'compact' | 'normal' | 'expanded' | 'detailed'
+  const isSelected = useIsSelected(entityId);      // selection state
   const transform = useComponent(entityId, Transform2D);  // position/size
-  const updateData = useUpdateData(entityId);    // update widget data
+  const updateWidget = useUpdateWidget(entityId);  // update widget data
 
-  if (breakpoint === 'micro') return <div>...</div>;  // minimal view
+  if (breakpoint === 'micro') return <div>...</div>;   // minimal view
   if (breakpoint === 'compact') return <div>...</div>; // condensed view
-  return <div>...</div>;                               // full view
+  return <div>...</div>;                                // full view
 }
 ```
 
@@ -161,7 +174,7 @@ function MyWidget({ entityId }) {
 ### Engine
 
 ```tsx
-const engine = createCanvasEngine({
+const engine = createLayoutEngine({
   zoom: { min: 0.05, max: 8 },
   breakpoints: { micro: 40, compact: 120, normal: 500, expanded: 1200 },
 });
@@ -174,14 +187,10 @@ engine.setSnapThreshold(5); // world pixels
 ## Architecture
 
 ```
-                    @infinite-canvas/react-widgets
-                    (registry, hooks, provider)
-                              |
-                    @infinite-canvas/ui
-                    (InfiniteCanvas, WebGL renderers, gestures)
-                              |
-                    @infinite-canvas/core
-                    (ECS engine, spatial index, commands, snapping)
+@jamesyong42/infinite-canvas
+├── Main API        (InfiniteCanvas, createLayoutEngine, hooks, components)
+├── /ecs            (ECS primitives: defineComponent, defineSystem, World)
+└── /advanced       (WebGL renderers, serialization, profiler, spatial index)
 ```
 
 ### Rendering Stack
@@ -263,29 +272,37 @@ git clone https://github.com/jamesyong-42/infinite-canvas.git
 cd infinite-canvas
 pnpm install
 
-# Build all packages
+# Build the library
 pnpm build
 
-# Run playground
-pnpm --filter playground dev
+# Run the playground demo
+pnpm dev
 
 # Run tests
 pnpm test
+
+# Typecheck
+pnpm exec tsc --noEmit -p packages/infinite-canvas/tsconfig.json
 ```
 
 ## Tech Stack
 
-- **TypeScript** — Full type safety across all packages
-- **React 19** — UI rendering
-- **Three.js** — WebGL rendering (grid, selection)
-- **React Three Fiber** — WebGL widget rendering (optional)
+- **TypeScript** — Strict mode, fully typed public API
+- **React 18 / 19** — Compatible with both versions
+- **Three.js** — WebGL rendering (grid, selection chrome)
+- **React Three Fiber** — WebGL widget rendering (optional peer dependency)
 - **RBush** — Spatial indexing for hit testing and viewport culling
+- **tsup** — Library bundling (ESM + CJS + DTS)
 - **Vite** — Playground bundling
 - **Tailwind CSS v4** — Playground styling
-- **tsup** — Library bundling
-- **pnpm** — Monorepo package management
+- **Biome** — Linting and formatting
 - **Vitest** — Testing
+- **pnpm** — Workspace management
+
+## Contributing
+
+Contributions are welcome! See the [live demo](https://jamesyong-42.github.io/infinite-canvas/) for an overview of the features, then check out the playground at `apps/playground/` to experiment with changes locally.
 
 ## License
 
-MIT
+[MIT](./LICENSE)

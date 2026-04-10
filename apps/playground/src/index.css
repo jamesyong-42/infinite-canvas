@@ -3,7 +3,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Prevent browser gestures on the canvas */
-html, body {
+html,
+body {
 	overscroll-behavior: none;
 	-webkit-touch-callout: none;
 	-webkit-user-select: none;
