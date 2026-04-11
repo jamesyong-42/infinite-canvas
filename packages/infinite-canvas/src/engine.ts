@@ -4,6 +4,7 @@ import {
 	Active,
 	Children,
 	Container,
+	CursorHint,
 	Draggable,
 	HandleSet,
 	InteractionRole,
@@ -19,7 +20,7 @@ import {
 	WorldBounds,
 	ZIndex,
 } from './components.js';
-import type { InteractionRoleData, ResizeHandlePos } from './components.js';
+import type { CSSCursor, InteractionRoleData, ResizeHandlePos } from './components.js';
 import type {
 	ComponentInit,
 	ComponentType,
@@ -36,6 +37,7 @@ import { Profiler } from './profiler.js';
 import {
 	BreakpointConfigResource,
 	CameraResource,
+	CursorResource,
 	NavigationStackResource,
 	ViewportResource,
 	ZoomConfigResource,
@@ -338,6 +340,41 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 		return interactable[0];
 	}
 
+	/**
+	 * RFC-001 Phase 7: derive the root-container cursor from input state +
+	 * hover, write to CursorResource. Closes over `inputState`, `hoveredEntity`
+	 * and `world`, which is why it's a plain function instead of a SystemDef.
+	 * Called from engine.tick() after scheduler.execute(world).
+	 */
+	function cursorSystem(): void {
+		let cursor: CSSCursor = 'default';
+
+		switch (inputState.mode) {
+			case 'idle':
+			case 'marquee': {
+				if (hoveredEntity !== null) {
+					cursor = world.getComponent(hoveredEntity, CursorHint)?.hover ?? 'default';
+				}
+				break;
+			}
+			case 'tracking': {
+				// Dead zone not yet crossed — show hover intent (grab), not active (grabbing).
+				cursor = world.getComponent(inputState.entityId, CursorHint)?.hover ?? 'default';
+				break;
+			}
+			case 'dragging': {
+				cursor = world.getComponent(inputState.entityId, CursorHint)?.active ?? 'grabbing';
+				break;
+			}
+			case 'resizing': {
+				cursor = world.getComponent(inputState.handleEntityId, CursorHint)?.active ?? 'default';
+				break;
+			}
+		}
+
+		world.setResource(CursorResource, { cursor });
+	}
+
 	// Fix #2: track selection changes explicitly
 	function selectEntity(entity: EntityId, additive: boolean) {
 		if (!world.hasTag(entity, Selectable)) return;
@@ -414,6 +451,10 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			// Mirrors the decision matrix of the Selectable/Draggable tags.
 			if (opts.draggable !== false) {
 				inits.push([InteractionRole, { layer: 5, role: { type: 'drag' } }]);
+				// RFC-001 Phase 6: draggable bodies get grab/grabbing cursor hints.
+				// Select-only widgets intentionally fall through to 'default' via
+				// cursorSystem's ?? fallback.
+				inits.push([CursorHint, { hover: 'grab', active: 'grabbing' }]);
 			} else if (opts.selectable !== false) {
 				inits.push([InteractionRole, { layer: 5, role: { type: 'select' } }]);
 			}
@@ -792,15 +833,12 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			// Hover tracking in idle mode
 			if (inputState.mode === 'idle') {
 				const hit = hitTest(screenX, screenY);
-				const hitEntity = hit ? hit.entityId : null;
-				// If the hit is a handle child entity, resolve to the parent for
-				// hover highlighting — selection outline should show the parent
-				// widget as hovered, not the handle entity.
-				let hoverTarget: EntityId | null = hitEntity;
-				if (hit && hit.role.role.type === 'resize') {
-					const parent = world.getComponent(hit.entityId, Parent);
-					hoverTarget = parent ? parent.id : hitEntity;
-				}
+				// RFC-001 Phase 7: use the raw hit id so cursorSystem can read
+				// CursorHint from handles (e.g. 'se-resize'). Selection outline is
+				// already drawn for the parent via Selected tag whenever handles
+				// exist — hover-to-parent resolution would only clobber the
+				// directional cursor affordance with no benefit.
+				const hoverTarget: EntityId | null = hit ? hit.entityId : null;
 				if (hoverTarget !== hoveredEntity) {
 					hoveredEntity = hoverTarget;
 					markDirtyInternal();
@@ -960,6 +998,9 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 
 			// Run all systems
 			scheduler.execute(world);
+
+			// RFC-001 Phase 7: derive the root-container cursor from input state + hover.
+			cursorSystem();
 
 			// Compute visible entities for renderers
 			profiler.beginVisibility();

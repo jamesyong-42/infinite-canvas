@@ -4,6 +4,7 @@ import {
 	Children,
 	Container,
 	CursorHint,
+	CursorResource,
 	Draggable,
 	HandleSet,
 	Hitbox,
@@ -623,6 +624,154 @@ describe('CanvasEngine', () => {
 			expect(t.x).toBeCloseTo(100, 5);
 			expect(t.y).toBeCloseTo(100, 5);
 			expect(t.height).toBeCloseTo(150, 5);
+		});
+	});
+
+	describe('cursor system (RFC-001 Phases 6-7)', () => {
+		const mods = { shift: false, ctrl: false, alt: false, meta: false };
+
+		it('idle hover over widget body resolves to grab', () => {
+			const engine = createTestEngine();
+			engine.addWidget({
+				type: 'debug',
+				position: { x: 100, y: 100 },
+				size: { width: 200, height: 150 },
+			});
+			engine.tick();
+
+			// Pointer over widget center.
+			engine.handlePointerMove(200, 175, mods);
+			engine.tick();
+
+			expect(engine.world.getResource(CursorResource).cursor).toBe('grab');
+		});
+
+		it('idle hover off any widget resolves to default', () => {
+			const engine = createTestEngine();
+			engine.addWidget({
+				type: 'debug',
+				position: { x: 100, y: 100 },
+				size: { width: 200, height: 150 },
+			});
+			engine.tick();
+
+			engine.handlePointerMove(0, 0, mods);
+			engine.tick();
+
+			expect(engine.world.getResource(CursorResource).cursor).toBe('default');
+		});
+
+		it('tracking state before dead zone shows grab, not grabbing', () => {
+			const engine = createTestEngine();
+			engine.addWidget({
+				type: 'debug',
+				position: { x: 100, y: 100 },
+				size: { width: 200, height: 150 },
+			});
+			engine.tick();
+
+			engine.handlePointerDown(200, 175, 0, mods);
+			// Do NOT move past dead zone. Input state should be 'tracking'.
+			engine.tick();
+
+			expect(engine.world.getResource(CursorResource).cursor).toBe('grab');
+
+			engine.handlePointerUp();
+		});
+
+		it('dragging state shows grabbing', () => {
+			const engine = createTestEngine();
+			engine.addWidget({
+				type: 'debug',
+				position: { x: 100, y: 100 },
+				size: { width: 200, height: 150 },
+			});
+			engine.tick();
+
+			engine.handlePointerDown(200, 175, 0, mods);
+			// DEAD_ZONE_MOUSE_PX = 4; move +10 screen px to cross.
+			engine.handlePointerMove(210, 175, mods);
+			engine.tick();
+
+			expect(engine.world.getResource(CursorResource).cursor).toBe('grabbing');
+
+			engine.handlePointerUp();
+		});
+
+		it('resizing state shows the directional cursor from the handle', () => {
+			const engine = createTestEngine();
+			const e = engine.addWidget({
+				type: 'debug',
+				position: { x: 100, y: 100 },
+				size: { width: 200, height: 150 },
+			});
+			engine.tick();
+
+			// Select so handles spawn.
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			// Find the SE handle.
+			const handleSet = engine.get(e, HandleSet);
+			let seId: number | null = null;
+			for (const id of handleSet?.ids ?? []) {
+				const role = engine.get(id, InteractionRole);
+				if (role?.role.type === 'resize' && role.role.handle === 'se') {
+					seId = id;
+					break;
+				}
+			}
+			if (seId === null) throw new Error('SE handle not found');
+			const wb = engine.get(seId, WorldBounds);
+			if (!wb) throw new Error('SE handle WorldBounds missing');
+			const cx = wb.worldX + wb.worldWidth / 2;
+			const cy = wb.worldY + wb.worldHeight / 2;
+
+			engine.handlePointerDown(cx, cy, 0, mods);
+			engine.tick();
+
+			expect(engine.world.getResource(CursorResource).cursor).toBe('se-resize');
+
+			engine.handlePointerUp();
+		});
+
+		it('idle hover over SE handle resolves to se-resize', () => {
+			const engine = createTestEngine();
+			const e = engine.addWidget({
+				type: 'debug',
+				position: { x: 100, y: 100 },
+				size: { width: 200, height: 150 },
+			});
+			engine.tick();
+
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			const handleSet = engine.get(e, HandleSet);
+			let seId: number | null = null;
+			for (const id of handleSet?.ids ?? []) {
+				const role = engine.get(id, InteractionRole);
+				if (role?.role.type === 'resize' && role.role.handle === 'se') {
+					seId = id;
+					break;
+				}
+			}
+			if (seId === null) throw new Error('SE handle not found');
+			const wb = engine.get(seId, WorldBounds);
+			if (!wb) throw new Error('SE handle WorldBounds missing');
+			const cx = wb.worldX + wb.worldWidth / 2;
+			const cy = wb.worldY + wb.worldHeight / 2;
+
+			// Sanity: the handle has the se-resize hint set by spawnResizeHandles.
+			expect(engine.get(seId, CursorHint)?.hover).toBe('se-resize');
+
+			// Hover (no press). Hover-to-parent was reverted in Phase 7, so the
+			// raw handle id becomes hoveredEntity and cursorSystem reads its hint.
+			engine.handlePointerMove(cx, cy, mods);
+			engine.tick();
+
+			expect(engine.getHoveredEntity()).toBe(seId);
+			expect(engine.world.getResource(CursorResource).cursor).toBe('se-resize');
 		});
 	});
 });

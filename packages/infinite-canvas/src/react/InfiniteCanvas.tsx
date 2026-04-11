@@ -4,6 +4,7 @@ import { Widget, WorldBounds } from '../components.js';
 import type { EntityId } from '../ecs/types.js';
 import type { LayoutEngine } from '../engine.js';
 import { DEAD_ZONE_TOUCH_PX } from '../interaction-constants.js';
+import { CursorResource } from '../resources.js';
 import { SelectionOverlaySlot } from './SelectionOverlaySlot.js';
 import { WidgetProvider } from './WidgetProvider.js';
 import { WidgetSlot } from './WidgetSlot.js';
@@ -454,6 +455,13 @@ export function InfiniteCanvas({
 				// 1. Update camera layer CSS transform (O(1) for pan/zoom)
 				if (cameraLayerRef.current) {
 					cameraLayerRef.current.style.transform = `scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`;
+				}
+
+				// RFC-001 Phase 7: apply derived cursor to root container.
+				// Equality guard avoids redundant DOM writes in devtools diffs.
+				const cursor = engine.world.getResource(CursorResource).cursor;
+				if (containerRef.current && containerRef.current.style.cursor !== cursor) {
+					containerRef.current.style.cursor = cursor;
 				}
 
 				// 1b. Render WebGL dot grid + selection
