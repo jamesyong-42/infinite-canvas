@@ -9,15 +9,9 @@ describe('SystemScheduler', () => {
 		const scheduler = new SystemScheduler();
 		const world = createWorld();
 
-		scheduler.register(
-			defineSystem({ name: 'a', execute: () => order.push('a') }),
-		);
-		scheduler.register(
-			defineSystem({ name: 'b', execute: () => order.push('b') }),
-		);
-		scheduler.register(
-			defineSystem({ name: 'c', execute: () => order.push('c') }),
-		);
+		scheduler.register(defineSystem({ name: 'a', execute: () => order.push('a') }));
+		scheduler.register(defineSystem({ name: 'b', execute: () => order.push('b') }));
+		scheduler.register(defineSystem({ name: 'c', execute: () => order.push('c') }));
 
 		scheduler.execute(world);
 		expect(order).toEqual(['a', 'b', 'c']);
@@ -31,12 +25,8 @@ describe('SystemScheduler', () => {
 		scheduler.register(
 			defineSystem({ name: 'render', after: 'physics', execute: () => order.push('render') }),
 		);
-		scheduler.register(
-			defineSystem({ name: 'physics', execute: () => order.push('physics') }),
-		);
-		scheduler.register(
-			defineSystem({ name: 'input', execute: () => order.push('input') }),
-		);
+		scheduler.register(defineSystem({ name: 'physics', execute: () => order.push('physics') }));
+		scheduler.register(defineSystem({ name: 'input', execute: () => order.push('input') }));
 
 		scheduler.execute(world);
 		const physicsIdx = order.indexOf('physics');
@@ -49,12 +39,8 @@ describe('SystemScheduler', () => {
 		const scheduler = new SystemScheduler();
 		const world = createWorld();
 
-		scheduler.register(
-			defineSystem({ name: 'a', execute: () => order.push('a') }),
-		);
-		scheduler.register(
-			defineSystem({ name: 'b', before: 'a', execute: () => order.push('b') }),
-		);
+		scheduler.register(defineSystem({ name: 'a', execute: () => order.push('a') }));
+		scheduler.register(defineSystem({ name: 'b', before: 'a', execute: () => order.push('b') }));
 
 		scheduler.execute(world);
 		expect(order.indexOf('b')).toBeLessThan(order.indexOf('a'));
@@ -65,15 +51,9 @@ describe('SystemScheduler', () => {
 		const scheduler = new SystemScheduler();
 		const world = createWorld();
 
-		scheduler.register(
-			defineSystem({ name: 'c', after: 'b', execute: () => order.push('c') }),
-		);
-		scheduler.register(
-			defineSystem({ name: 'a', execute: () => order.push('a') }),
-		);
-		scheduler.register(
-			defineSystem({ name: 'b', after: 'a', execute: () => order.push('b') }),
-		);
+		scheduler.register(defineSystem({ name: 'c', after: 'b', execute: () => order.push('c') }));
+		scheduler.register(defineSystem({ name: 'a', execute: () => order.push('a') }));
+		scheduler.register(defineSystem({ name: 'b', after: 'a', execute: () => order.push('b') }));
 
 		scheduler.execute(world);
 		expect(order).toEqual(['a', 'b', 'c']);
@@ -82,12 +62,8 @@ describe('SystemScheduler', () => {
 	it('detects circular dependencies', () => {
 		const scheduler = new SystemScheduler();
 
-		scheduler.register(
-			defineSystem({ name: 'a', after: 'b', execute: () => {} }),
-		);
-		scheduler.register(
-			defineSystem({ name: 'b', after: 'a', execute: () => {} }),
-		);
+		scheduler.register(defineSystem({ name: 'a', after: 'b', execute: () => {} }));
+		scheduler.register(defineSystem({ name: 'b', after: 'a', execute: () => {} }));
 
 		expect(() => scheduler.getSystemNames()).toThrow(/circular/i);
 	});
@@ -97,12 +73,8 @@ describe('SystemScheduler', () => {
 		const scheduler = new SystemScheduler();
 		const world = createWorld();
 
-		scheduler.register(
-			defineSystem({ name: 'a', execute: () => order.push('a') }),
-		);
-		scheduler.register(
-			defineSystem({ name: 'b', execute: () => order.push('b') }),
-		);
+		scheduler.register(defineSystem({ name: 'a', execute: () => order.push('a') }));
+		scheduler.register(defineSystem({ name: 'b', execute: () => order.push('b') }));
 
 		scheduler.remove('a');
 		scheduler.execute(world);
@@ -114,12 +86,8 @@ describe('SystemScheduler', () => {
 		const scheduler = new SystemScheduler();
 		const world = createWorld();
 
-		scheduler.register(
-			defineSystem({ name: 'a', execute: () => order.push('a1') }),
-		);
-		scheduler.register(
-			defineSystem({ name: 'a', execute: () => order.push('a2') }),
-		);
+		scheduler.register(defineSystem({ name: 'a', execute: () => order.push('a1') }));
+		scheduler.register(defineSystem({ name: 'a', execute: () => order.push('a2') }));
 
 		scheduler.execute(world);
 		expect(order).toEqual(['a2']);

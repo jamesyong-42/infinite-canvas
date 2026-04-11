@@ -8,7 +8,7 @@ import type { ComponentType, ResourceType, SystemDef, TagType } from './types.js
  *   x: 0, y: 0, width: 100, height: 100, rotation: 0,
  * });
  */
-export function defineComponent<T extends Record<string, any>>(
+export function defineComponent<T extends Record<string, unknown>>(
 	name: string,
 	defaults: T,
 ): ComponentType<T> {
@@ -31,7 +31,7 @@ export function defineTag(name: string): TagType {
  * @example
  * const Camera = defineResource('Camera', { x: 0, y: 0, zoom: 1 });
  */
-export function defineResource<T extends Record<string, any>>(
+export function defineResource<T extends Record<string, unknown>>(
 	name: string,
 	defaults: T,
 ): ResourceType<T> {

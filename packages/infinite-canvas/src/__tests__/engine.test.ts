@@ -200,7 +200,9 @@ describe('CanvasEngine', () => {
 			engine.handlePointerMove(200, 200, mods);
 			engine.tick();
 
-			const t = engine.get(e, Transform2D)!;
+			const t = engine.get(e, Transform2D);
+			expect(t).toBeDefined();
+			if (!t) throw new Error('Transform2D component missing');
 			expect(t.x).toBeGreaterThan(100); // moved
 			expect(t.y).toBeGreaterThan(100);
 		});

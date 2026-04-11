@@ -37,7 +37,7 @@ const widgets: WidgetDef[] = [
 	{
 		type: 'debug-3d',
 		surface: 'webgl',
-		component: Debug3D as any,
+		component: Debug3D,
 		defaultSize: { width: 250, height: 250 },
 	},
 ];
@@ -220,7 +220,7 @@ export function App() {
 			// Delete selected: Backspace or Delete (skip when focus is on an input)
 			if (e.key === 'Backspace' || e.key === 'Delete') {
 				const el = document.activeElement;
-				if (el && el.closest('input, textarea, select, [contenteditable]')) return;
+				if (el?.closest('input, textarea, select, [contenteditable]')) return;
 				const selected = engine.getSelectedEntities();
 				for (const id of selected) {
 					engine.destroyEntity(id);
@@ -261,6 +261,7 @@ export function App() {
 						strokeLinecap="round"
 						strokeLinejoin="round"
 					>
+						<title>Light mode</title>
 						<circle cx="12" cy="12" r="4" />
 						<path d="M12 2v2" />
 						<path d="M12 20v2" />
@@ -283,6 +284,7 @@ export function App() {
 						strokeLinecap="round"
 						strokeLinejoin="round"
 					>
+						<title>Dark mode</title>
 						<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
 					</svg>
 				)}
@@ -310,6 +312,7 @@ export function App() {
 					strokeLinecap="round"
 					strokeLinejoin="round"
 				>
+					<title>Settings</title>
 					<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
 					<circle cx="12" cy="12" r="3" />
 				</svg>
@@ -336,6 +339,7 @@ export function App() {
 					strokeLinecap="round"
 					strokeLinejoin="round"
 				>
+					<title>Inspector</title>
 					<path d="M12 20h9" />
 					<path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z" />
 				</svg>

@@ -14,7 +14,7 @@ export interface CanvasDocument {
 
 export interface SerializedEntity {
 	id: EntityId;
-	components: Record<string, any>;
+	components: Record<string, unknown>;
 	tags: string[];
 }
 
@@ -37,7 +37,7 @@ export function serializeWorld(
 	const allEntities = world.query();
 
 	for (const entityId of allEntities) {
-		const components: Record<string, any> = {};
+		const components: Record<string, unknown> = {};
 		const tags: string[] = [];
 
 		for (const type of componentTypes) {
@@ -133,7 +133,7 @@ export function serializeEntities(
 		if (visited.has(entityId)) return;
 		visited.add(entityId);
 
-		const components: Record<string, any> = {};
+		const components: Record<string, unknown> = {};
 		const tags: string[] = [];
 
 		for (const type of componentTypes) {
@@ -154,7 +154,7 @@ export function serializeEntities(
 		result.push({ id: entityId, components, tags });
 
 		// Recurse into children
-		const children = components['Children'];
+		const children = components.Children;
 		if (children?.ids) {
 			for (const childId of children.ids) {
 				visit(childId);

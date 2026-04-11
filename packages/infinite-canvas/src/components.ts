@@ -30,7 +30,7 @@ export const Widget = defineComponent('Widget', {
 });
 
 export const WidgetData = defineComponent('WidgetData', {
-	data: {} as Record<string, any>,
+	data: {} as Record<string, unknown>,
 });
 
 export const WidgetBreakpoint = defineComponent('WidgetBreakpoint', {

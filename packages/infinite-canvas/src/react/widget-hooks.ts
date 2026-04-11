@@ -8,7 +8,7 @@ import { useComponent, useTag } from './hooks.js';
 /**
  * Read widget data for an entity. Re-renders when data changes.
  */
-export function useWidgetData(entityId: EntityId): Record<string, any> {
+export function useWidgetData(entityId: EntityId): Record<string, unknown> {
 	const comp = useComponent(entityId, WidgetData);
 	return comp?.data ?? {};
 }
@@ -42,10 +42,10 @@ export function useIsSelected(entityId: EntityId): boolean {
 /**
  * Returns a function to update widget data via the engine.
  */
-export function useUpdateWidget(entityId: EntityId): (patch: Record<string, any>) => void {
+export function useUpdateWidget(entityId: EntityId): (patch: Record<string, unknown>) => void {
 	const engine = useLayoutEngine();
 	return useCallback(
-		(patch: Record<string, any>) => {
+		(patch: Record<string, unknown>) => {
 			const existing = engine.get(entityId, WidgetData);
 			if (existing) {
 				engine.set(entityId, WidgetData, {

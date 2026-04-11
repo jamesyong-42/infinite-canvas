@@ -18,8 +18,10 @@ export function DebugInteractive({ entityId }: { entityId: EntityId }) {
 	const updateData = useUpdateWidget(entityId);
 	const transform = useComponent(entityId, Transform2D);
 	const [localCount, setLocalCount] = useState(0);
+	const [isButtonHovered, setIsButtonHovered] = useState(false);
 
 	const borderColor = isSelected ? '#059669' : COLOR;
+	const buttonColor = isButtonHovered ? '#059669' : COLOR;
 
 	if (breakpoint === 'micro') {
 		return (
@@ -70,13 +72,11 @@ export function DebugInteractive({ entityId }: { entityId: EntityId }) {
 					<button
 						type="button"
 						className="rounded px-2 py-0.5 font-mono text-[10px] font-medium text-white transition-colors"
-						style={{ backgroundColor: COLOR }}
-						onMouseOver={(e) => {
-							(e.target as HTMLElement).style.backgroundColor = '#059669';
-						}}
-						onMouseOut={(e) => {
-							(e.target as HTMLElement).style.backgroundColor = COLOR;
-						}}
+						style={{ backgroundColor: buttonColor }}
+						onMouseEnter={() => setIsButtonHovered(true)}
+						onMouseLeave={() => setIsButtonHovered(false)}
+						onFocus={() => setIsButtonHovered(true)}
+						onBlur={() => setIsButtonHovered(false)}
 						onClick={(e) => {
 							e.stopPropagation();
 							setLocalCount((c) => c + 1);

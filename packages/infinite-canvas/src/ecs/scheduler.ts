@@ -69,7 +69,8 @@ export class SystemScheduler {
 				// dep must run before s
 				if (byName.has(dep)) {
 					if (!edges.has(dep)) edges.set(dep, new Set());
-					edges.get(dep)!.add(s.name);
+					const depEdges = edges.get(dep);
+					if (depEdges) depEdges.add(s.name);
 					inDegree.set(s.name, (inDegree.get(s.name) || 0) + 1);
 				}
 			}
@@ -79,7 +80,8 @@ export class SystemScheduler {
 				// s must run before dep
 				if (byName.has(dep)) {
 					if (!edges.has(s.name)) edges.set(s.name, new Set());
-					edges.get(s.name)!.add(dep);
+					const systemEdges = edges.get(s.name);
+					if (systemEdges) systemEdges.add(dep);
 					inDegree.set(dep, (inDegree.get(dep) || 0) + 1);
 				}
 			}
@@ -102,7 +104,8 @@ export class SystemScheduler {
 
 		const result: SystemDef[] = [];
 		while (queue.length > 0) {
-			const name = queue.shift()!;
+			const name = queue.shift();
+			if (!name) continue;
 			const system = byName.get(name);
 			if (system) result.push(system);
 

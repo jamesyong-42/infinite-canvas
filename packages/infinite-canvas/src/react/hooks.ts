@@ -81,8 +81,6 @@ export function useResource<T>(type: ResourceType<T>): T {
  */
 export function useQuery(...types: (ComponentType | TagType)[]): EntityId[] {
 	const engine = useLayoutEngine();
-	// Create a stable key from type names for the dependency
-	const typeKey = types.map((t) => t.name).join(',');
 	const [result, setResult] = useState<EntityId[]>(() => engine.world.query(...types));
 
 	useEffect(() => {
@@ -96,8 +94,7 @@ export function useQuery(...types: (ComponentType | TagType)[]): EntityId[] {
 			});
 		});
 		return unsub;
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [engine, typeKey]);
+	}, [engine, types]);
 
 	return result;
 }

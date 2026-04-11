@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { defineComponent, defineTag, defineResource } from '../define.js';
+import { defineComponent, defineResource, defineTag } from '../define.js';
 import { createWorld } from '../world.js';
 
 const Position = defineComponent('Position', { x: 0, y: 0 });
@@ -37,7 +37,9 @@ describe('World', () => {
 			const world = createWorld();
 			const e = world.createEntity();
 			world.addComponent(e, Position, { x: 42 });
-			const pos = world.getComponent(e, Position)!;
+			const pos = world.getComponent(e, Position);
+			expect(pos).toBeDefined();
+			if (!pos) throw new Error('Position component missing');
 			expect(pos.x).toBe(42);
 			expect(pos.y).toBe(0); // default
 		});
@@ -47,7 +49,9 @@ describe('World', () => {
 			const e = world.createEntity();
 			world.addComponent(e, Position, { x: 10, y: 20 });
 			world.setComponent(e, Position, { x: 99 });
-			const pos = world.getComponent(e, Position)!;
+			const pos = world.getComponent(e, Position);
+			expect(pos).toBeDefined();
+			if (!pos) throw new Error('Position component missing');
 			expect(pos.x).toBe(99);
 			expect(pos.y).toBe(20); // unchanged
 		});
@@ -66,7 +70,7 @@ describe('World', () => {
 			const world = createWorld();
 			const e = world.createEntity();
 			world.addComponent(e, Label, { text: 'Hello World' });
-			expect(world.getComponent(e, Label)!.text).toBe('Hello World');
+			expect(world.getComponent(e, Label)?.text).toBe('Hello World');
 		});
 	});
 

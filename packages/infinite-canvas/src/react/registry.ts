@@ -6,7 +6,7 @@ export interface WidgetDef {
 	type: string;
 	/** Rendering surface — 'dom' (default) or 'webgl' (R3F). */
 	surface?: WidgetSurface;
-	component: React.ComponentType<{ entityId: EntityId }>;
+	component: React.ComponentType<{ entityId: EntityId; width?: number; height?: number }>;
 	defaultSize?: { width: number; height: number };
 	minSize?: { width: number; height: number };
 }

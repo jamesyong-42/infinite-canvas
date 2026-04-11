@@ -2,7 +2,7 @@
 export type EntityId = number;
 
 /** Component type definition created by defineComponent() */
-export interface ComponentType<T = any> {
+export interface ComponentType<T = unknown> {
 	readonly name: string;
 	readonly defaults: T;
 	/** Internal brand to distinguish components from tags */
@@ -16,7 +16,7 @@ export interface TagType {
 }
 
 /** Resource type definition created by defineResource() */
-export interface ResourceType<T = any> {
+export interface ResourceType<T = unknown> {
 	readonly name: string;
 	readonly defaults: T;
 	readonly __kind: 'resource';
@@ -36,10 +36,10 @@ export interface SystemDef {
 export type QueryResult = EntityId[];
 
 /** Component initializer for entity creation */
-export type ComponentInit = [ComponentType<any>, any] | [TagType];
+export type ComponentInit = [ComponentType<unknown>, unknown] | [TagType];
 
 /** Event handler types */
-export type ComponentChangedHandler<T = any> = (
+export type ComponentChangedHandler<T = unknown> = (
 	entityId: EntityId,
 	prev: T | undefined,
 	next: T,

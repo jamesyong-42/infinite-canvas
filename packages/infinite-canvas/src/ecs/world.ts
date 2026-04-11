@@ -12,7 +12,7 @@ import type {
 } from './types.js';
 
 /** Internal storage for a single component type */
-interface ComponentStore<T = any> {
+interface ComponentStore<T = unknown> {
 	data: Map<EntityId, T>;
 	dirty: Set<EntityId>;
 	added: Set<EntityId>;
@@ -36,7 +36,7 @@ export function createWorld(): World {
 	// Tag storage: one Set per tag type
 	const tags = new Map<string, TagStore>();
 	// Resources: one value per resource type
-	const resources = new Map<string, any>();
+	const resources = new Map<string, unknown>();
 	// Frame handlers
 	const frameHandlers = new Set<FrameHandler>();
 
@@ -370,7 +370,7 @@ export function createWorld(): World {
 			if (!resources.has(type.name)) {
 				resources.set(type.name, { ...type.defaults });
 			}
-			return resources.get(type.name);
+			return resources.get(type.name) as T;
 		},
 
 		setResource<T>(type: ResourceType<T>, data: Partial<T>) {
@@ -393,7 +393,9 @@ export function createWorld(): World {
 				store.handlers.set(key, handlers);
 			}
 			handlers.add(handler);
-			return () => handlers!.delete(handler);
+			return () => {
+				handlers.delete(handler);
+			};
 		},
 
 		onTagAdded(type: TagType, handler: TagChangedHandler, entityId?: EntityId): Unsubscribe {
@@ -405,7 +407,9 @@ export function createWorld(): World {
 				store.addedHandlers.set(key, handlers);
 			}
 			handlers.add(handler);
-			return () => handlers!.delete(handler);
+			return () => {
+				handlers.delete(handler);
+			};
 		},
 
 		onTagRemoved(type: TagType, handler: TagChangedHandler, entityId?: EntityId): Unsubscribe {
@@ -417,7 +421,9 @@ export function createWorld(): World {
 				store.removedHandlers.set(key, handlers);
 			}
 			handlers.add(handler);
-			return () => handlers!.delete(handler);
+			return () => {
+				handlers.delete(handler);
+			};
 		},
 
 		onFrame(handler: FrameHandler): Unsubscribe {

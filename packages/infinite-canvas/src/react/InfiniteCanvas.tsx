@@ -189,7 +189,7 @@ export function InfiniteCanvas({
 		}
 
 		function getRect() {
-			return container!.getBoundingClientRect();
+			return container?.getBoundingClientRect() ?? new DOMRect();
 		}
 
 		function touchDist(t1: Touch, t2: Touch) {
