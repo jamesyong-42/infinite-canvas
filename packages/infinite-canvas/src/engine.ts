@@ -5,6 +5,7 @@ import {
 	Children,
 	Container,
 	Draggable,
+	HandleSet,
 	Parent,
 	Resizable,
 	Selectable,
@@ -49,6 +50,7 @@ import { SpatialIndex } from './spatial.js';
 import {
 	breakpointSystem,
 	cullSystem,
+	handleSyncSystem,
 	hitboxWorldBoundsSystem,
 	navigationFilterSystem,
 	sortSystem,
@@ -258,6 +260,7 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 
 	// Register built-in systems
 	scheduler.register(transformPropagateSystem);
+	scheduler.register(handleSyncSystem);
 	scheduler.register(hitboxWorldBoundsSystem);
 	scheduler.register(navigationFilterSystem);
 	scheduler.register(cullSystem);
@@ -443,6 +446,16 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 		},
 
 		destroyEntity(id: EntityId) {
+			// Cascade through HandleSet first so handles get cleaned up.
+			const set = world.getComponent(id, HandleSet);
+			if (set) {
+				for (const handleId of set.ids) {
+					if (world.entityExists(handleId)) {
+						spatialIndex.remove(handleId);
+						world.destroyEntity(handleId);
+					}
+				}
+			}
 			spatialIndex.remove(id);
 			world.destroyEntity(id);
 			markDirtyInternal();

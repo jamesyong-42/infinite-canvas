@@ -3,15 +3,21 @@ import {
 	Active,
 	Children,
 	Container,
+	CursorHint,
 	Draggable,
+	HandleSet,
+	Hitbox,
+	InteractionRole,
 	Parent,
 	Resizable,
 	Selectable,
+	Selected,
 	Transform2D,
 	Visible,
 	Widget,
 	WidgetBreakpoint,
 	WidgetData,
+	WorldBounds,
 	ZIndex,
 	createLayoutEngine,
 } from '../index.js';
@@ -282,6 +288,171 @@ describe('CanvasEngine', () => {
 
 			engine.tick();
 			expect(engine.getFrameChanges().cameraChanged).toBe(false);
+		});
+	});
+
+	describe('handle sync (RFC-001 Phase 4)', () => {
+		it('spawns 8 resize handles when a single resizable is selected', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			// Select directly via tag — avoids going through pointer events.
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			const handleSet = engine.get(e, HandleSet);
+			expect(handleSet).toBeDefined();
+			expect(handleSet?.ids.length).toBe(8);
+
+			for (const id of handleSet?.ids ?? []) {
+				expect(engine.world.entityExists(id)).toBe(true);
+				expect(engine.has(id, Hitbox)).toBe(true);
+				expect(engine.has(id, InteractionRole)).toBe(true);
+				expect(engine.has(id, CursorHint)).toBe(true);
+				expect(engine.has(id, Parent)).toBe(true);
+
+				const role = engine.get(id, InteractionRole);
+				expect(role?.role.type).toBe('resize');
+
+				const parent = engine.get(id, Parent);
+				expect(parent?.id).toBe(e);
+			}
+		});
+
+		it('despawns handles when selection is cleared', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			const handleSet = engine.get(e, HandleSet);
+			expect(handleSet?.ids.length).toBe(8);
+			const handleIds = [...(handleSet?.ids ?? [])];
+
+			// Deselect
+			engine.world.removeTag(e, Selected);
+			engine.tick();
+
+			expect(engine.has(e, HandleSet)).toBe(false);
+			for (const id of handleIds) {
+				expect(engine.world.entityExists(id)).toBe(false);
+			}
+		});
+
+		it('does not spawn handles when multiple resizables are selected', () => {
+			const engine = createTestEngine();
+			const e1 = createWidget(engine, 100, 100, 200, 150);
+			const e2 = createWidget(engine, 400, 100, 200, 150);
+			engine.tick();
+
+			engine.world.addTag(e1, Selected);
+			engine.world.addTag(e2, Selected);
+			engine.tick();
+
+			expect(engine.has(e1, HandleSet)).toBe(false);
+			expect(engine.has(e2, HandleSet)).toBe(false);
+		});
+
+		it('handles track parent bounds when resized', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			const handleSet = engine.get(e, HandleSet);
+			expect(handleSet).toBeDefined();
+
+			// Find the SE handle (anchorX=1, anchorY=1)
+			let seId: number | null = null;
+			for (const id of handleSet?.ids ?? []) {
+				const role = engine.get(id, InteractionRole);
+				if (role?.role.type === 'resize' && role.role.handle === 'se') {
+					seId = id;
+					break;
+				}
+			}
+			expect(seId).not.toBeNull();
+			if (seId === null) return;
+
+			// Clone because getComponent returns the live reference — setComponent
+			// mutates in place, so holding a raw reference across a tick is unsafe.
+			const beforeWBRaw = engine.get(seId, WorldBounds);
+			expect(beforeWBRaw).toBeDefined();
+			if (!beforeWBRaw) return;
+			const beforeWB = { ...beforeWBRaw };
+
+			// Resize the parent: width 200 -> 300 (+100 in X)
+			engine.set(e, Transform2D, { width: 300 });
+			engine.tick();
+
+			const afterWBRaw = engine.get(seId, WorldBounds);
+			expect(afterWBRaw).toBeDefined();
+			if (!afterWBRaw) return;
+			const afterWB = { ...afterWBRaw };
+
+			expect(afterWB.worldX - beforeWB.worldX).toBeCloseTo(100, 5);
+			expect(afterWB.worldY).toBeCloseTo(beforeWB.worldY, 5);
+		});
+
+		it('cascades destroy through HandleSet', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			const handleSet = engine.get(e, HandleSet);
+			expect(handleSet?.ids.length).toBe(8);
+			const handleIds = [...(handleSet?.ids ?? [])];
+
+			engine.destroyEntity(e);
+
+			for (const id of handleIds) {
+				expect(engine.world.entityExists(id)).toBe(false);
+			}
+			expect(engine.world.entityExists(e)).toBe(false);
+		});
+
+		it('grows the spatial index by 8 on selection', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			const sizeBefore = engine.getSpatialIndex().size;
+
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			const sizeAfter = engine.getSpatialIndex().size;
+			expect(sizeAfter - sizeBefore).toBe(8);
+		});
+
+		it('spawns handles after dropping from double to single selection', () => {
+			const engine = createTestEngine();
+			const e1 = createWidget(engine, 100, 100, 200, 150);
+			const e2 = createWidget(engine, 400, 100, 200, 150);
+			engine.tick();
+
+			engine.world.addTag(e1, Selected);
+			engine.world.addTag(e2, Selected);
+			engine.tick();
+
+			// Neither has handles yet.
+			expect(engine.has(e1, HandleSet)).toBe(false);
+			expect(engine.has(e2, HandleSet)).toBe(false);
+
+			// Drop to single selection.
+			engine.world.removeTag(e2, Selected);
+			engine.tick();
+
+			expect(engine.has(e1, HandleSet)).toBe(true);
+			expect(engine.get(e1, HandleSet)?.ids.length).toBe(8);
 		});
 	});
 });
