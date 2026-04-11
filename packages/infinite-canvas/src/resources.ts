@@ -1,3 +1,4 @@
+import type { CSSCursor } from './components.js';
 import { defineResource } from './ecs/index.js';
 import type { EntityId } from './ecs/index.js';
 
@@ -5,6 +6,18 @@ export interface NavigationFrame {
 	containerId: EntityId | null;
 	camera: { x: number; y: number; zoom: number };
 }
+
+export type CursorResourceData = {
+	cursor: CSSCursor;
+};
+
+/**
+ * Output sink for the cursor system. Written by cursorSystem each tick;
+ * read by the RAF loop to apply style.cursor on the root container div.
+ */
+export const CursorResource = defineResource<CursorResourceData>('Cursor', {
+	cursor: 'default',
+});
 
 export const CameraResource = defineResource('Camera', {
 	x: 0,

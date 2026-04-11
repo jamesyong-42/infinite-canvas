@@ -66,6 +66,10 @@ export {
 	WidgetData,
 	WidgetBreakpoint,
 	Container,
+	Hitbox,
+	InteractionRole,
+	HandleSet,
+	CursorHint,
 	Selectable,
 	Draggable,
 	Resizable,
@@ -73,6 +77,13 @@ export {
 	Selected,
 	Active,
 	Visible,
+} from './components.js';
+export type {
+	InteractionRoleType,
+	InteractionRoleData,
+	HandleSetData,
+	CursorHintData,
+	CSSCursor,
 } from './components.js';
 
 // Resources
@@ -82,8 +93,9 @@ export {
 	ZoomConfigResource,
 	BreakpointConfigResource,
 	NavigationStackResource,
+	CursorResource,
 } from './resources.js';
-export type { Breakpoint, NavigationFrame } from './resources.js';
+export type { Breakpoint, NavigationFrame, CursorResourceData } from './resources.js';
 
 // Math
 export {

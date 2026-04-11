@@ -17,6 +17,7 @@ import {
 	WorldBounds,
 	ZIndex,
 } from './components.js';
+import type { ResizeHandlePos } from './components.js';
 import type {
 	ComponentInit,
 	ComponentType,
@@ -67,7 +68,7 @@ export type PointerDirective =
 	| { action: 'capture-resize'; handle: ResizeHandlePos }
 	| { action: 'capture-marquee' };
 
-export type ResizeHandlePos = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+export type { ResizeHandlePos } from './components.js';
 
 export interface Modifiers {
 	shift: boolean;
