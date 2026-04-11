@@ -153,8 +153,9 @@ export function serializeEntities(
 
 		result.push({ id: entityId, components, tags });
 
-		// Recurse into children
-		const children = components.Children;
+		// Recurse into children. components.Children is typed as unknown via
+		// the Record<string, unknown> shape, so narrow through a cast.
+		const children = components.Children as { ids?: EntityId[] } | undefined;
 		if (children?.ids) {
 			for (const childId of children.ids) {
 				visit(childId);

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { defineSystem } from '../define.js';
 import { SystemScheduler } from '../scheduler.js';
 import { createWorld } from '../world.js';

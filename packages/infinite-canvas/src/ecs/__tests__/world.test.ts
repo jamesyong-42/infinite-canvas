@@ -36,7 +36,9 @@ describe('World', () => {
 		it('adds and gets components with defaults merged', () => {
 			const world = createWorld();
 			const e = world.createEntity();
-			world.addComponent(e, Position, { x: 42 });
+			// Use a Partial cast: runtime merges with defaults, but the type
+			// signature requires the full shape. See note in addComponent.
+			world.addComponent(e, Position, { x: 42 } as { x: number; y: number });
 			const pos = world.getComponent(e, Position);
 			expect(pos).toBeDefined();
 			if (!pos) throw new Error('Position component missing');

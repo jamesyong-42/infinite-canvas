@@ -137,7 +137,11 @@ export function createWorld(): World {
 			};
 			components.set(type.name, store);
 		}
-		return store;
+		// The cache stores stores as ComponentStore<unknown>; they are
+		// logically parameterized by T at the call site, but TypeScript can't
+		// track that through a shared map. Unchecked at runtime — safe because
+		// each type.name owns exactly one store with one T.
+		return store as ComponentStore<T>;
 	}
 
 	function getTagStore(type: TagType): TagStore {
@@ -153,7 +157,7 @@ export function createWorld(): World {
 		return store;
 	}
 
-	function hasListeners(store: ComponentStore): boolean {
+	function hasListeners<T>(store: ComponentStore<T>): boolean {
 		if (store.handlers.size === 0) return false;
 		for (const set of store.handlers.values()) {
 			if (set.size > 0) return true;
