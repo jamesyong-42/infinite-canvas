@@ -401,23 +401,42 @@ export function InfiniteCanvas({
 		};
 	}, [engine]);
 
-	// Canvas background pointer — empty-space clicks
-	const onBackgroundPointerDown = useCallback(
+	// Canvas-level pointer handlers — attached to the root container div so
+	// pointer events in the "outside handle strip" (handle hit zone that
+	// extends beyond a widget slot's DOM bounds) reach the engine. Widget
+	// slots still have their own handlers and stopPropagation, so events
+	// inside widgets never reach these fallbacks.
+	const onCanvasPointerDown = useCallback(
 		(e: React.PointerEvent) => {
-			if (e.target !== e.currentTarget) return; // ignore bubbled events from widgets
+			const target = e.target as HTMLElement | null;
+			// Respect interactive form elements inside widget children.
+			if (target?.closest('button, input, textarea, select, [contenteditable]')) return;
 			const rect = containerRef.current?.getBoundingClientRect();
 			if (!rect) return;
-			engine.handlePointerDown(e.clientX - rect.left, e.clientY - rect.top, e.button, {
-				shift: e.shiftKey,
-				ctrl: e.ctrlKey,
-				alt: e.altKey,
-				meta: e.metaKey,
-			});
+			const directive = engine.handlePointerDown(
+				e.clientX - rect.left,
+				e.clientY - rect.top,
+				e.button,
+				{
+					shift: e.shiftKey,
+					ctrl: e.ctrlKey,
+					alt: e.altKey,
+					meta: e.metaKey,
+				},
+			);
+			// Capture on the container so subsequent moves route here even when
+			// the pointer leaves the viewport. Widget slot already captures for
+			// events that reach it first; this is for empty-space / outside-strip
+			// events that bypass widget slots.
+			if (directive.action === 'capture-resize' || directive.action === 'passthrough-track-drag') {
+				containerRef.current?.setPointerCapture(e.pointerId);
+			}
+			if (directive.action === 'capture-resize') e.preventDefault();
 		},
 		[engine],
 	);
 
-	const onBackgroundPointerMove = useCallback(
+	const onCanvasPointerMove = useCallback(
 		(e: React.PointerEvent) => {
 			const rect = containerRef.current?.getBoundingClientRect();
 			if (!rect) return;
@@ -431,8 +450,11 @@ export function InfiniteCanvas({
 		[engine],
 	);
 
-	const onBackgroundPointerUp = useCallback(
-		(_e: React.PointerEvent) => {
+	const onCanvasPointerUp = useCallback(
+		(e: React.PointerEvent) => {
+			if (containerRef.current?.hasPointerCapture(e.pointerId)) {
+				containerRef.current.releasePointerCapture(e.pointerId);
+			}
 			engine.handlePointerUp();
 		},
 		[engine],
@@ -597,6 +619,9 @@ export function InfiniteCanvas({
 				touchAction: 'none',
 				backgroundColor: 'var(--canvas-bg, #fafafa)',
 			}}
+			onPointerDown={onCanvasPointerDown}
+			onPointerMove={onCanvasPointerMove}
+			onPointerUp={onCanvasPointerUp}
 		>
 			{/* WebGL layer — dot grid, selection overlays, connections */}
 			<canvas ref={webglCanvasRef} className="absolute inset-0 pointer-events-none" />
@@ -604,13 +629,10 @@ export function InfiniteCanvas({
 			{/* R3F layer — WebGL widgets (lazy, only when webgl entities exist) */}
 			{webglEntities.length > 0 && <WebGLWidgetBridge engine={engine} entities={webglEntities} />}
 
-			{/* Background — handles empty-space pointer events (deselect, marquee) */}
-			<div
-				className="absolute inset-0"
-				onPointerDown={onBackgroundPointerDown}
-				onPointerMove={onBackgroundPointerMove}
-				onPointerUp={onBackgroundPointerUp}
-			/>
+			{/* Background — purely visual; pointer handlers live on the container.
+			    Kept as a div so the paint order (canvas, background, camera layer)
+			    is stable and future background visuals have a dedicated layer. */}
+			<div className="absolute inset-0 pointer-events-none" />
 
 			{/* Camera transform layer — DOM widgets + selection overlays for WebGL widgets */}
 			<div

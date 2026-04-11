@@ -7,6 +7,7 @@ import {
 	CursorHint,
 	Draggable,
 	HandleSet,
+	Hitbox,
 	InteractionRole,
 	Parent,
 	Resizable,
@@ -754,10 +755,16 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 							height: firstT.height,
 						};
 
-						// Collect reference bounds from visible entities
+						// Collect reference bounds from visible entities. Skip the dragged
+						// set and skip anything with a Hitbox component — Hitbox entities
+						// are sub-entity interaction zones (resize handles), not snap
+						// targets. Without this filter the dragged widget's own 8 handles
+						// become snap refs and every axis matches trivially, producing
+						// guide lines for every edge on every drag frame.
 						const refs = [];
 						for (const entity of world.queryTagged(Active)) {
 							if (draggedIds.has(entity)) continue;
+							if (world.hasComponent(entity, Hitbox)) continue;
 							const wb = world.getComponent(entity, WorldBounds);
 							if (wb) {
 								refs.push({
