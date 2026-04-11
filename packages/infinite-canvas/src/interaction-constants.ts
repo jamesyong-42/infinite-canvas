@@ -2,9 +2,8 @@
  * Shared interaction sizing and threshold constants.
  *
  * Single source of truth for hit-zone sizes, visual handle sizes, dead zones,
- * and minimum widget dimensions. Consumed by the engine, the selection
- * renderer, the touch gesture state machine, and the (currently dead-code)
- * SelectionFrame DOM component. See RFC-001, Phase 1.
+ * and minimum widget dimensions. Consumed by the engine, the WebGL selection
+ * renderer, and the touch gesture state machine. See RFC-001, Phase 1.
  */
 
 /**

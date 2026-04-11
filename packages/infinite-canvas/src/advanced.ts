@@ -8,7 +8,6 @@ export { WebGLWidgetSlot } from './react/webgl/WebGLWidgetSlot.js';
 
 // Sub-components (for advanced composition)
 export { WidgetSlot } from './react/WidgetSlot.js';
-export { SelectionFrame } from './react/SelectionFrame.js';
 export { SelectionOverlaySlot } from './react/SelectionOverlaySlot.js';
 
 // Serialization
