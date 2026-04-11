@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { HANDLE_VISUAL_SIZE_PX } from '../../interaction-constants.js';
 import type { EqualSpacingIndicator, SnapGuide } from '../../snap.js';
 
 // === Public config (Figma-style defaults) ===
@@ -29,7 +30,7 @@ export const DEFAULT_SELECTION_CONFIG: SelectionConfig = {
 	outlineWidth: 1.5,
 	hoverColor: [0.051, 0.6, 1.0],
 	hoverWidth: 1.0,
-	handleSize: 8,
+	handleSize: HANDLE_VISUAL_SIZE_PX,
 	handleFill: [1, 1, 1],
 	handleBorder: [0.051, 0.6, 1.0],
 	handleBorderWidth: 1.5,

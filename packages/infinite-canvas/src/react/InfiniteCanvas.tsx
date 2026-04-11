@@ -3,6 +3,7 @@ import { Vector2 } from 'three';
 import { Widget, WorldBounds } from '../components.js';
 import type { EntityId } from '../ecs/types.js';
 import type { LayoutEngine } from '../engine.js';
+import { DEAD_ZONE_TOUCH_PX } from '../interaction-constants.js';
 import { SelectionOverlaySlot } from './SelectionOverlaySlot.js';
 import { WidgetProvider } from './WidgetProvider.js';
 import { WidgetSlot } from './WidgetSlot.js';
@@ -161,7 +162,6 @@ export function InfiniteCanvas({
 		let lastTapTime = 0;
 		let lastTapX = 0;
 		let lastTapY = 0;
-		const DEAD_ZONE = 8;
 		const DOUBLE_TAP_MS = 300;
 		const DOUBLE_TAP_DIST = 30;
 
@@ -310,7 +310,10 @@ export function InfiniteCanvas({
 
 			// Pending pan → check dead zone
 			if (gesture.type === 'pending-pan') {
-				if (Math.abs(x - gesture.x) > DEAD_ZONE || Math.abs(y - gesture.y) > DEAD_ZONE) {
+				if (
+					Math.abs(x - gesture.x) > DEAD_ZONE_TOUCH_PX ||
+					Math.abs(y - gesture.y) > DEAD_ZONE_TOUCH_PX
+				) {
 					gesture = { type: 'panning', lastX: x, lastY: y };
 				}
 				return;
@@ -328,7 +331,10 @@ export function InfiniteCanvas({
 			if (gesture.type === 'pending-entity' || gesture.type === 'entity-dragging') {
 				engine.handlePointerMove(x, y, noMods);
 				if (gesture.type === 'pending-entity') {
-					if (Math.abs(x - gesture.x) > DEAD_ZONE || Math.abs(y - gesture.y) > DEAD_ZONE) {
+					if (
+						Math.abs(x - gesture.x) > DEAD_ZONE_TOUCH_PX ||
+						Math.abs(y - gesture.y) > DEAD_ZONE_TOUCH_PX
+					) {
 						gesture = { type: 'entity-dragging' };
 					}
 				}

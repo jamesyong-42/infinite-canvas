@@ -27,6 +27,11 @@ import type {
 	World,
 } from './ecs/index.js';
 import { SystemScheduler, createWorld, defineResource } from './ecs/index.js';
+import {
+	DEAD_ZONE_MOUSE_PX,
+	HANDLE_HIT_SIZE_PX,
+	MIN_WIDGET_SIZE,
+} from './interaction-constants.js';
 import { clamp, pointInAABB, screenToWorld, worldBoundsToAABB } from './math.js';
 import { Profiler } from './profiler.js';
 import {
@@ -93,8 +98,6 @@ type InputState =
 			startBounds: { x: number; y: number; width: number; height: number };
 	  }
 	| { mode: 'marquee'; startX: number; startY: number };
-
-const DEAD_ZONE_PX = 4;
 
 // === Visible entity for renderers ===
 
@@ -330,7 +333,7 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 
 		const camera = world.getResource(CameraResource);
 		const worldPos = screenToWorld(screenX, screenY, camera);
-		const handleSize = 8 / camera.zoom;
+		const handleSize = HANDLE_HIT_SIZE_PX / 2 / camera.zoom;
 
 		const x = wb.worldX;
 		const y = wb.worldY;
@@ -638,7 +641,7 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			if (inputState.mode === 'tracking') {
 				const dx = screenX - inputState.startX;
 				const dy = screenY - inputState.startY;
-				if (Math.abs(dx) > DEAD_ZONE_PX || Math.abs(dy) > DEAD_ZONE_PX) {
+				if (Math.abs(dx) > DEAD_ZONE_MOUSE_PX || Math.abs(dy) > DEAD_ZONE_MOUSE_PX) {
 					// Fix #5: Save original z-indices, temporarily bring to top
 					const originalZIndices = new Map<EntityId, number>();
 					let maxZ = 0;
@@ -736,7 +739,6 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 				const dy = (screenY - inputState.startY) / camera.zoom;
 				const { x, y, width: w, height: h } = inputState.startBounds;
 				const handle = inputState.handle;
-				const MIN_SIZE = 20;
 
 				let newX = x,
 					newY = y,
@@ -744,18 +746,18 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 					newH = h;
 
 				if (handle.includes('e')) {
-					newW = Math.max(MIN_SIZE, w + dx);
+					newW = Math.max(MIN_WIDGET_SIZE, w + dx);
 				}
 				if (handle.includes('w')) {
 					newX = x + dx;
-					newW = Math.max(MIN_SIZE, w - dx);
+					newW = Math.max(MIN_WIDGET_SIZE, w - dx);
 				}
 				if (handle.includes('s')) {
-					newH = Math.max(MIN_SIZE, h + dy);
+					newH = Math.max(MIN_WIDGET_SIZE, h + dy);
 				}
 				if (handle.includes('n')) {
 					newY = y + dy;
-					newH = Math.max(MIN_SIZE, h - dy);
+					newH = Math.max(MIN_WIDGET_SIZE, h - dy);
 				}
 
 				world.setComponent(inputState.entityId, Transform2D, {
