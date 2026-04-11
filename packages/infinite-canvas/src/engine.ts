@@ -21,7 +21,12 @@ import {
 	WorldBounds,
 	ZIndex,
 } from './components.js';
-import type { CSSCursor, InteractionRoleData, ResizeHandlePos } from './components.js';
+import type {
+	CSSCursor,
+	InteractionRoleData,
+	InteractionRoleType,
+	ResizeHandlePos,
+} from './components.js';
 import type {
 	ComponentInit,
 	ComponentType,
@@ -279,6 +284,55 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 		}
 	});
 
+	// Auto-attach InteractionRole and CursorHint based on Draggable/Selectable
+	// tag presence. This lets users create entities via createEntity() with the
+	// traditional tag-based API without needing to know about the new
+	// InteractionRole component introduced in RFC-001. addWidget's path
+	// continues to work because it adds the same tags. Entities with an
+	// explicit resize/rotate/connect role (e.g. spawned handles) are left
+	// alone so this never fights handleSyncSystem.
+	function refreshInteractionRole(entity: EntityId): void {
+		const current = world.getComponent(entity, InteractionRole);
+		// Never touch roles we don't own (resize/rotate/connect live on handles
+		// and future sub-entities; they are managed explicitly by their spawner).
+		if (
+			current &&
+			current.role.type !== 'drag' &&
+			current.role.type !== 'select' &&
+			current.role.type !== 'canvas'
+		) {
+			return;
+		}
+
+		const hasDraggable = world.hasTag(entity, Draggable);
+		const hasSelectable = world.hasTag(entity, Selectable);
+		const desiredRole: InteractionRoleType | null = hasDraggable
+			? { type: 'drag' }
+			: hasSelectable
+				? { type: 'select' }
+				: null;
+
+		if (desiredRole === null) {
+			if (current) world.removeComponent(entity, InteractionRole);
+			if (world.hasComponent(entity, CursorHint)) world.removeComponent(entity, CursorHint);
+			return;
+		}
+
+		if (!current) {
+			world.addComponent(entity, InteractionRole, { layer: 5, role: desiredRole });
+		} else if (current.role.type !== desiredRole.type) {
+			world.setComponent(entity, InteractionRole, { role: desiredRole });
+		}
+
+		if (desiredRole.type === 'drag' && !world.hasComponent(entity, CursorHint)) {
+			world.addComponent(entity, CursorHint, { hover: 'grab', active: 'grabbing' });
+		}
+	}
+	world.onTagAdded(Draggable, refreshInteractionRole);
+	world.onTagRemoved(Draggable, refreshInteractionRole);
+	world.onTagAdded(Selectable, refreshInteractionRole);
+	world.onTagRemoved(Selectable, refreshInteractionRole);
+
 	// Initialize navigation — mark root entities as Active on first tick
 	world.setResource(NavigationStackResource, { changed: true });
 
@@ -444,21 +498,13 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 				inits.push([WidgetData, { data: opts.data }]);
 			}
 			inits.push([ZIndex, { value: opts.zIndex ?? 0 }]);
+			// Selectable / Draggable trigger the reactive observer in
+			// createLayoutEngine which auto-attaches InteractionRole and (for
+			// Draggable) CursorHint. Users building entities via createEntity()
+			// with these tags get the same wiring for free.
 			if (opts.selectable !== false) inits.push([Selectable]);
 			if (opts.draggable !== false) inits.push([Draggable]);
 			if (opts.resizable !== false) inits.push([Resizable]);
-			// InteractionRole doubles as the "I'm interactable" marker for the
-			// unified hit test AND as the role dispatcher in handlePointerDown.
-			// Mirrors the decision matrix of the Selectable/Draggable tags.
-			if (opts.draggable !== false) {
-				inits.push([InteractionRole, { layer: 5, role: { type: 'drag' } }]);
-				// RFC-001 Phase 6: draggable bodies get grab/grabbing cursor hints.
-				// Select-only widgets intentionally fall through to 'default' via
-				// cursorSystem's ?? fallback.
-				inits.push([CursorHint, { hover: 'grab', active: 'grabbing' }]);
-			} else if (opts.selectable !== false) {
-				inits.push([InteractionRole, { layer: 5, role: { type: 'select' } }]);
-			}
 			if (opts.parent !== undefined) {
 				inits.push([Parent, { id: opts.parent }]);
 			}

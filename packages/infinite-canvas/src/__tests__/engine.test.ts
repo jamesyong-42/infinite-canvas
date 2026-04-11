@@ -36,6 +36,9 @@ function createWidget(
 	width = 200,
 	height = 150,
 ) {
+	// Draggable / Selectable trigger the reactive auto-attach in the engine,
+	// so no explicit InteractionRole or CursorHint push is needed — exactly
+	// like user code that bypasses addWidget().
 	return engine.createEntity([
 		[Transform2D, { x, y, width, height, rotation: 0 }],
 		[Widget, { surface: 'dom', type: 'debug' }],
@@ -44,7 +47,6 @@ function createWidget(
 		[Selectable],
 		[Draggable],
 		[Resizable],
-		[InteractionRole, { layer: 5, role: { type: 'drag' } }],
 	]);
 }
 
@@ -772,6 +774,127 @@ describe('CanvasEngine', () => {
 
 			expect(engine.getHoveredEntity()).toBe(seId);
 			expect(engine.world.getResource(CursorResource).cursor).toBe('se-resize');
+		});
+	});
+
+	describe('reactive InteractionRole auto-attach (RFC-001 bugfix)', () => {
+		const mods = { shift: false, ctrl: false, alt: false, meta: false };
+
+		it('entity created via createEntity with Draggable tag becomes hit-testable', () => {
+			// Regression test for the playground's container pattern: users
+			// bypass addWidget() and call createEntity() with explicit tags.
+			// Prior to the reactive observer, such entities had no InteractionRole
+			// and were invisible to the unified hit test.
+			const engine = createTestEngine();
+			const container = engine.createEntity([
+				[Transform2D, { x: 100, y: 100, width: 300, height: 200, rotation: 0 }],
+				[Widget, { surface: 'dom', type: 'container' }],
+				[ZIndex, { value: 0 }],
+				[Selectable],
+				[Draggable],
+				[Resizable],
+			]);
+			engine.tick();
+
+			// InteractionRole auto-attached by the Draggable observer.
+			const role = engine.get(container, InteractionRole);
+			expect(role?.role.type).toBe('drag');
+			expect(role?.layer).toBe(5);
+
+			// CursorHint auto-attached for drag.
+			expect(engine.get(container, CursorHint)).toEqual({ hover: 'grab', active: 'grabbing' });
+
+			// Hit test finds it — this was the user-visible bug.
+			const directive = engine.handlePointerDown(250, 200, 0, mods);
+			expect(directive.action).toBe('passthrough-track-drag');
+			expect(engine.getSelectedEntities()).toContain(container);
+		});
+
+		it('Selectable-only entity gets select role, no CursorHint', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+				[Selectable],
+			]);
+
+			expect(engine.get(e, InteractionRole)?.role.type).toBe('select');
+			expect(engine.has(e, CursorHint)).toBe(false);
+		});
+
+		it('role upgrades from select to drag when Draggable is added later', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+				[Selectable],
+			]);
+			expect(engine.get(e, InteractionRole)?.role.type).toBe('select');
+
+			engine.world.addTag(e, Draggable);
+			expect(engine.get(e, InteractionRole)?.role.type).toBe('drag');
+			expect(engine.get(e, CursorHint)).toEqual({ hover: 'grab', active: 'grabbing' });
+		});
+
+		it('role downgrades and CursorHint clears when Draggable is removed', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+				[Selectable],
+				[Draggable],
+			]);
+			expect(engine.get(e, InteractionRole)?.role.type).toBe('drag');
+
+			engine.world.removeTag(e, Draggable);
+			expect(engine.get(e, InteractionRole)?.role.type).toBe('select');
+			// CursorHint is not auto-cleared on downgrade — harmless because
+			// select-only entities are never hovered into the dragging state.
+		});
+
+		it('entity with neither tag has no InteractionRole', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+			]);
+			expect(engine.has(e, InteractionRole)).toBe(false);
+		});
+
+		it('removing both tags removes the auto-attached InteractionRole', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+				[Selectable],
+				[Draggable],
+			]);
+			expect(engine.has(e, InteractionRole)).toBe(true);
+
+			engine.world.removeTag(e, Draggable);
+			engine.world.removeTag(e, Selectable);
+			expect(engine.has(e, InteractionRole)).toBe(false);
+			expect(engine.has(e, CursorHint)).toBe(false);
+		});
+
+		it('handle entities with resize role are not touched by the observer', () => {
+			// Regression guard: handleSyncSystem spawns handles with InteractionRole
+			// { role: resize }. If the observer clobbered those, resize would break
+			// whenever Draggable/Selectable tags are toggled on the parent.
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			const handleSet = engine.get(e, HandleSet);
+			const seHandle = handleSet?.ids.find(
+				(id) => engine.get(id, InteractionRole)?.role.type === 'resize',
+			);
+			expect(seHandle).toBeDefined();
+			if (seHandle === undefined) return;
+
+			const beforeRole = engine.get(seHandle, InteractionRole);
+			// Toggle parent tags — should not touch handle roles.
+			engine.world.removeTag(e, Draggable);
+			engine.world.addTag(e, Draggable);
+			const afterRole = engine.get(seHandle, InteractionRole);
+			expect(afterRole?.role.type).toBe('resize');
+			expect(afterRole?.layer).toBe(beforeRole?.layer);
 		});
 	});
 });
