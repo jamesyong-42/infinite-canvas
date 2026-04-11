@@ -6,6 +6,7 @@ import {
 	Container,
 	Draggable,
 	HandleSet,
+	InteractionRole,
 	Parent,
 	Resizable,
 	Selectable,
@@ -18,7 +19,7 @@ import {
 	WorldBounds,
 	ZIndex,
 } from './components.js';
-import type { ResizeHandlePos } from './components.js';
+import type { InteractionRoleData, ResizeHandlePos } from './components.js';
 import type {
 	ComponentInit,
 	ComponentType,
@@ -29,12 +30,8 @@ import type {
 	World,
 } from './ecs/index.js';
 import { SystemScheduler, createWorld, defineResource } from './ecs/index.js';
-import {
-	DEAD_ZONE_MOUSE_PX,
-	HANDLE_HIT_SIZE_PX,
-	MIN_WIDGET_SIZE,
-} from './interaction-constants.js';
-import { clamp, pointInAABB, screenToWorld, worldBoundsToAABB } from './math.js';
+import { DEAD_ZONE_MOUSE_PX, MIN_WIDGET_SIZE } from './interaction-constants.js';
+import { clamp, screenToWorld, worldBoundsToAABB } from './math.js';
 import { Profiler } from './profiler.js';
 import {
 	BreakpointConfigResource,
@@ -96,6 +93,11 @@ type InputState =
 	| {
 			mode: 'resizing';
 			entityId: EntityId;
+			/**
+			 * The child handle entity that was hit (not the parent widget).
+			 * Phase 7's cursorSystem reads CursorHint from this id.
+			 */
+			handleEntityId: EntityId;
 			handle: ResizeHandlePos;
 			startX: number;
 			startY: number;
@@ -302,70 +304,38 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 		dirty = true;
 	}
 
-	function hitTest(screenX: number, screenY: number): EntityId | null {
-		const camera = world.getResource(CameraResource);
-		const worldPos = screenToWorld(screenX, screenY, camera);
-		const tolerance = 2 / camera.zoom;
-		const candidates = spatialIndex.searchPoint(worldPos.x, worldPos.y, tolerance);
-
-		// Filter to Active entities, sort by z-index (highest first)
-		const active = candidates
-			.filter((c) => world.hasTag(c.entityId, Active))
-			.sort((a, b) => {
-				const zA = world.getComponent(a.entityId, ZIndex)?.value ?? 0;
-				const zB = world.getComponent(b.entityId, ZIndex)?.value ?? 0;
-				return zB - zA;
-			});
-
-		for (const candidate of active) {
-			const wb = world.getComponent(candidate.entityId, WorldBounds);
-			if (wb && pointInAABB(worldPos.x, worldPos.y, worldBoundsToAABB(wb))) {
-				return candidate.entityId;
-			}
-		}
-		return null;
-	}
-
-	function hitTestResizeHandle(
+	function hitTest(
 		screenX: number,
 		screenY: number,
-	): { entityId: EntityId; handle: ResizeHandlePos } | null {
-		const selected = engine.getSelectedEntities();
-		if (selected.length !== 1) return null;
-
-		const entity = selected[0];
-		const wb = world.getComponent(entity, WorldBounds);
-		if (!wb || !world.hasTag(entity, Resizable)) return null;
-
+	): { entityId: EntityId; role: InteractionRoleData } | null {
 		const camera = world.getResource(CameraResource);
 		const worldPos = screenToWorld(screenX, screenY, camera);
-		const handleSize = HANDLE_HIT_SIZE_PX / 2 / camera.zoom;
 
-		const x = wb.worldX;
-		const y = wb.worldY;
-		const w = wb.worldWidth;
-		const h = wb.worldHeight;
+		// Zero-tolerance point query: RBush returns only entries whose AABB
+		// strictly contains the point, so no secondary pointInAABB check is
+		// needed. Generous hit slop lives in Hitbox size, not in tolerance.
+		const candidates = spatialIndex.searchPoint(worldPos.x, worldPos.y, 0);
 
-		const handles: { pos: ResizeHandlePos; cx: number; cy: number }[] = [
-			{ pos: 'nw', cx: x, cy: y },
-			{ pos: 'n', cx: x + w / 2, cy: y },
-			{ pos: 'ne', cx: x + w, cy: y },
-			{ pos: 'e', cx: x + w, cy: y + h / 2 },
-			{ pos: 'se', cx: x + w, cy: y + h },
-			{ pos: 's', cx: x + w / 2, cy: y + h },
-			{ pos: 'sw', cx: x, cy: y + h },
-			{ pos: 'w', cx: x, cy: y + h / 2 },
-		];
-
-		for (const handle of handles) {
-			if (
-				Math.abs(worldPos.x - handle.cx) <= handleSize &&
-				Math.abs(worldPos.y - handle.cy) <= handleSize
-			) {
-				return { entityId: entity, handle: handle.pos };
-			}
+		// Filter: must be Active (in current navigation frame) AND have a role.
+		type Candidate = { entityId: EntityId; role: InteractionRoleData };
+		const interactable: Candidate[] = [];
+		for (const c of candidates) {
+			if (!world.hasTag(c.entityId, Active)) continue;
+			const role = world.getComponent(c.entityId, InteractionRole);
+			if (!role) continue;
+			interactable.push({ entityId: c.entityId, role });
 		}
-		return null;
+		if (interactable.length === 0) return null;
+
+		// Sort: role.layer desc, then ZIndex desc as tiebreaker.
+		interactable.sort((a, b) => {
+			if (b.role.layer !== a.role.layer) return b.role.layer - a.role.layer;
+			const zA = world.getComponent(a.entityId, ZIndex)?.value ?? 0;
+			const zB = world.getComponent(b.entityId, ZIndex)?.value ?? 0;
+			return zB - zA;
+		});
+
+		return interactable[0];
 	}
 
 	// Fix #2: track selection changes explicitly
@@ -439,6 +409,14 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			if (opts.selectable !== false) inits.push([Selectable]);
 			if (opts.draggable !== false) inits.push([Draggable]);
 			if (opts.resizable !== false) inits.push([Resizable]);
+			// InteractionRole doubles as the "I'm interactable" marker for the
+			// unified hit test AND as the role dispatcher in handlePointerDown.
+			// Mirrors the decision matrix of the Selectable/Draggable tags.
+			if (opts.draggable !== false) {
+				inits.push([InteractionRole, { layer: 5, role: { type: 'drag' } }]);
+			} else if (opts.selectable !== false) {
+				inits.push([InteractionRole, { layer: 5, role: { type: 'select' } }]);
+			}
 			if (opts.parent !== undefined) {
 				inits.push([Parent, { id: opts.parent }]);
 			}
@@ -617,40 +595,60 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 		// === Pointer Input ===
 
 		handlePointerDown(screenX, screenY, _button, modifiers): PointerDirective {
-			// Check resize handles first
-			const handleHit = hitTestResizeHandle(screenX, screenY);
-			if (handleHit) {
-				const t = world.getComponent(handleHit.entityId, Transform2D)!;
-				commandBuffer.beginGroup(); // undo group for entire resize
-				inputState = {
-					mode: 'resizing',
-					entityId: handleHit.entityId,
-					handle: handleHit.handle,
-					startX: screenX,
-					startY: screenY,
-					startBounds: { x: t.x, y: t.y, width: t.width, height: t.height },
-				};
+			const hit = hitTest(screenX, screenY);
+
+			if (!hit) {
+				clearSelection();
+				inputState = { mode: 'marquee', startX: screenX, startY: screenY };
 				markDirtyInternal();
-				return { action: 'capture-resize', handle: handleHit.handle };
+				return { action: 'capture-marquee' };
 			}
 
-			// Hit test entities
-			const hitEntity = hitTest(screenX, screenY);
-
-			if (hitEntity !== null) {
-				selectEntity(hitEntity, modifiers.shift);
-				if (world.hasTag(hitEntity, Draggable)) {
-					inputState = { mode: 'tracking', entityId: hitEntity, startX: screenX, startY: screenY };
+			switch (hit.role.role.type) {
+				case 'resize': {
+					const parentRef = world.getComponent(hit.entityId, Parent);
+					if (!parentRef) return { action: 'passthrough' };
+					const parentId = parentRef.id;
+					const t = world.getComponent(parentId, Transform2D);
+					if (!t) return { action: 'passthrough' };
+					commandBuffer.beginGroup(); // undo group for entire resize
+					inputState = {
+						mode: 'resizing',
+						entityId: parentId,
+						handleEntityId: hit.entityId,
+						handle: hit.role.role.handle,
+						startX: screenX,
+						startY: screenY,
+						startBounds: { x: t.x, y: t.y, width: t.width, height: t.height },
+					};
+					markDirtyInternal();
+					return { action: 'capture-resize', handle: hit.role.role.handle };
 				}
-				markDirtyInternal();
-				return { action: 'passthrough-track-drag' };
-			}
 
-			// Empty canvas
-			clearSelection();
-			inputState = { mode: 'marquee', startX: screenX, startY: screenY };
-			markDirtyInternal();
-			return { action: 'capture-marquee' };
+				case 'drag': {
+					selectEntity(hit.entityId, modifiers.shift);
+					if (world.hasTag(hit.entityId, Draggable)) {
+						inputState = {
+							mode: 'tracking',
+							entityId: hit.entityId,
+							startX: screenX,
+							startY: screenY,
+						};
+					}
+					markDirtyInternal();
+					return { action: 'passthrough-track-drag' };
+				}
+
+				case 'select': {
+					selectEntity(hit.entityId, modifiers.shift);
+					markDirtyInternal();
+					return { action: 'passthrough' };
+				}
+
+				// 'canvas' | 'rotate' | 'connect' — no handler yet, fall through.
+				default:
+					return { action: 'passthrough' };
+			}
 		},
 
 		handlePointerMove(screenX, screenY, _modifiers): PointerDirective {
@@ -794,8 +792,17 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			// Hover tracking in idle mode
 			if (inputState.mode === 'idle') {
 				const hit = hitTest(screenX, screenY);
-				if (hit !== hoveredEntity) {
-					hoveredEntity = hit;
+				const hitEntity = hit ? hit.entityId : null;
+				// If the hit is a handle child entity, resolve to the parent for
+				// hover highlighting — selection outline should show the parent
+				// widget as hovered, not the handle entity.
+				let hoverTarget: EntityId | null = hitEntity;
+				if (hit && hit.role.role.type === 'resize') {
+					const parent = world.getComponent(hit.entityId, Parent);
+					hoverTarget = parent ? parent.id : hitEntity;
+				}
+				if (hoverTarget !== hoveredEntity) {
+					hoveredEntity = hoverTarget;
 					markDirtyInternal();
 				}
 			}

@@ -43,6 +43,7 @@ function createWidget(
 		[Selectable],
 		[Draggable],
 		[Resizable],
+		[InteractionRole, { layer: 5, role: { type: 'drag' } }],
 	]);
 }
 
@@ -453,6 +454,175 @@ describe('CanvasEngine', () => {
 
 			expect(engine.has(e1, HandleSet)).toBe(true);
 			expect(engine.get(e1, HandleSet)?.ids.length).toBe(8);
+		});
+	});
+
+	describe('unified hit test (RFC-001 Phase 5)', () => {
+		const mods = { shift: false, ctrl: false, alt: false, meta: false };
+
+		it('click on widget body hits drag role', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			// Click at widget center (world == screen at zoom 1).
+			const directive = engine.handlePointerDown(200, 175, 0, mods);
+			expect(directive.action).toBe('passthrough-track-drag');
+			expect(engine.getSelectedEntities()).toContain(e);
+		});
+
+		it('click on resize handle hits resize role', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			// Select first so handles spawn.
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			const handleSet = engine.get(e, HandleSet);
+			expect(handleSet?.ids.length).toBe(8);
+
+			// Find the SE handle and click at its world-space center.
+			let seId: number | null = null;
+			for (const id of handleSet?.ids ?? []) {
+				const role = engine.get(id, InteractionRole);
+				if (role?.role.type === 'resize' && role.role.handle === 'se') {
+					seId = id;
+					break;
+				}
+			}
+			expect(seId).not.toBeNull();
+			if (seId === null) return;
+
+			const wb = engine.get(seId, WorldBounds);
+			expect(wb).toBeDefined();
+			if (!wb) return;
+			const cx = wb.worldX + wb.worldWidth / 2;
+			const cy = wb.worldY + wb.worldHeight / 2;
+
+			const directive = engine.handlePointerDown(cx, cy, 0, mods);
+			expect(directive.action).toBe('capture-resize');
+			if (directive.action === 'capture-resize') {
+				expect(directive.handle).toBe('se');
+			}
+
+			engine.handlePointerUp();
+		});
+
+		it('click on empty space returns capture-marquee and clears selection', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			// Pre-select via tag to confirm it gets cleared.
+			engine.world.addTag(e, Selected);
+			engine.tick();
+			expect(engine.getSelectedEntities()).toContain(e);
+
+			const directive = engine.handlePointerDown(800, 700, 0, mods);
+			expect(directive.action).toBe('capture-marquee');
+			expect(engine.getSelectedEntities()).toHaveLength(0);
+		});
+
+		it('layer priority: corner handle wins over widget body at overlap', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			// The NW corner handle is centered exactly on (100, 100), which is
+			// also the top-left of the widget body — both AABBs contain the point.
+			// Layer 15 (corner) > layer 5 (body) must win.
+			const directive = engine.handlePointerDown(100, 100, 0, mods);
+			expect(directive.action).toBe('capture-resize');
+			if (directive.action === 'capture-resize') {
+				expect(directive.handle).toBe('nw');
+			}
+
+			engine.handlePointerUp();
+		});
+
+		it('Active filter: child of unentered container is not hit', () => {
+			const engine = createTestEngine();
+
+			// Container at (100, 100) with enterable=true, size 600x400.
+			const container = engine.createEntity([
+				[Transform2D, { x: 100, y: 100, width: 600, height: 400, rotation: 0 }],
+				[Widget, { surface: 'dom', type: 'container' }],
+				[Container, { enterable: true }],
+				[Children, { ids: [] as number[] }],
+				[ZIndex, { value: 0 }],
+				[Selectable],
+				[InteractionRole, { layer: 5, role: { type: 'select' } }],
+			]);
+
+			// Child widget at world (150, 150) — inside the container.
+			const child = engine.createEntity([
+				[Transform2D, { x: 150, y: 150, width: 100, height: 50, rotation: 0 }],
+				[Widget, { surface: 'dom', type: 'debug' }],
+				[Parent, { id: container }],
+				[ZIndex, { value: 0 }],
+				[Selectable],
+				[Draggable],
+				[InteractionRole, { layer: 5, role: { type: 'drag' } }],
+			]);
+			engine.set(container, Children, { ids: [child] });
+
+			engine.tick();
+			// At root frame: container is Active, child is not.
+			expect(engine.world.hasTag(container, Active)).toBe(true);
+			expect(engine.world.hasTag(child, Active)).toBe(false);
+
+			// Click at (180, 170) — inside both container AABB and child AABB in
+			// world space. The unified hit test must skip the child because it is
+			// not Active, and select the container instead.
+			const directive = engine.handlePointerDown(180, 170, 0, mods);
+			expect(directive.action).toBe('passthrough');
+			expect(engine.getSelectedEntities()).toContain(container);
+			expect(engine.getSelectedEntities()).not.toContain(child);
+		});
+
+		it('full resize round-trip via unified hit test', () => {
+			const engine = createTestEngine();
+			const e = createWidget(engine, 100, 100, 200, 150);
+			engine.tick();
+
+			engine.world.addTag(e, Selected);
+			engine.tick();
+
+			const handleSet = engine.get(e, HandleSet);
+			let seId: number | null = null;
+			for (const id of handleSet?.ids ?? []) {
+				const role = engine.get(id, InteractionRole);
+				if (role?.role.type === 'resize' && role.role.handle === 'se') {
+					seId = id;
+					break;
+				}
+			}
+			if (seId === null) throw new Error('SE handle not found');
+			const wb = engine.get(seId, WorldBounds);
+			if (!wb) throw new Error('SE handle WorldBounds missing');
+			const cx = wb.worldX + wb.worldWidth / 2;
+			const cy = wb.worldY + wb.worldHeight / 2;
+
+			const downDirective = engine.handlePointerDown(cx, cy, 0, mods);
+			expect(downDirective.action).toBe('capture-resize');
+
+			// Drag +50 screen px east (zoom == 1 → +50 world px).
+			engine.handlePointerMove(cx + 50, cy, mods);
+			engine.handlePointerUp();
+			engine.tick();
+
+			const t = engine.get(e, Transform2D);
+			expect(t).toBeDefined();
+			if (!t) return;
+			expect(t.width).toBeCloseTo(250, 5);
+			expect(t.x).toBeCloseTo(100, 5);
+			expect(t.y).toBeCloseTo(100, 5);
+			expect(t.height).toBeCloseTo(150, 5);
 		});
 	});
 });

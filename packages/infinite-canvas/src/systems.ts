@@ -157,8 +157,8 @@ function despawnHandles(world: World, parentId: EntityId): void {
  * Runs after transformPropagate (parent bounds fresh) and before hitboxWorldBounds
  * (so newly-spawned handles get their WorldBounds in the same tick).
  *
- * Phase 4: The old hitTestResizeHandle code path still handles actual resize
- * interactions — this system only populates the parallel ECS data world.
+ * Phase 5: handles now drive interaction directly via the unified hit test —
+ * InteractionRole + Hitbox on each handle entity replaces hitTestResizeHandle.
  */
 export const handleSyncSystem = defineSystem({
 	name: 'handleSync',
