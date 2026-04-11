@@ -49,6 +49,7 @@ import { SpatialIndex } from './spatial.js';
 import {
 	breakpointSystem,
 	cullSystem,
+	hitboxWorldBoundsSystem,
 	navigationFilterSystem,
 	sortSystem,
 	transformPropagateSystem,
@@ -257,6 +258,7 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 
 	// Register built-in systems
 	scheduler.register(transformPropagateSystem);
+	scheduler.register(hitboxWorldBoundsSystem);
 	scheduler.register(navigationFilterSystem);
 	scheduler.register(cullSystem);
 	scheduler.register(breakpointSystem);
