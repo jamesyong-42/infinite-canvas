@@ -1,8 +1,13 @@
+import type { EntityId } from '@jamesyong42/infinite-canvas';
+import {
+	Transform2D,
+	useBreakpoint,
+	useComponent,
+	useIsSelected,
+	useUpdateWidget,
+	useWidgetData,
+} from '@jamesyong42/infinite-canvas';
 import { useState } from 'react';
-import type { EntityId } from '@infinite-canvas/core';
-import { useBreakpoint, useWidgetData, useIsSelected, useUpdateData } from '@infinite-canvas/react-widgets';
-import { useComponent } from '@infinite-canvas/ui';
-import { Transform2D } from '@infinite-canvas/core';
 
 const COLOR = '#10b981';
 
@@ -10,11 +15,13 @@ export function DebugInteractive({ entityId }: { entityId: EntityId }) {
 	const breakpoint = useBreakpoint(entityId);
 	const data = useWidgetData(entityId);
 	const isSelected = useIsSelected(entityId);
-	const updateData = useUpdateData(entityId);
+	const updateData = useUpdateWidget(entityId);
 	const transform = useComponent(entityId, Transform2D);
 	const [localCount, setLocalCount] = useState(0);
+	const [isButtonHovered, setIsButtonHovered] = useState(false);
 
 	const borderColor = isSelected ? '#059669' : COLOR;
+	const buttonColor = isButtonHovered ? '#059669' : COLOR;
 
 	if (breakpoint === 'micro') {
 		return (
@@ -31,7 +38,11 @@ export function DebugInteractive({ entityId }: { entityId: EntityId }) {
 		return (
 			<div
 				className="flex h-full w-full items-center gap-1 px-2 font-mono text-[10px]"
-				style={{ border: `1.5px solid ${borderColor}`, backgroundColor: `${COLOR}08`, color: COLOR }}
+				style={{
+					border: `1.5px solid ${borderColor}`,
+					backgroundColor: `${COLOR}08`,
+					color: COLOR,
+				}}
 			>
 				<span className="truncate">{data.title ?? 'Interactive'}</span>
 				<span className="ml-auto opacity-60">{localCount}</span>
@@ -61,9 +72,11 @@ export function DebugInteractive({ entityId }: { entityId: EntityId }) {
 					<button
 						type="button"
 						className="rounded px-2 py-0.5 font-mono text-[10px] font-medium text-white transition-colors"
-						style={{ backgroundColor: COLOR }}
-						onMouseOver={(e) => { (e.target as HTMLElement).style.backgroundColor = '#059669'; }}
-						onMouseOut={(e) => { (e.target as HTMLElement).style.backgroundColor = COLOR; }}
+						style={{ backgroundColor: buttonColor }}
+						onMouseEnter={() => setIsButtonHovered(true)}
+						onMouseLeave={() => setIsButtonHovered(false)}
+						onFocus={() => setIsButtonHovered(true)}
+						onBlur={() => setIsButtonHovered(false)}
 						onClick={(e) => {
 							e.stopPropagation();
 							setLocalCount((c) => c + 1);
@@ -92,12 +105,16 @@ export function DebugInteractive({ entityId }: { entityId: EntityId }) {
 							{transform && (
 								<div className="flex justify-between">
 									<span>size</span>
-									<span>{Math.round(transform.width)} x {Math.round(transform.height)}</span>
+									<span>
+										{Math.round(transform.width)} x {Math.round(transform.height)}
+									</span>
 								</div>
 							)}
 							<div className="flex justify-between">
 								<span>state</span>
-								<span>clicks={localCount} selected={String(isSelected)}</span>
+								<span>
+									clicks={localCount} selected={String(isSelected)}
+								</span>
 							</div>
 						</div>
 					</>

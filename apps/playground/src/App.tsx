@@ -1,88 +1,96 @@
-import { useEffect, useMemo, useState } from 'react';
 import {
-	createCanvasEngine,
+	Children,
+	Container,
+	DEFAULT_GRID_CONFIG,
+	Draggable,
+	InfiniteCanvas,
+	Parent,
+	Resizable,
+	Selectable,
 	Transform2D,
 	Widget,
 	WidgetData,
 	ZIndex,
-	Selectable,
-	Draggable,
-	Resizable,
-	Container,
-	Children,
-	Parent,
-} from '@infinite-canvas/core';
-import type { EntityId } from '@infinite-canvas/core';
-import { InfiniteCanvas, DEFAULT_GRID_CONFIG } from '@infinite-canvas/ui';
-import type { GridConfig } from '@infinite-canvas/ui';
-import { WidgetProvider, createWidgetRegistry } from '@infinite-canvas/react-widgets';
-import { DebugCard } from './widgets/DebugCard.js';
-import { DebugInteractive } from './widgets/DebugInteractive.js';
-import { DebugContainer } from './widgets/DebugContainer.js';
-import { Debug3D } from './widgets/Debug3D.js';
-import { SettingsPanel } from './panels/SettingsPanel.js';
+	createLayoutEngine,
+} from '@jamesyong42/infinite-canvas';
+import type { EntityId, GridConfig, WidgetDef } from '@jamesyong42/infinite-canvas';
+import { useEffect, useMemo, useState } from 'react';
 import { InspectorPanel } from './panels/InspectorPanel.js';
+import { SettingsPanel } from './panels/SettingsPanel.js';
+import { Debug3D } from './widgets/Debug3D.js';
+import { DebugCard } from './widgets/DebugCard.js';
+import { DebugContainer } from './widgets/DebugContainer.js';
+import { DebugInteractive } from './widgets/DebugInteractive.js';
+
+const widgets: WidgetDef[] = [
+	{ type: 'debug-card', component: DebugCard, defaultSize: { width: 250, height: 180 } },
+	{
+		type: 'debug-interactive',
+		component: DebugInteractive,
+		defaultSize: { width: 280, height: 200 },
+	},
+	{
+		type: 'debug-container',
+		component: DebugContainer,
+		defaultSize: { width: 400, height: 300 },
+	},
+	{
+		type: 'debug-3d',
+		surface: 'webgl',
+		component: Debug3D,
+		defaultSize: { width: 250, height: 250 },
+	},
+];
 
 function createDemoScene() {
-	const engine = createCanvasEngine({
+	const engine = createLayoutEngine({
 		zoom: { min: 0.05, max: 8 },
 	});
 
-	const registry = createWidgetRegistry([
-		{ type: 'debug-card', component: DebugCard, defaultSize: { width: 250, height: 180 } },
-		{ type: 'debug-interactive', component: DebugInteractive, defaultSize: { width: 280, height: 200 } },
-		{ type: 'debug-container', component: DebugContainer, defaultSize: { width: 400, height: 300 } },
-		{ type: 'debug-3d', surface: 'webgl', component: Debug3D as any, defaultSize: { width: 250, height: 250 } },
-	]);
-
-	// Helper to create a widget entity
-	function addWidget(
-		type: string,
-		x: number,
-		y: number,
-		width: number,
-		height: number,
-		data: Record<string, any>,
-		zIndex = 0,
-		surface: 'dom' | 'webgl' = 'dom',
-	): EntityId {
-		return engine.createEntity([
-			[Transform2D, { x, y, width, height, rotation: 0 }],
-			[Widget, { surface, type }],
-			[WidgetData, { data }],
-			[ZIndex, { value: zIndex }],
-			[Selectable],
-			[Draggable],
-			[Resizable],
-		]);
-	}
-
 	// Create demo widgets
-	addWidget('debug-card', 50, 50, 250, 180, {
-		title: 'Hello World',
-		color: '#3b82f6',
-		description: 'A simple card widget demonstrating breakpoints.',
-	}, 1);
-
-	addWidget('debug-card', 350, 50, 200, 150, {
-		title: 'Another Card',
-		color: '#ef4444',
-	}, 2);
-
-	addWidget('debug-card', 600, 50, 300, 200, {
-		title: 'Wide Card',
-		color: '#f59e0b',
-		description: 'This one is wider to show expanded breakpoint.',
-	}, 3);
-
-	addWidget('debug-interactive', 50, 280, 280, 200, {
-		title: 'Click Counter',
-	}, 4);
-
-	addWidget('debug-interactive', 380, 280, 250, 180, {
-		title: 'Text Input',
-		note: '',
-	}, 5);
+	engine.addWidget({
+		type: 'debug-card',
+		position: { x: 50, y: 50 },
+		size: { width: 250, height: 180 },
+		data: {
+			title: 'Hello World',
+			color: '#3b82f6',
+			description: 'A simple card widget demonstrating breakpoints.',
+		},
+		zIndex: 1,
+	});
+	engine.addWidget({
+		type: 'debug-card',
+		position: { x: 350, y: 50 },
+		size: { width: 200, height: 150 },
+		data: { title: 'Another Card', color: '#ef4444' },
+		zIndex: 2,
+	});
+	engine.addWidget({
+		type: 'debug-card',
+		position: { x: 600, y: 50 },
+		size: { width: 300, height: 200 },
+		data: {
+			title: 'Wide Card',
+			color: '#f59e0b',
+			description: 'This one is wider to show expanded breakpoint.',
+		},
+		zIndex: 3,
+	});
+	engine.addWidget({
+		type: 'debug-interactive',
+		position: { x: 50, y: 280 },
+		size: { width: 280, height: 200 },
+		data: { title: 'Click Counter' },
+		zIndex: 4,
+	});
+	engine.addWidget({
+		type: 'debug-interactive',
+		position: { x: 380, y: 280 },
+		size: { width: 250, height: 180 },
+		data: { title: 'Text Input', note: '' },
+		zIndex: 5,
+	});
 
 	// Container with children
 	const container = engine.createEntity([
@@ -124,34 +132,48 @@ function createDemoScene() {
 	engine.set(container, Children, { ids: [child1, child2] });
 
 	// More widgets scattered around
-	addWidget('debug-card', 700, 300, 220, 160, {
-		title: 'Far Away',
-		color: '#06b6d4',
-		description: 'Pan to find me!',
-	}, 7);
-
-	addWidget('debug-card', -300, -200, 250, 180, {
-		title: 'Negative Space',
-		color: '#84cc16',
-		description: 'I live in negative coordinates.',
-	}, 8);
+	engine.addWidget({
+		type: 'debug-card',
+		position: { x: 700, y: 300 },
+		size: { width: 220, height: 160 },
+		data: { title: 'Far Away', color: '#06b6d4', description: 'Pan to find me!' },
+		zIndex: 7,
+	});
+	engine.addWidget({
+		type: 'debug-card',
+		position: { x: -300, y: -200 },
+		size: { width: 250, height: 180 },
+		data: {
+			title: 'Negative Space',
+			color: '#84cc16',
+			description: 'I live in negative coordinates.',
+		},
+		zIndex: 8,
+	});
 
 	// WebGL 3D widgets
-	addWidget('debug-3d', 700, 530, 250, 250, {
-		title: '3D Cube',
-		color: '#ec4899',
-	}, 9, 'webgl');
+	engine.addWidget({
+		type: 'debug-3d',
+		position: { x: 700, y: 530 },
+		size: { width: 250, height: 250 },
+		data: { title: '3D Cube', color: '#ec4899' },
+		zIndex: 9,
+		surface: 'webgl',
+	});
+	engine.addWidget({
+		type: 'debug-3d',
+		position: { x: 1000, y: 530 },
+		size: { width: 200, height: 200 },
+		data: { title: '3D Blue', color: '#3b82f6' },
+		zIndex: 10,
+		surface: 'webgl',
+	});
 
-	addWidget('debug-3d', 1000, 530, 200, 200, {
-		title: '3D Blue',
-		color: '#3b82f6',
-	}, 10, 'webgl');
-
-	return { engine, registry };
+	return engine;
 }
 
 export function App() {
-	const { engine, registry } = useMemo(() => createDemoScene(), []);
+	const engine = useMemo(() => createDemoScene(), []);
 	const [showSettings, setShowSettings] = useState(false);
 	const [showInspector, setShowInspector] = useState(false);
 	const [dark, setDark] = useState(() => {
@@ -198,7 +220,7 @@ export function App() {
 			// Delete selected: Backspace or Delete (skip when focus is on an input)
 			if (e.key === 'Backspace' || e.key === 'Delete') {
 				const el = document.activeElement;
-				if (el && el.closest('input, textarea, select, [contenteditable]')) return;
+				if (el?.closest('input, textarea, select, [contenteditable]')) return;
 				const selected = engine.getSelectedEntities();
 				for (const id of selected) {
 					engine.destroyEntity(id);
@@ -213,9 +235,12 @@ export function App() {
 
 	return (
 		<div className="h-screen w-screen">
-			<WidgetProvider registry={registry}>
-				<InfiniteCanvas engine={engine} grid={gridConfig} className="h-full w-full" />
-			</WidgetProvider>
+			<InfiniteCanvas
+				engine={engine}
+				widgets={widgets}
+				grid={gridConfig}
+				className="h-full w-full"
+			/>
 
 			{/* Dark mode toggle */}
 			<button
@@ -225,11 +250,41 @@ export function App() {
 				title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
 			>
 				{dark ? (
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-						<circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="2"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					>
+						<title>Light mode</title>
+						<circle cx="12" cy="12" r="4" />
+						<path d="M12 2v2" />
+						<path d="M12 20v2" />
+						<path d="m4.93 4.93 1.41 1.41" />
+						<path d="m17.66 17.66 1.41 1.41" />
+						<path d="M2 12h2" />
+						<path d="M20 12h2" />
+						<path d="m6.34 17.66-1.41 1.41" />
+						<path d="m19.07 4.93-1.41 1.41" />
 					</svg>
 				) : (
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="2"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					>
+						<title>Dark mode</title>
 						<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
 					</svg>
 				)}
@@ -246,7 +301,18 @@ export function App() {
 				}`}
 				title="Settings"
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				>
+					<title>Settings</title>
 					<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
 					<circle cx="12" cy="12" r="3" />
 				</svg>
@@ -262,18 +328,33 @@ export function App() {
 				}`}
 				title="Inspector"
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-					<path d="M12 20h9" /><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z" />
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				>
+					<title>Inspector</title>
+					<path d="M12 20h9" />
+					<path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z" />
 				</svg>
 			</button>
 
 			{/* Panels */}
 			{showSettings && (
-				<SettingsPanel engine={engine} gridConfig={gridConfig} onGridChange={setGridConfig} onClose={() => setShowSettings(false)} />
+				<SettingsPanel
+					engine={engine}
+					gridConfig={gridConfig}
+					onGridChange={setGridConfig}
+					onClose={() => setShowSettings(false)}
+				/>
 			)}
-			{showInspector && (
-				<InspectorPanel engine={engine} onClose={() => setShowInspector(false)} />
-			)}
+			{showInspector && <InspectorPanel engine={engine} onClose={() => setShowInspector(false)} />}
 		</div>
 	);
 }

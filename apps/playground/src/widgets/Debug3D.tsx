@@ -1,10 +1,14 @@
-import { useRef } from 'react';
+import type { EntityId } from '@jamesyong42/infinite-canvas';
+import { useIsSelected, useWidgetData } from '@jamesyong42/infinite-canvas';
 import { useFrame } from '@react-three/fiber';
+import { useRef } from 'react';
 import type { Mesh } from 'three';
-import type { EntityId } from '@infinite-canvas/core';
-import { useWidgetData, useIsSelected } from '@infinite-canvas/react-widgets';
 
-export function Debug3D({ entityId, width, height }: { entityId: EntityId; width: number; height: number }) {
+export function Debug3D({
+	entityId,
+	width,
+	height,
+}: { entityId: EntityId; width: number; height: number }) {
 	const groupRef = useRef<Mesh>(null);
 	const data = useWidgetData(entityId);
 	const isSelected = useIsSelected(entityId);
@@ -25,20 +29,13 @@ export function Debug3D({ entityId, width, height }: { entityId: EntityId; width
 			{/* Background plane */}
 			<mesh position={[0, 0, -1]}>
 				<planeGeometry args={[width, height]} />
-				<meshBasicMaterial
-					color={isSelected ? '#1e3a5f' : '#0a0a0a'}
-					transparent
-					opacity={0.3}
-				/>
+				<meshBasicMaterial color={isSelected ? '#1e3a5f' : '#0a0a0a'} transparent opacity={0.3} />
 			</mesh>
 
 			{/* Wireframe border */}
 			<mesh position={[0, 0, -0.5]}>
 				<planeGeometry args={[width, height]} />
-				<meshBasicMaterial
-					color={isSelected ? '#2563eb' : '#444'}
-					wireframe
-				/>
+				<meshBasicMaterial color={isSelected ? '#2563eb' : '#444'} wireframe />
 			</mesh>
 
 			{/* Spinning cube */}
