@@ -16,6 +16,7 @@ import {
 import type { EntityId, GridConfig, WidgetDef } from '@jamesyong42/infinite-canvas';
 import { useEffect, useMemo, useState } from 'react';
 import { InspectorPanel } from './panels/InspectorPanel.js';
+import { NavigationBreadcrumbs } from './panels/NavigationBreadcrumbs.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
 import { Debug3D } from './widgets/Debug3D.js';
 import { DebugCard } from './widgets/DebugCard.js';
@@ -241,6 +242,9 @@ export function App() {
 				grid={gridConfig}
 				className="h-full w-full"
 			/>
+
+			{/* Navigation breadcrumbs + back button (top-left) */}
+			<NavigationBreadcrumbs engine={engine} />
 
 			{/* Dark mode toggle */}
 			<button
