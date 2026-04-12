@@ -91,6 +91,7 @@ export interface World {
 	): Unsubscribe;
 	onTagAdded(type: TagType, handler: TagChangedHandler, entityId?: EntityId): Unsubscribe;
 	onTagRemoved(type: TagType, handler: TagChangedHandler, entityId?: EntityId): Unsubscribe;
+	onEntityDestroyed(callback: (entity: EntityId) => void): Unsubscribe;
 	onFrame(handler: FrameHandler): Unsubscribe;
 
 	// Frame lifecycle (used by engine after tick)

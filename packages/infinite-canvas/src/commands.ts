@@ -17,6 +17,9 @@ export class CommandBuffer {
 
 	/** Start grouping commands (e.g., on pointerdown). All commands until endGroup() are one undo step. */
 	beginGroup() {
+		if (this.currentGroup !== null) {
+			this.endGroup(); // auto-close previous group
+		}
 		this.currentGroup = [];
 	}
 
@@ -99,6 +102,10 @@ export class CommandBuffer {
 // === Built-in Commands ===
 
 export class MoveCommand implements Command {
+	private beforePositions: Map<EntityId, { x: number; y: number }> = new Map();
+	private afterPositions: Map<EntityId, { x: number; y: number }> = new Map();
+	private captured = false;
+
 	constructor(
 		private entityIds: EntityId[],
 		private dx: number,
@@ -107,20 +114,26 @@ export class MoveCommand implements Command {
 	) {}
 
 	execute(world: World) {
-		for (const id of this.entityIds) {
-			const t = world.getComponent(id, this.transformType);
-			if (t) {
-				world.setComponent(id, this.transformType, { x: t.x + this.dx, y: t.y + this.dy });
+		if (!this.captured) {
+			// First execute: snapshot before positions, compute after positions
+			for (const id of this.entityIds) {
+				const t = world.getComponent(id, this.transformType);
+				if (t) {
+					this.beforePositions.set(id, { x: t.x, y: t.y });
+					this.afterPositions.set(id, { x: t.x + this.dx, y: t.y + this.dy });
+				}
 			}
+			this.captured = true;
+		}
+
+		for (const [id, pos] of this.afterPositions) {
+			world.setComponent(id, this.transformType, { x: pos.x, y: pos.y });
 		}
 	}
 
 	undo(world: World) {
-		for (const id of this.entityIds) {
-			const t = world.getComponent(id, this.transformType);
-			if (t) {
-				world.setComponent(id, this.transformType, { x: t.x - this.dx, y: t.y - this.dy });
-			}
+		for (const [id, pos] of this.beforePositions) {
+			world.setComponent(id, this.transformType, { x: pos.x, y: pos.y });
 		}
 	}
 }

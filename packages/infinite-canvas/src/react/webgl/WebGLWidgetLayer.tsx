@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { EntityId } from '../../ecs/types.js';
 import type { LayoutEngine } from '../../engine.js';
@@ -9,24 +9,33 @@ import { WebGLWidgetSlot } from './WebGLWidgetSlot.js';
 
 // === Camera sync component (runs inside R3F) ===
 
+function syncCamera(camera: THREE.Camera, size: { width: number; height: number }, engine: LayoutEngine) {
+	const cam = engine.getCamera();
+	const ortho = camera as THREE.OrthographicCamera;
+
+	// Frustum in world units — matches our engine coordinate system
+	ortho.left = 0;
+	ortho.right = size.width / cam.zoom;
+	ortho.top = 0;
+	ortho.bottom = -(size.height / cam.zoom);
+	ortho.near = 0.1;
+	ortho.far = 10000;
+
+	// Position camera at engine camera origin; flip Y for Three.js
+	ortho.position.set(cam.x, -cam.y, 1000);
+	ortho.updateProjectionMatrix();
+}
+
 function CameraSync({ engine }: { engine: LayoutEngine }) {
 	const { camera, size } = useThree();
 
+	// Sync camera immediately on mount — don't wait for the first useFrame tick
+	useLayoutEffect(() => {
+		syncCamera(camera, size, engine);
+	}, [camera, size, engine]);
+
 	useFrame(() => {
-		const cam = engine.getCamera();
-		const ortho = camera as THREE.OrthographicCamera;
-
-		// Frustum in world units — matches our engine coordinate system
-		ortho.left = 0;
-		ortho.right = size.width / cam.zoom;
-		ortho.top = 0;
-		ortho.bottom = -(size.height / cam.zoom);
-		ortho.near = 0.1;
-		ortho.far = 10000;
-
-		// Position camera at engine camera origin; flip Y for Three.js
-		ortho.position.set(cam.x, -cam.y, 1000);
-		ortho.updateProjectionMatrix();
+		syncCamera(camera, size, engine);
 	});
 
 	return null;
@@ -54,7 +63,7 @@ export function WebGLWidgetLayer({ engine, entities, resolve }: WebGLWidgetLayer
 	const widgetEntries = useMemo(() => {
 		const result: {
 			entityId: EntityId;
-			component: React.ComponentType<{ entityId: EntityId; width: number; height: number }>;
+			component: React.ComponentType<{ entityId: EntityId; width: number; height: number; zoom: number }>;
 		}[] = [];
 		for (const id of entities) {
 			const resolved = resolve(id);
@@ -65,14 +74,13 @@ export function WebGLWidgetLayer({ engine, entities, resolve }: WebGLWidgetLayer
 						entityId: EntityId;
 						width: number;
 						height: number;
+						zoom: number;
 					}>,
 				});
 			}
 		}
 		return result;
 	}, [entities, resolve]);
-
-	if (widgetEntries.length === 0) return null;
 
 	return (
 		<Canvas
@@ -85,6 +93,7 @@ export function WebGLWidgetLayer({ engine, entities, resolve }: WebGLWidgetLayer
 				inset: 0,
 				pointerEvents: 'none',
 				zIndex: 1,
+				display: widgetEntries.length === 0 ? 'none' : 'block',
 			}}
 		>
 			<EngineProvider value={engine}>

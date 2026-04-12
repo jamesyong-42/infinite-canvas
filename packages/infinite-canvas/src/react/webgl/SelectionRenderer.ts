@@ -181,14 +181,28 @@ void main() {
 
 		// Dash pattern along the rectangle perimeter
 		if (u_groupDash > 0.0 && lineAlpha > 0.01) {
-			vec2 rel = worldPos - vec2(gb.x, gb.y);
+			// Proper perimeter arc-length from top-left corner going clockwise
 			float perim;
-			// Approximate perimeter position for dash
-			if (abs(rel.y) < width || abs(rel.y - gb.w) < width) {
-				perim = rel.x;
+			vec2 rel = worldPos - vec2(gb.x, gb.y);
+			float w = gb.z;
+			float h = gb.w;
+
+			// Determine which edge is nearest and compute cumulative arc length
+			float dTop = abs(rel.y);
+			float dRight = abs(rel.x - w);
+			float dBottom = abs(rel.y - h);
+			float dLeft = abs(rel.x);
+
+			if (dTop <= dBottom && dTop <= dLeft && dTop <= dRight) {
+				perim = rel.x; // top edge: 0 to w
+			} else if (dRight <= dLeft) {
+				perim = w + rel.y; // right edge: w to w+h
+			} else if (dBottom <= dTop) {
+				perim = w + h + (w - rel.x); // bottom edge: w+h to 2w+h
 			} else {
-				perim = rel.y;
+				perim = 2.0 * w + h + (h - rel.y); // left edge: 2w+h to 2w+2h
 			}
+
 			float dashWorld = u_groupDash * pxToWorld;
 			float dashPattern = step(0.5, fract(perim / (dashWorld * 2.0)));
 			lineAlpha *= dashPattern;

@@ -35,6 +35,16 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Publish
+      - name: Test
+        run: pnpm test
+
+      - name: Copy package docs
+        run: |
+          cp README.md packages/infinite-canvas/README.md
+          cp LICENSE packages/infinite-canvas/LICENSE
+
+      - name: Publish to npm
         working-directory: packages/infinite-canvas
-        run: npm publish --provenance --access public --ignore-scripts
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

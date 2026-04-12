@@ -101,6 +101,7 @@ export const SelectionOverlaySlot = memo(function SelectionOverlaySlot({
 		<div
 			ref={wrapperRef}
 			className="absolute left-0 top-0 origin-top-left will-change-transform"
+			data-widget-slot=""
 			style={initialStyle}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}

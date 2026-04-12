@@ -369,5 +369,9 @@ function computePerpCenter(dragged: EntityBounds, refs: EntityBounds[], isX: boo
 	const allBounds = [dragged, ...refs];
 	const maxStart = Math.max(...allBounds.map(perpPos));
 	const minEnd = Math.min(...allBounds.map((b) => perpPos(b) + perpSize(b)));
+	if (minEnd < maxStart) {
+		// No overlap — fall back to the dragged entity's perpendicular center
+		return perpPos(allBounds[0]) + perpSize(allBounds[0]) / 2;
+	}
 	return maxStart + (minEnd - maxStart) / 2;
 }

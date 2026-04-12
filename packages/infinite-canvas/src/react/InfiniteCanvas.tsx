@@ -41,10 +41,14 @@ export function InfiniteCanvas({
 }: InfiniteCanvasProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 
-	// When widgets prop is provided, create an internal registry
+	// When widgets prop is provided, create an internal registry.
+	// Use a stable key derived from widget types so inline array literals
+	// don't cause registry recreation on every render.
+	const widgetKey = widgets?.map((w) => w.type).join('\0');
 	const internalRegistry = useMemo(
 		() => (widgets ? createWidgetRegistry(widgets) : null),
-		[widgets],
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[widgetKey],
 	);
 	const webglCanvasRef = useRef<HTMLCanvasElement>(null);
 	const gridRendererRef = useRef<GridRenderer | null>(null);
@@ -121,7 +125,7 @@ export function InfiniteCanvas({
 			selR.setConfig(selection);
 		}
 		engine.markDirty();
-	});
+	}, [engine, grid, selection]);
 
 	// Wheel handler — pan/zoom (gesture channel, always active)
 	useEffect(() => {
@@ -248,21 +252,23 @@ export function InfiniteCanvas({
 				lastTapTime = 0;
 				// Hit test to check for entity
 				const directive = engine.handlePointerDown(x, y, 0, noMods);
-				if (directive.action === 'passthrough-track-drag') {
-					// Double-tap on entity → enter container
-					const selected = engine.getSelectedEntities();
-					engine.handlePointerUp();
-					if (selected.length === 1) {
-						engine.enterContainer(selected[0]);
+				try {
+					if (directive.action === 'passthrough-track-drag') {
+						// Double-tap on entity → enter container
+						const selected = engine.getSelectedEntities();
+						if (selected.length === 1) {
+							engine.enterContainer(selected[0]);
+						}
+					} else {
+						// Double-tap on empty → zoom step
+						const camera = engine.getCamera();
+						const target = camera.zoom < 0.9 ? 1 : camera.zoom < 1.8 ? 2 : 1;
+						engine.zoomAtPoint(x, y, (target - camera.zoom) / camera.zoom);
 					}
-				} else {
-					// Double-tap on empty → zoom step
+				} finally {
 					engine.handlePointerUp();
-					const camera = engine.getCamera();
-					const target = camera.zoom < 0.9 ? 1 : camera.zoom < 1.8 ? 2 : 1;
-					engine.zoomAtPoint(x, y, (target - camera.zoom) / camera.zoom);
+					engine.markDirty();
 				}
-				engine.markDirty();
 				gesture = { type: 'idle' };
 				return;
 			}
@@ -388,16 +394,23 @@ export function InfiniteCanvas({
 			gesture = { type: 'idle' };
 		}
 
+		function onTouchCancel(_e: TouchEvent) {
+			// Reset gesture state unconditionally — the browser cancelled the touch.
+			// Unlike onTouchEnd we don't inspect e.touches (which may be empty).
+			gesture = { type: 'idle' };
+			engine.handlePointerCancel();
+		}
+
 		container.addEventListener('touchstart', onTouchStart, { passive: false });
 		container.addEventListener('touchmove', onTouchMove, { passive: false });
 		container.addEventListener('touchend', onTouchEnd, { passive: false });
-		container.addEventListener('touchcancel', onTouchEnd, { passive: false });
+		container.addEventListener('touchcancel', onTouchCancel, { passive: true });
 
 		return () => {
 			container.removeEventListener('touchstart', onTouchStart);
 			container.removeEventListener('touchmove', onTouchMove);
 			container.removeEventListener('touchend', onTouchEnd);
-			container.removeEventListener('touchcancel', onTouchEnd);
+			container.removeEventListener('touchcancel', onTouchCancel);
 		};
 	}, [engine]);
 
@@ -438,6 +451,12 @@ export function InfiniteCanvas({
 
 	const onCanvasPointerMove = useCallback(
 		(e: React.PointerEvent) => {
+			// Skip if a widget slot is handling this pointer — avoids double
+			// handlePointerMove when the event bubbles from a captured widget.
+			const target = e.target as HTMLElement;
+			if (target.closest?.('[data-widget-slot]') && target !== containerRef.current) {
+				return;
+			}
 			const rect = containerRef.current?.getBoundingClientRect();
 			if (!rect) return;
 			engine.handlePointerMove(e.clientX - rect.left, e.clientY - rect.top, {

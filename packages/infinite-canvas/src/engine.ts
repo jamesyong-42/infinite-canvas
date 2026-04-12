@@ -200,6 +200,7 @@ export interface LayoutEngine {
 	): PointerDirective;
 	handlePointerMove(screenX: number, screenY: number, modifiers: Modifiers): PointerDirective;
 	handlePointerUp(): PointerDirective;
+	handlePointerCancel(): void;
 
 	// Selection & Hover
 	getSelectedEntities(): EntityId[];
@@ -277,12 +278,25 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	scheduler.register(breakpointSystem);
 	scheduler.register(sortSystem);
 
+	// Collect observer unsubscribe functions for cleanup in destroy()
+	const unsubscribers: Unsubscribe[] = [];
+
 	// P3: Wire spatial index reactively via observer instead of per-frame system scan
-	world.onComponentChanged(WorldBounds, (entityId, _prev, wb) => {
-		if (wb) {
-			spatialIndex.upsert(entityId, worldBoundsToAABB(wb));
-		}
-	});
+	unsubscribers.push(
+		world.onComponentChanged(WorldBounds, (entityId, _prev, wb) => {
+			if (wb) {
+				spatialIndex.upsert(entityId, worldBoundsToAABB(wb));
+			}
+		}),
+	);
+
+	// Fix #3: Clean up spatial index when ANY entity is destroyed (including
+	// handles destroyed directly by systems via world.destroyEntity).
+	unsubscribers.push(
+		world.onEntityDestroyed((entity) => {
+			spatialIndex.remove(entity);
+		}),
+	);
 
 	// Auto-attach InteractionRole and CursorHint based on Draggable/Selectable
 	// tag presence. This lets users create entities via createEntity() with the
@@ -328,10 +342,10 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			world.addComponent(entity, CursorHint, { hover: 'grab', active: 'grabbing' });
 		}
 	}
-	world.onTagAdded(Draggable, refreshInteractionRole);
-	world.onTagRemoved(Draggable, refreshInteractionRole);
-	world.onTagAdded(Selectable, refreshInteractionRole);
-	world.onTagRemoved(Selectable, refreshInteractionRole);
+	unsubscribers.push(world.onTagAdded(Draggable, refreshInteractionRole));
+	unsubscribers.push(world.onTagRemoved(Draggable, refreshInteractionRole));
+	unsubscribers.push(world.onTagAdded(Selectable, refreshInteractionRole));
+	unsubscribers.push(world.onTagRemoved(Selectable, refreshInteractionRole));
 
 	// Initialize navigation — mark root entities as Active on first tick
 	world.setResource(NavigationStackResource, { changed: true });
@@ -340,7 +354,7 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	let inputState: InputState = { mode: 'idle' };
 	let hoveredEntity: EntityId | null = null;
 	let snapEnabled = true;
-	let snapThreshold = 5; // world units
+	let snapThreshold = 5; // screen pixels — divided by zoom to convert to world units
 	let currentSnap: SnapResult = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
 	let dirty = false;
 	let cameraChangedThisTick = false;
@@ -857,15 +871,17 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 					newW = Math.max(MIN_WIDGET_SIZE, w + dx);
 				}
 				if (handle.includes('w')) {
-					newX = x + dx;
-					newW = Math.max(MIN_WIDGET_SIZE, w - dx);
+					const clampedW = Math.max(MIN_WIDGET_SIZE, w - dx);
+					newX = x + w - clampedW; // right edge stays fixed
+					newW = clampedW;
 				}
 				if (handle.includes('s')) {
 					newH = Math.max(MIN_WIDGET_SIZE, h + dy);
 				}
 				if (handle.includes('n')) {
-					newY = y + dy;
-					newH = Math.max(MIN_WIDGET_SIZE, h - dy);
+					const clampedH = Math.max(MIN_WIDGET_SIZE, h - dy);
+					newY = y + h - clampedH; // bottom edge stays fixed
+					newH = clampedH;
 				}
 
 				world.setComponent(inputState.entityId, Transform2D, {
@@ -961,6 +977,18 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			return { action: 'passthrough' };
 		},
 
+		handlePointerCancel(): void {
+			// End any open undo group to prevent leaked groups
+			if (inputState.mode === 'dragging' || inputState.mode === 'resizing') {
+				commandBuffer.endGroup();
+			}
+			// Clear snap state
+			currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
+			// Reset interaction state to idle
+			inputState = { mode: 'idle' };
+			markDirtyInternal();
+		},
+
 		// === Selection ===
 
 		getSelectedEntities(): EntityId[] {
@@ -1049,6 +1077,10 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 		tick() {
 			profiler.beginFrame(world.currentTick);
 
+			// Fix #4: Capture navigation changed flag before systems clear it
+			const navStackPreTick = world.getResource(NavigationStackResource);
+			const navigationChangedThisTick = navStackPreTick?.changed ?? false;
+
 			// Run all systems
 			scheduler.execute(world);
 
@@ -1102,7 +1134,7 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 				entered,
 				exited,
 				cameraChanged: cameraChangedThisTick,
-				navigationChanged: false,
+				navigationChanged: navigationChangedThisTick,
 				selectionChanged: selectionChangedThisTick,
 			};
 
@@ -1151,6 +1183,20 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 		// === Lifecycle ===
 
 		destroy() {
+			// Unsubscribe all observers
+			for (const unsub of unsubscribers) {
+				unsub();
+			}
+			unsubscribers.length = 0;
+
+			// Clear command buffer (undo/redo stacks and any open group)
+			commandBuffer.clear();
+
+			// Disable profiler and clear its ring buffer
+			profiler.setEnabled(false);
+			profiler.clear();
+
+			// Clear spatial index
 			spatialIndex.clear();
 		},
 	};

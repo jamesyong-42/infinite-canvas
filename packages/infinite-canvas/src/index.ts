@@ -121,7 +121,7 @@ export type { SelectionConfig, SelectionBounds } from './react/webgl/SelectionRe
 // Snap types (for reading snap guide state)
 export type { SnapGuide, EqualSpacingIndicator, SnapResult, EntityBounds } from './snap.js';
 
-// ECS types (commonly needed)
+// Re-exported from ./ecs/types for convenience — also available via @jamesyong42/infinite-canvas/ecs
 export type {
 	EntityId,
 	ComponentType,

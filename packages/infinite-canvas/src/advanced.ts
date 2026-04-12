@@ -1,8 +1,9 @@
 // WebGL renderers
-export { GridRenderer, DEFAULT_GRID_CONFIG } from './react/webgl/GridRenderer.js';
-export type { GridConfig } from './react/webgl/GridRenderer.js';
-export { SelectionRenderer, DEFAULT_SELECTION_CONFIG } from './react/webgl/SelectionRenderer.js';
-export type { SelectionConfig, SelectionBounds } from './react/webgl/SelectionRenderer.js';
+// Note: DEFAULT_GRID_CONFIG, GridConfig, DEFAULT_SELECTION_CONFIG, SelectionConfig,
+// and SelectionBounds are exported from the main entry point (index.ts) since they
+// are needed for InfiniteCanvas prop typing.
+export { GridRenderer } from './react/webgl/GridRenderer.js';
+export { SelectionRenderer } from './react/webgl/SelectionRenderer.js';
 export { WebGLWidgetLayer } from './react/webgl/WebGLWidgetLayer.js';
 export { WebGLWidgetSlot } from './react/webgl/WebGLWidgetSlot.js';
 

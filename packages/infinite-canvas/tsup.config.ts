@@ -6,5 +6,7 @@ export default defineConfig({
 	dts: true,
 	sourcemap: true,
 	clean: true,
+	splitting: true,
+	treeshake: true,
 	external: ['react', 'react-dom', 'three', '@react-three/fiber'],
 });

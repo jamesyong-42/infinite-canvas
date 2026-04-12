@@ -39,6 +39,8 @@ export function createWorld(): World {
 	const resources = new Map<string, unknown>();
 	// Frame handlers
 	const frameHandlers = new Set<FrameHandler>();
+	// Destroy listeners — called before components/tags are removed
+	const destroyListeners = new Set<(entity: EntityId) => void>();
 
 	// === Query cache ===
 	// Key: sorted type names joined by '|' (e.g., "Transform2D|Visible")
@@ -53,7 +55,7 @@ export function createWorld(): World {
 		return types
 			.map((t) => t.name)
 			.sort()
-			.join('|');
+			.join('\0');
 	}
 
 	function buildQueryResult(compNames: string[], tagNames: string[]): Set<EntityId> {
@@ -222,6 +224,9 @@ export function createWorld(): World {
 
 		destroyEntity(id: EntityId) {
 			if (!alive.has(id)) return;
+			// Notify destroy listeners BEFORE removing components/tags
+			// so callbacks can still read the entity's data
+			for (const listener of destroyListeners) listener(id);
 			alive.delete(id);
 			// Remove from all cached queries
 			removeCachesForEntity(id);
@@ -248,7 +253,16 @@ export function createWorld(): World {
 
 		addComponent<T>(entity: EntityId, type: ComponentType<T>, data: T) {
 			const store = getComponentStore(type);
-			const merged = { ...type.defaults, ...data };
+			const merged = { ...type.defaults, ...data } as T;
+			// Deep-clone reference types to prevent shared mutation
+			for (const key in merged) {
+				const val = merged[key];
+				if (Array.isArray(val)) {
+					(merged as Record<string, unknown>)[key] = [...val];
+				} else if (val !== null && typeof val === 'object' && (val as object).constructor === Object) {
+					(merged as Record<string, unknown>)[key] = { ...val };
+				}
+			}
 			store.data.set(entity, merged);
 			store.dirty.add(entity);
 			store.added.add(entity);
@@ -261,6 +275,7 @@ export function createWorld(): World {
 			const store = getComponentStore(type);
 			store.data.delete(entity);
 			store.dirty.delete(entity);
+			store.added.delete(entity);
 			// Update cached queries — entity may no longer match
 			updateCachesForEntity(type.name, entity);
 		},
@@ -282,10 +297,9 @@ export function createWorld(): World {
 			if (!existing) return;
 			if (hasListeners(store)) {
 				const prev = { ...existing };
-				const next = Object.assign(existing, data);
-				store.data.set(entity, next);
+				Object.assign(existing, data);
 				store.dirty.add(entity);
-				emitComponentChanged(store, entity, prev, next);
+				emitComponentChanged(store, entity, prev, existing);
 			} else {
 				Object.assign(existing, data);
 				store.dirty.add(entity);
@@ -427,6 +441,13 @@ export function createWorld(): World {
 			handlers.add(handler);
 			return () => {
 				handlers.delete(handler);
+			};
+		},
+
+		onEntityDestroyed(callback: (entity: EntityId) => void): Unsubscribe {
+			destroyListeners.add(callback);
+			return () => {
+				destroyListeners.delete(callback);
 			};
 		},
 

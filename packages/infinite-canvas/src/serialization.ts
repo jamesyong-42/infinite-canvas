@@ -1,4 +1,5 @@
 import type { ComponentType, EntityId, TagType, World } from './ecs/index.js';
+import { Children, HandleSet, Parent } from './components.js';
 import type { NavigationFrame } from './resources.js';
 
 // === Serialization Types ===
@@ -81,6 +82,10 @@ export function deserializeWorld(
 	componentTypes: ComponentType[],
 	tagTypes: TagType[],
 ): void {
+	if (doc.version !== 1) {
+		throw new Error(`Unsupported canvas document version: ${doc.version}. Expected version 1.`);
+	}
+
 	// Build lookup maps
 	const compByName = new Map<string, ComponentType>();
 	for (const t of componentTypes) compByName.set(t.name, t);
@@ -93,25 +98,47 @@ export function deserializeWorld(
 		world.destroyEntity(entityId);
 	}
 
-	// Create entities from document
+	// First pass: create entities and build old-to-new ID mapping
+	const idMap = new Map<EntityId, EntityId>();
+
 	for (const entry of doc.entities) {
-		const entity = world.createEntity();
-		// Note: entity IDs may differ from the serialized IDs.
-		// For now, we create new sequential IDs. A more sophisticated
-		// approach would use an ID mapping for parent-child references.
+		const newId = world.createEntity();
+		idMap.set(entry.id as EntityId, newId);
 
 		for (const [compName, data] of Object.entries(entry.components)) {
 			const type = compByName.get(compName);
 			if (type) {
-				world.addComponent(entity, type, data);
+				world.addComponent(newId, type, data);
 			}
 		}
 
 		for (const tagName of entry.tags) {
 			const type = tagByName.get(tagName);
 			if (type) {
-				world.addTag(entity, type);
+				world.addTag(newId, type);
 			}
+		}
+	}
+
+	// Second pass: remap cross-reference components (Parent, Children, HandleSet)
+	for (const [_oldId, newId] of idMap) {
+		const parent = world.getComponent(newId, Parent);
+		if (parent && idMap.has(parent.id)) {
+			world.setComponent(newId, Parent, { id: idMap.get(parent.id)! });
+		}
+
+		const children = world.getComponent(newId, Children);
+		if (children) {
+			world.setComponent(newId, Children, {
+				ids: children.ids.map((id: EntityId) => idMap.get(id) ?? id),
+			});
+		}
+
+		const handleSet = world.getComponent(newId, HandleSet);
+		if (handleSet) {
+			world.setComponent(newId, HandleSet, {
+				ids: handleSet.ids.map((id: EntityId) => idMap.get(id) ?? id),
+			});
 		}
 	}
 }

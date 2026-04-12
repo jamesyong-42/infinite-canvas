@@ -63,6 +63,11 @@ function propagateEntity(world: World, entity: number, processed: Set<number>) {
 
 	const parentComp = world.getComponent(entity, Parent);
 	if (parentComp && world.entityExists(parentComp.id)) {
+		// Fix #7: Recursively propagate parent first if it hasn't been processed,
+		// so we never read stale parent WorldBounds.
+		if (!processed.has(parentComp.id)) {
+			propagateEntity(world, parentComp.id, processed);
+		}
 		const parentBounds = world.getComponent(parentComp.id, WorldBounds);
 		if (parentBounds) {
 			worldX += parentBounds.worldX;
@@ -185,10 +190,15 @@ export const handleSyncSystem = defineSystem({
 		}
 
 		// Orphan sweep: handles whose parent has been destroyed out-of-band.
+		// Fix #8: Only auto-destroy handle entities (resize/rotate), not other
+		// Hitbox+Parent combos that may be user-created.
 		for (const entity of world.query(Hitbox, Parent).slice()) {
 			const parent = world.getComponent(entity, Parent);
 			if (!parent || !world.entityExists(parent.id)) {
-				world.destroyEntity(entity);
+				const role = world.getComponent(entity, InteractionRole);
+				if (role && (role.role.type === 'resize' || role.role.type === 'rotate')) {
+					world.destroyEntity(entity);
+				}
 			}
 		}
 	},
@@ -265,6 +275,9 @@ export const navigationFilterSystem = defineSystem({
 			}
 		}
 
+		// Fix #9: Intentional direct mutation — navStack.changed is a side-channel
+		// flag read by engine.tick() before systems run. Using setResource() here
+		// would trigger unnecessary resource-change bookkeeping on a hot path.
 		navStack.changed = false;
 	},
 });
@@ -346,11 +359,12 @@ export const breakpointSystem = defineSystem({
 					screenHeight,
 				});
 			} else {
-				// Fix #10: Update if breakpoint tier changed OR screen dimensions changed significantly
+				// Fix #10: Update if breakpoint tier changed OR screen dimensions changed significantly.
+				// Compare rounded values to avoid floating-point instability at fractional zoom levels.
 				const bpChanged = existing.current !== bp;
 				const sizeChanged =
-					Math.abs(existing.screenWidth - screenWidth) > 1 ||
-					Math.abs(existing.screenHeight - screenHeight) > 1;
+					Math.round(existing.screenWidth) !== Math.round(screenWidth) ||
+					Math.round(existing.screenHeight) !== Math.round(screenHeight);
 
 				if (bpChanged || sizeChanged) {
 					world.setComponent(entity, WidgetBreakpoint, {

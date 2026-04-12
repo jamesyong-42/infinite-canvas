@@ -29,6 +29,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Type check
+        run: pnpm exec tsc --noEmit -p packages/infinite-canvas/tsconfig.json
+
       - name: Build
         run: pnpm build
 
