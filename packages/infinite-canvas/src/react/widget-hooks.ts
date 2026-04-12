@@ -58,4 +58,3 @@ export function useUpdateWidget(entityId: EntityId): (patch: Record<string, unkn
 		[engine, entityId],
 	);
 }
-

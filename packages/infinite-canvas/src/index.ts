@@ -1,7 +1,5 @@
 // Engine
-export {
-	createLayoutEngine,
-} from './engine.js';
+export { createLayoutEngine } from './engine.js';
 export type {
 	LayoutEngine,
 	LayoutEngineConfig,

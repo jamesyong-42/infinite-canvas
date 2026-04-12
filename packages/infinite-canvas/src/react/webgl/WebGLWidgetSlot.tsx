@@ -3,13 +3,18 @@ import { useRef } from 'react';
 import type { Group } from 'three';
 import { WorldBounds } from '../../components.js';
 import type { EntityId } from '../../ecs/types.js';
+import { CameraResource } from '../../resources.js';
 import { useLayoutEngine } from '../context.js';
 import { useComponent, useResource } from '../hooks.js';
-import { CameraResource } from '../../resources.js';
 
 interface WebGLWidgetSlotProps {
 	entityId: EntityId;
-	component: React.ComponentType<{ entityId: EntityId; width: number; height: number; zoom: number }>;
+	component: React.ComponentType<{
+		entityId: EntityId;
+		width: number;
+		height: number;
+		zoom: number;
+	}>;
 }
 
 /**
@@ -44,7 +49,12 @@ export function WebGLWidgetSlot({ entityId, component: WidgetComponent }: WebGLW
 
 	return (
 		<group ref={groupRef}>
-			<WidgetComponent entityId={entityId} width={wb.worldWidth} height={wb.worldHeight} zoom={camera.zoom} />
+			<WidgetComponent
+				entityId={entityId}
+				width={wb.worldWidth}
+				height={wb.worldHeight}
+				zoom={camera.zoom}
+			/>
 		</group>
 	);
 }

@@ -9,7 +9,11 @@ import { WebGLWidgetSlot } from './WebGLWidgetSlot.js';
 
 // === Camera sync component (runs inside R3F) ===
 
-function syncCamera(camera: THREE.Camera, size: { width: number; height: number }, engine: LayoutEngine) {
+function syncCamera(
+	camera: THREE.Camera,
+	size: { width: number; height: number },
+	engine: LayoutEngine,
+) {
 	const cam = engine.getCamera();
 	const ortho = camera as THREE.OrthographicCamera;
 
@@ -63,7 +67,12 @@ export function WebGLWidgetLayer({ engine, entities, resolve }: WebGLWidgetLayer
 	const widgetEntries = useMemo(() => {
 		const result: {
 			entityId: EntityId;
-			component: React.ComponentType<{ entityId: EntityId; width: number; height: number; zoom: number }>;
+			component: React.ComponentType<{
+				entityId: EntityId;
+				width: number;
+				height: number;
+				zoom: number;
+			}>;
 		}[] = [];
 		for (const id of entities) {
 			const resolved = resolve(id);

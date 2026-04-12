@@ -259,7 +259,11 @@ export function createWorld(): World {
 				const val = merged[key];
 				if (Array.isArray(val)) {
 					(merged as Record<string, unknown>)[key] = [...val];
-				} else if (val !== null && typeof val === 'object' && (val as object).constructor === Object) {
+				} else if (
+					val !== null &&
+					typeof val === 'object' &&
+					(val as object).constructor === Object
+				) {
 					(merged as Record<string, unknown>)[key] = { ...val };
 				}
 			}

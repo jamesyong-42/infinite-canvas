@@ -731,10 +731,10 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			const entities = entityIds ?? world.queryTagged(Active);
 			if (entities.length === 0) return;
 
-			let minX = Number.POSITIVE_INFINITY,
-				minY = Number.POSITIVE_INFINITY,
-				maxX = Number.NEGATIVE_INFINITY,
-				maxY = Number.NEGATIVE_INFINITY;
+			let minX = Number.POSITIVE_INFINITY;
+			let minY = Number.POSITIVE_INFINITY;
+			let maxX = Number.NEGATIVE_INFINITY;
+			let maxY = Number.NEGATIVE_INFINITY;
 			for (const e of entities) {
 				const wb = world.getComponent(e, WorldBounds);
 				if (!wb) continue;
@@ -743,7 +743,7 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 				maxX = Math.max(maxX, wb.worldX + wb.worldWidth);
 				maxY = Math.max(maxY, wb.worldY + wb.worldHeight);
 			}
-			if (!isFinite(minX)) return;
+			if (!Number.isFinite(minX)) return;
 
 			const contentWidth = maxX - minX + padding * 2;
 			const contentHeight = maxY - minY + padding * 2;
@@ -914,10 +914,10 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 				if (snapEnabled && inputState.startPositions.size > 0) {
 					// Build dragged bounds (use first entity as reference for snap)
 					const draggedIds = new Set(inputState.startPositions.keys());
-					const firstId = inputState.startPositions.keys().next().value!;
-					const firstStart = inputState.startPositions.get(firstId)!;
+					const firstId = inputState.startPositions.keys().next().value as EntityId;
+					const firstStart = inputState.startPositions.get(firstId);
 					const firstT = world.getComponent(firstId, Transform2D);
-					if (firstT) {
+					if (firstT && firstStart) {
 						const draggedBounds = {
 							x: firstStart.x + totalDx,
 							y: firstStart.y + totalDy,
@@ -972,10 +972,10 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 				const { x, y, width: w, height: h } = inputState.startBounds;
 				const handle = inputState.handle;
 
-				let newX = x,
-					newY = y,
-					newW = w,
-					newH = h;
+				let newX = x;
+				let newY = y;
+				let newW = w;
+				let newH = h;
 
 				if (handle.includes('e')) {
 					newW = Math.max(MIN_WIDGET_SIZE, w + dx);
@@ -1039,9 +1039,9 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 				const entityIds = [...prevState.startPositions.keys()];
 				if (entityIds.length > 0) {
 					const firstId = entityIds[0];
-					const start = prevState.startPositions.get(firstId)!;
+					const start = prevState.startPositions.get(firstId);
 					const current = world.getComponent(firstId, Transform2D);
-					if (current) {
+					if (current && start) {
 						const totalDx = current.x - start.x;
 						const totalDy = current.y - start.y;
 						if (totalDx !== 0 || totalDy !== 0) {
@@ -1313,4 +1313,3 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 
 	return engine;
 }
-

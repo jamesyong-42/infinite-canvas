@@ -4,13 +4,13 @@ import { CameraResource } from '../resources.js';
 import { useLayoutEngine } from './context.js';
 
 function shallowEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-    const keysA = Object.keys(a);
-    const keysB = Object.keys(b);
-    if (keysA.length !== keysB.length) return false;
-    for (const key of keysA) {
-        if (a[key] !== b[key]) return false;
-    }
-    return true;
+	const keysA = Object.keys(a);
+	const keysB = Object.keys(b);
+	if (keysA.length !== keysB.length) return false;
+	for (const key of keysA) {
+		if (a[key] !== b[key]) return false;
+	}
+	return true;
 }
 
 /**
@@ -110,6 +110,7 @@ export function useQuery(...types: (ComponentType | TagType)[]): EntityId[] {
 
 	const [result, setResult] = useState<EntityId[]>(() => engine.world.query(...types));
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: typesKey is a stable proxy for the types array
 	useEffect(() => {
 		// Immediately sync on (re-)subscription
 		setResult(engine.world.query(...typesRef.current));

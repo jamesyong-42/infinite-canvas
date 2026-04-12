@@ -1,5 +1,5 @@
-import type { ComponentType, EntityId, TagType, World } from './ecs/index.js';
 import { Children, HandleSet, Parent } from './components.js';
+import type { ComponentType, EntityId, TagType, World } from './ecs/index.js';
 import type { NavigationFrame } from './resources.js';
 
 // === Serialization Types ===
@@ -126,7 +126,10 @@ export function deserializeWorld(
 	for (const [_oldId, newId] of idMap) {
 		const parent = world.getComponent(newId, Parent);
 		if (parent && idMap.has(parent.id)) {
-			world.setComponent(newId, Parent, { id: idMap.get(parent.id)! });
+			const mappedId = idMap.get(parent.id);
+			if (mappedId !== undefined) {
+				world.setComponent(newId, Parent, { id: mappedId });
+			}
 		}
 
 		const children = world.getComponent(newId, Children);

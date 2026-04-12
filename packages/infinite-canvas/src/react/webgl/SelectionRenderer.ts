@@ -394,10 +394,10 @@ export class SelectionRenderer {
 
 		// Group bounding box
 		if (count > 1) {
-			let minX = Number.POSITIVE_INFINITY,
-				minY = Number.POSITIVE_INFINITY,
-				maxX = Number.NEGATIVE_INFINITY,
-				maxY = Number.NEGATIVE_INFINITY;
+			let minX = Number.POSITIVE_INFINITY;
+			let minY = Number.POSITIVE_INFINITY;
+			let maxX = Number.NEGATIVE_INFINITY;
+			let maxY = Number.NEGATIVE_INFINITY;
 			for (let i = 0; i < count; i++) {
 				const b = selected[i];
 				minX = Math.min(minX, b.x);
