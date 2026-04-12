@@ -62,13 +62,14 @@ import {
 	transformPropagateSystem,
 } from './systems.js';
 
-// === Fix #11: SpatialIndex as a proper resource ===
+/** ECS resource holding the SpatialIndex instance for viewport culling and hit testing. */
 export const SpatialIndexResource = defineResource('SpatialIndex', {
 	instance: null as SpatialIndex | null,
 });
 
 // === Pointer Directives ===
 
+/** Directive returned by pointer handlers indicating how the canvas should handle capture. */
 export type PointerDirective =
 	| { action: 'passthrough' }
 	| { action: 'passthrough-track-drag' }
@@ -78,6 +79,7 @@ export type PointerDirective =
 
 export type { ResizeHandlePos } from './components.js';
 
+/** Keyboard modifier state captured alongside pointer events. */
 export interface Modifiers {
 	shift: boolean;
 	ctrl: boolean;
@@ -115,6 +117,7 @@ type InputState =
 
 // === Visible entity for renderers ===
 
+/** A visible entity with its computed world-space bounds and display metadata. */
 export interface VisibleEntity {
 	entityId: EntityId;
 	worldX: number;
@@ -129,126 +132,227 @@ export interface VisibleEntity {
 
 // === Frame changes ===
 
+/** Per-frame change flags indicating what changed during the last tick. */
 export interface FrameChanges {
+	/** Entities whose world-space position or size changed. */
 	positionsChanged: EntityId[];
+	/** Entities whose responsive breakpoint changed. */
 	breakpointsChanged: EntityId[];
+	/** Entities that entered the visible viewport. */
 	entered: EntityId[];
+	/** Entities that exited the visible viewport. */
 	exited: EntityId[];
+	/** Whether the camera position or zoom changed. */
 	cameraChanged: boolean;
+	/** Whether the navigation stack changed (entered/exited container). */
 	navigationChanged: boolean;
+	/** Whether the selection set changed. */
 	selectionChanged: boolean;
 }
 
 // === Engine Config ===
 
+/** Options for creating a new widget entity via `engine.addWidget()`. */
 export interface AddWidgetOptions {
+	/** Widget type identifier, matched against registered widget definitions. */
 	type: string;
+	/** Initial world-space position. */
 	position: { x: number; y: number };
+	/** Initial world-space size. */
 	size: { width: number; height: number };
+	/** Initial rotation in radians. */
 	rotation?: number;
+	/** Arbitrary application data attached to the widget. */
 	data?: Record<string, unknown>;
+	/** Rendering surface: DOM (default) or WebGL. */
 	surface?: 'dom' | 'webgl';
+	/** Rendering and hit-test ordering. Higher values render on top. */
 	zIndex?: number;
+	/** Whether the widget can be selected (default: true). */
 	selectable?: boolean;
+	/** Whether the widget can be dragged (default: true). */
 	draggable?: boolean;
+	/** Whether the widget can be resized (default: true). */
 	resizable?: boolean;
+	/** Parent entity for hierarchy nesting. */
 	parent?: EntityId;
 }
 
+/** Configuration options for `createLayoutEngine()`. */
 export interface LayoutEngineConfig {
+	/** Maximum entity count (default: 10000). */
 	maxEntities?: number;
+	/** Minimum and maximum zoom levels. */
 	zoom?: { min: number; max: number };
+	/** Screen-space pixel thresholds for responsive breakpoints. */
 	breakpoints?: { micro: number; compact: number; normal: number; expanded: number };
+	/** Snap alignment configuration. */
+	snap?: {
+		/** Whether snapping is enabled initially. */
+		enabled?: boolean;
+		/** Snap distance threshold in screen pixels. */
+		threshold?: number;
+	};
 }
 
 // === Engine ===
 
+/**
+ * The core layout engine. Manages the ECS world, camera, input, undo/redo,
+ * spatial indexing, and frame lifecycle for an infinite canvas.
+ */
 export interface LayoutEngine {
+	/** The underlying ECS world. Use for direct component/tag/resource access. */
 	readonly world: World;
 
 	// Entity CRUD
+
+	/** Creates a bare entity with optional initial components/tags. */
 	createEntity(inits?: ComponentInit[]): EntityId;
+	/** Creates a new widget entity with the given type, position, size, and data. */
 	addWidget(opts: AddWidgetOptions): EntityId;
+	/** Removes an entity and cleans up all components, tags, and spatial index entries. */
 	destroyEntity(id: EntityId): void;
 
 	// Shorthand
+
+	/** Reads a component from an entity. Returns undefined if not present. */
 	get<T>(entity: EntityId, type: ComponentType<T>): T | undefined;
+	/** Updates a component on an entity (partial merge). */
 	set<T>(entity: EntityId, type: ComponentType<T>, data: Partial<T>): void;
+	/** Checks if an entity has a component or tag. */
 	has(entity: EntityId, type: ComponentType | TagType): boolean;
 
 	// Extensions
+
+	/** Registers a custom ECS system to run each tick. */
 	registerSystem(system: SystemDef): void;
+	/** Removes a registered system by name. */
 	removeSystem(name: string): void;
 
 	// Camera
+
+	/** Returns the current camera state {x, y, zoom}. */
 	getCamera(): { x: number; y: number; zoom: number };
+	/** Moves the camera by the specified screen-space delta. */
 	panBy(dx: number, dy: number): void;
+	/** Moves the camera to the specified world coordinates. */
 	panTo(worldX: number, worldY: number): void;
+	/** Adjusts zoom level anchored at a screen point. Delta is a multiplier offset. */
 	zoomAtPoint(screenX: number, screenY: number, delta: number): void;
+	/** Sets the zoom level directly. */
 	zoomTo(zoom: number): void;
+	/** Adjusts camera to fit all entities (or specified entities) in the viewport. */
 	zoomToFit(entityIds?: EntityId[], padding?: number): void;
 
 	// Viewport
+
+	/** Updates the viewport dimensions. Called automatically by InfiniteCanvas on resize. */
 	setViewport(width: number, height: number, dpr?: number): void;
 
 	// Pointer input
+
+	/** Pointer-down handler. Returns a directive for how the canvas should capture the pointer. */
 	handlePointerDown(
 		screenX: number,
 		screenY: number,
 		button: number,
 		modifiers: Modifiers,
 	): PointerDirective;
+	/** Pointer-move handler. Returns a directive reflecting the current interaction. */
 	handlePointerMove(screenX: number, screenY: number, modifiers: Modifiers): PointerDirective;
+	/** Pointer-up handler. Commits drags/resizes and returns a directive. */
 	handlePointerUp(): PointerDirective;
+	/** Cancels the current pointer interaction without committing changes. */
 	handlePointerCancel(): void;
 
 	// Selection & Hover
+
+	/** Returns IDs of all currently selected entities. */
 	getSelectedEntities(): EntityId[];
+	/** Returns the entity currently under the pointer, or null. */
 	getHoveredEntity(): EntityId | null;
 
 	// Navigation
+
+	/** Navigates into a container entity, pushing the current camera onto the navigation stack. */
 	enterContainer(entity: EntityId): void;
+	/** Navigates out of the current container, restoring the previous camera state. */
 	exitContainer(): void;
+	/** Returns the entity ID of the currently active container, or null if at root. */
 	getActiveContainer(): EntityId | null;
+	/** Returns the current navigation depth (0 = root). */
 	getNavigationDepth(): number;
 
 	// Commands + Undo/Redo
+
+	/** Executes a command and pushes it onto the undo stack. */
 	execute(command: Command): void;
+	/** Begins a command group -- subsequent commands are bundled into one undo step. */
 	beginCommandGroup(): void;
+	/** Ends the current command group. */
 	endCommandGroup(): void;
+	/** Undoes the last command or command group. Returns true if anything was undone. */
 	undo(): boolean;
+	/** Redoes the last undone command. Returns true if anything was redone. */
 	redo(): boolean;
+	/** Returns whether there is a command to undo. */
 	canUndo(): boolean;
+	/** Returns whether there is a command to redo. */
 	canRedo(): boolean;
 
 	// Frame
+
+	/** Schedules a tick on the next animation frame. Call after programmatic changes. */
 	markDirty(): void;
+	/** Runs one frame: executes all ECS systems, updates spatial index, emits frame events. */
 	tick(): void;
+	/** Ticks only if dirty. Returns true if a tick was performed. */
 	flushIfDirty(): boolean;
 
 	// Output
+
+	/** Returns visible entities with their world-space bounds, breakpoint, and surface info. */
 	getVisibleEntities(): VisibleEntity[];
+	/** Returns per-frame change flags from the last tick. */
 	getFrameChanges(): FrameChanges;
 
 	// Spatial index (exposed for systems)
+
+	/** Returns the spatial index used for viewport culling and hit testing. */
 	getSpatialIndex(): SpatialIndex;
 
 	// Snap guides
+
+	/** Returns active snap guide lines from the last tick. */
 	getSnapGuides(): SnapGuide[];
+	/** Returns equal-spacing indicators from the last tick. */
 	getEqualSpacing(): EqualSpacingIndicator[];
+	/** Enables or disables snap alignment. */
 	setSnapEnabled(on: boolean): void;
+	/** Sets the snap distance threshold in world pixels. */
 	setSnapThreshold(worldPx: number): void;
 
 	// Performance profiling
+
+	/** Performance profiler for measuring system execution times. */
 	readonly profiler: Profiler;
 
 	// Events
+
+	/** Registers a callback invoked after each tick. Returns an unsubscribe function. */
 	onFrame(handler: () => void): Unsubscribe;
 
 	// Lifecycle
+
+	/** Destroys the engine, releasing all resources and subscriptions. */
 	destroy(): void;
 }
 
+/**
+ * Creates a new LayoutEngine instance with the given configuration.
+ * This is the main entry point for the infinite canvas library.
+ */
 export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	const world = createWorld();
 	const scheduler = new SystemScheduler();
@@ -268,6 +372,12 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	if (config?.breakpoints) {
 		world.setResource(BreakpointConfigResource, config.breakpoints);
 	}
+
+	// Apply snap config
+	let snapEnabledInit = true;
+	let snapThresholdInit = 5;
+	if (config?.snap?.enabled !== undefined) snapEnabledInit = config.snap.enabled;
+	if (config?.snap?.threshold !== undefined) snapThresholdInit = config.snap.threshold;
 
 	// Register built-in systems
 	scheduler.register(transformPropagateSystem);
@@ -353,8 +463,8 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	// State
 	let inputState: InputState = { mode: 'idle' };
 	let hoveredEntity: EntityId | null = null;
-	let snapEnabled = true;
-	let snapThreshold = 5; // screen pixels — divided by zoom to convert to world units
+	let snapEnabled = snapEnabledInit;
+	let snapThreshold = snapThresholdInit; // screen pixels — divided by zoom to convert to world units
 	let currentSnap: SnapResult = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
 	let dirty = false;
 	let cameraChangedThisTick = false;
@@ -1204,9 +1314,3 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	return engine;
 }
 
-/** @deprecated Use LayoutEngine instead */
-export type CanvasEngine = LayoutEngine;
-/** @deprecated Use LayoutEngineConfig instead */
-export type CanvasEngineConfig = LayoutEngineConfig;
-/** @deprecated Use createLayoutEngine instead */
-export const createCanvasEngine = createLayoutEngine;

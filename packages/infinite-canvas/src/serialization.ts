@@ -4,6 +4,7 @@ import type { NavigationFrame } from './resources.js';
 
 // === Serialization Types ===
 
+/** JSON-serializable snapshot of the canvas state, including all entities and camera. */
 export interface CanvasDocument {
 	version: number;
 	entities: SerializedEntity[];
@@ -13,6 +14,7 @@ export interface CanvasDocument {
 	};
 }
 
+/** A single serialized entity with its components and tags. */
 export interface SerializedEntity {
 	id: EntityId;
 	components: Record<string, unknown>;
@@ -22,8 +24,8 @@ export interface SerializedEntity {
 // === Serialize/Deserialize ===
 
 /**
- * Serialize the entire world to a JSON-serializable document.
- * Requires registries of known component types and tag types.
+ * Serializes all entities, components, and tags to a JSON-compatible document.
+ * Requires registries of known component and tag types for enumeration.
  */
 export function serializeWorld(
 	world: World,
@@ -73,8 +75,8 @@ export function serializeWorld(
 }
 
 /**
- * Deserialize a document into the world.
- * Clears existing world state first.
+ * Restores entities from a serialized document into the world.
+ * Clears existing state first and remaps entity IDs automatically.
  */
 export function deserializeWorld(
 	world: World,
@@ -144,8 +146,8 @@ export function deserializeWorld(
 }
 
 /**
- * Serialize a subset of entities (e.g., for copy/paste).
- * Includes children recursively.
+ * Serializes a subset of entities (e.g., for copy/paste).
+ * Recursively includes children of the specified entities.
  */
 export function serializeEntities(
 	world: World,

@@ -2,6 +2,8 @@ import { defineComponent, defineTag } from './ecs/index.js';
 import type { EntityId } from './ecs/index.js';
 
 // === Spatial ===
+
+/** Position, size, and rotation of an entity in local coordinates (world units). */
 export const Transform2D = defineComponent('Transform2D', {
 	x: 0,
 	y: 0,
@@ -10,6 +12,7 @@ export const Transform2D = defineComponent('Transform2D', {
 	rotation: 0,
 });
 
+/** Computed world-space bounding box. Read-only -- updated by the transform propagation system. */
 export const WorldBounds = defineComponent('WorldBounds', {
 	worldX: 0,
 	worldY: 0,
@@ -17,22 +20,31 @@ export const WorldBounds = defineComponent('WorldBounds', {
 	worldHeight: 0,
 });
 
+/** Rendering and hit-test ordering. Higher values render on top. */
 export const ZIndex = defineComponent('ZIndex', { value: 0 });
 
 // === Hierarchy ===
+
+/** Parent entity reference. Used for nested containers and handle sync. */
 export const Parent = defineComponent('Parent', { id: 0 as EntityId });
+
+/** Child entity IDs. Used for nested containers and handle sync. */
 export const Children = defineComponent('Children', { ids: [] as EntityId[] });
 
 // === Widget ===
+
+/** Marks an entity as a renderable widget with a type identifier and rendering surface. */
 export const Widget = defineComponent('Widget', {
 	surface: 'dom' as 'dom' | 'webgl' | 'webview',
 	type: '' as string,
 });
 
+/** Arbitrary application data attached to a widget entity. Access via useWidgetData(). */
 export const WidgetData = defineComponent('WidgetData', {
 	data: {} as Record<string, unknown>,
 });
 
+/** Computed responsive breakpoint based on screen-space size. Read-only. */
 export const WidgetBreakpoint = defineComponent('WidgetBreakpoint', {
 	current: 'normal' as 'micro' | 'compact' | 'normal' | 'expanded' | 'detailed',
 	screenWidth: 0,
@@ -40,6 +52,8 @@ export const WidgetBreakpoint = defineComponent('WidgetBreakpoint', {
 });
 
 // === Container ===
+
+/** Marks an entity as an enterable container (double-click/double-tap to enter). */
 export const Container = defineComponent('Container', { enterable: true });
 
 // === Interaction ===
@@ -85,6 +99,7 @@ export const InteractionRole = defineComponent<InteractionRoleData>('Interaction
 	role: { type: 'canvas' },
 });
 
+/** Data shape for the HandleSet component. */
 export type HandleSetData = {
 	ids: EntityId[];
 };
@@ -126,10 +141,18 @@ export const CursorHint = defineComponent<CursorHintData>('CursorHint', {
 });
 
 // === Tags ===
+
+/** Marks an entity as selectable by click or marquee. */
 export const Selectable = defineTag('Selectable');
+/** Marks an entity as draggable via pointer interaction. */
 export const Draggable = defineTag('Draggable');
+/** Marks an entity as resizable via edge/corner handles. */
 export const Resizable = defineTag('Resizable');
+/** Prevents an entity from being moved or resized. */
 export const Locked = defineTag('Locked');
+/** Indicates the entity is currently selected. */
 export const Selected = defineTag('Selected');
+/** Indicates the entity is currently being interacted with (drag, resize). */
 export const Active = defineTag('Active');
+/** Indicates the entity is within the visible viewport. Set by the cull system. */
 export const Visible = defineTag('Visible');

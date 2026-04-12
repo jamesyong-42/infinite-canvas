@@ -13,7 +13,31 @@
 		"url": "https://github.com/jamesyong-42/infinite-canvas/issues"
 	},
 	"homepage": "https://github.com/jamesyong-42/infinite-canvas#readme",
-	"keywords": ["infinite-canvas", "canvas", "ecs", "react", "webgl", "layout-engine"],
+	"keywords": [
+		"infinite-canvas",
+		"canvas",
+		"react",
+		"ecs",
+		"entity-component-system",
+		"webgl",
+		"layout-engine",
+		"drag-and-drop",
+		"zoom",
+		"pan",
+		"resize",
+		"snap",
+		"spatial",
+		"whiteboard",
+		"figma",
+		"freeform",
+		"widget",
+		"three",
+		"r3f",
+		"react-three-fiber",
+		"responsive",
+		"undo-redo",
+		"dark-mode"
+	],
 	"publishConfig": {
 		"access": "public"
 	},

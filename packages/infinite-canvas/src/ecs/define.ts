@@ -1,12 +1,8 @@
 import type { ComponentType, ResourceType, SystemDef, TagType } from './types.js';
 
 /**
- * Define a component type. Components hold data attached to entities.
- *
- * @example
- * const Transform2D = defineComponent('Transform2D', {
- *   x: 0, y: 0, width: 100, height: 100, rotation: 0,
- * });
+ * Defines a new ECS component type with a name and default values.
+ * Components hold structured data attached to entities.
  */
 export function defineComponent<T extends Record<string, unknown>>(
 	name: string,
@@ -16,20 +12,16 @@ export function defineComponent<T extends Record<string, unknown>>(
 }
 
 /**
- * Define a tag type. Tags are markers with no data — used for boolean state.
- *
- * @example
- * const Selected = defineTag('Selected');
+ * Defines a new ECS tag type (boolean marker with no data).
+ * Tags are lightweight flags for entity state like Selected or Visible.
  */
 export function defineTag(name: string): TagType {
 	return Object.freeze({ name, __kind: 'tag' as const });
 }
 
 /**
- * Define a resource type. Resources are global singletons (camera, viewport, etc.)
- *
- * @example
- * const Camera = defineResource('Camera', { x: 0, y: 0, zoom: 1 });
+ * Defines a new ECS resource type (singleton data shared across all systems).
+ * Resources hold global state like camera position, viewport size, and configuration.
  */
 export function defineResource<T extends Record<string, unknown>>(
 	name: string,
@@ -39,16 +31,8 @@ export function defineResource<T extends Record<string, unknown>>(
 }
 
 /**
- * Define a system. Systems are named functions that query and transform ECS data.
- *
- * @example
- * const mySystem = defineSystem({
- *   name: 'physics',
- *   after: 'layout',
- *   execute: (world) => {
- *     for (const entity of world.query(Transform2D, Velocity)) { ... }
- *   },
- * });
+ * Defines a new ECS system with execution order constraints (before/after).
+ * Systems are named functions that query and transform ECS data each tick.
  */
 export function defineSystem(def: SystemDef): SystemDef {
 	return def;

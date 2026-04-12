@@ -6,15 +6,17 @@ import { useLayoutEngine } from './context.js';
 import { useComponent, useTag } from './hooks.js';
 
 /**
- * Read widget data for an entity. Re-renders when data changes.
+ * Returns the custom data attached to a widget entity.
+ * Use the generic parameter for type safety: `useWidgetData<MyData>(entityId)`. Re-renders when data changes.
  */
-export function useWidgetData(entityId: EntityId): Record<string, unknown> {
+export function useWidgetData<T = Record<string, unknown>>(entityId: EntityId): T {
 	const comp = useComponent(entityId, WidgetData);
-	return comp?.data ?? {};
+	return (comp?.data ?? {}) as T;
 }
 
 /**
- * Read the current breakpoint for an entity. Re-renders when breakpoint changes.
+ * Returns the current responsive breakpoint for a widget based on its screen-space size.
+ * Re-renders when the breakpoint changes.
  */
 export function useBreakpoint(entityId: EntityId): Breakpoint {
 	const comp = useComponent(entityId, WidgetBreakpoint);
@@ -22,25 +24,25 @@ export function useBreakpoint(entityId: EntityId): Breakpoint {
 }
 
 /**
- * Read child entity IDs. Re-renders when children change.
+ * Returns child entity IDs of a container entity.
+ * Re-renders when children are added or removed.
  */
 export function useChildren(entityId: EntityId): EntityId[] {
 	const comp = useComponent(entityId, Children);
 	return comp?.ids ?? [];
 }
 
-/** @deprecated Use useChildren instead */
-export const useWidgetChildren = useChildren;
-
 /**
- * Check if this entity is selected. Re-renders when selection changes.
+ * Returns whether the entity is currently selected.
+ * Re-renders when the entity's selection state changes.
  */
 export function useIsSelected(entityId: EntityId): boolean {
 	return useTag(entityId, Selected);
 }
 
 /**
- * Returns a function to update widget data via the engine.
+ * Returns a function to update the widget's custom data.
+ * Merges the patch into existing data via shallow spread.
  */
 export function useUpdateWidget(entityId: EntityId): (patch: Record<string, unknown>) => void {
 	const engine = useLayoutEngine();
@@ -57,5 +59,3 @@ export function useUpdateWidget(entityId: EntityId): (patch: Record<string, unkn
 	);
 }
 
-/** @deprecated Use useUpdateWidget instead */
-export const useUpdateData = useUpdateWidget;

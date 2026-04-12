@@ -24,6 +24,7 @@ export type { FrameSample, ProfilerStats } from './profiler.js';
 
 // Spatial index
 export { SpatialIndex } from './spatial.js';
+export { SpatialIndexResource } from './engine.js';
 
 // Context providers (for custom composition)
 export { EngineProvider, ContainerRefProvider } from './react/context.js';

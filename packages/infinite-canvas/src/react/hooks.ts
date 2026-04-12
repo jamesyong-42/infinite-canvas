@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, EntityId, ResourceType, TagType } from '../ecs/types.js';
+import { CameraResource } from '../resources.js';
 import { useLayoutEngine } from './context.js';
 
 function shallowEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
@@ -13,8 +14,8 @@ function shallowEqual(a: Record<string, unknown>, b: Record<string, unknown>): b
 }
 
 /**
- * Subscribe to a component on a specific entity.
- * Re-renders only when this component on this entity changes.
+ * Reactively reads an ECS component from an entity.
+ * Returns undefined if the entity doesn't have the component. Re-renders when the component changes.
  */
 export function useComponent<T>(entity: EntityId, type: ComponentType<T>): T | undefined {
 	const engine = useLayoutEngine();
@@ -39,7 +40,7 @@ export function useComponent<T>(entity: EntityId, type: ComponentType<T>): T | u
 }
 
 /**
- * Subscribe to a tag on a specific entity.
+ * Reactively checks whether an entity has a tag.
  * Re-renders when the tag is added or removed.
  */
 export function useTag(entity: EntityId, type: TagType): boolean {
@@ -62,8 +63,8 @@ export function useTag(entity: EntityId, type: TagType): boolean {
 }
 
 /**
- * Subscribe to a resource. Re-renders only when the resource actually changes.
- * Fix #6: Caches previous value and compares before triggering re-render.
+ * Reactively reads an ECS resource (singleton data).
+ * Re-renders when any field of the resource changes (shallow comparison).
  */
 export function useResource<T>(type: ResourceType<T>): T {
 	const engine = useLayoutEngine();
@@ -98,9 +99,8 @@ export function useResource<T>(type: ResourceType<T>): T {
 }
 
 /**
- * Query entities matching component/tag types.
+ * Returns entity IDs matching all specified component/tag types.
  * Re-renders when the result set changes.
- * Fix #7: Uses a stable key instead of spreading types into deps array.
  */
 export function useQuery(...types: (ComponentType | TagType)[]): EntityId[] {
 	const engine = useLayoutEngine();
@@ -131,8 +131,8 @@ export function useQuery(...types: (ComponentType | TagType)[]): EntityId[] {
 }
 
 /**
- * Get all entities with a specific tag.
- * Re-renders when the set changes.
+ * Returns all entity IDs that have the specified tag.
+ * Re-renders when entities are tagged or untagged.
  */
 export function useTaggedEntities(type: TagType): EntityId[] {
 	const engine = useLayoutEngine();
@@ -151,4 +151,13 @@ export function useTaggedEntities(type: TagType): EntityId[] {
 	}, [engine, type]);
 
 	return result;
+}
+
+/**
+ * Returns the current camera state {x, y, zoom}.
+ * Shorthand for useResource(CameraResource).
+ */
+export function useCamera(): { x: number; y: number; zoom: number } {
+	const cam = useResource(CameraResource);
+	return { x: cam?.x ?? 0, y: cam?.y ?? 0, zoom: cam?.zoom ?? 1 };
 }

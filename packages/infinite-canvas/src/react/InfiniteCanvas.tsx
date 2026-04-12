@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Vector2 } from 'three';
 import { Widget, WorldBounds } from '../components.js';
 import type { EntityId } from '../ecs/types.js';
 import type { LayoutEngine } from '../engine.js';
 import { DEAD_ZONE_TOUCH_PX } from '../interaction-constants.js';
-import { CursorResource } from '../resources.js';
+import { CursorResource, NavigationStackResource } from '../resources.js';
 import { SelectionOverlaySlot } from './SelectionOverlaySlot.js';
 import { WidgetProvider } from './WidgetProvider.js';
 import { WidgetSlot } from './WidgetSlot.js';
@@ -17,29 +17,77 @@ import { SelectionRenderer } from './webgl/SelectionRenderer.js';
 import type { SelectionBounds, SelectionConfig } from './webgl/SelectionRenderer.js';
 import { WebGLWidgetLayer } from './webgl/WebGLWidgetLayer.js';
 
+/** Imperative handle exposed via `ref` on InfiniteCanvas for programmatic control. */
+export interface InfiniteCanvasHandle {
+	/** Moves the camera to the specified world coordinates. */
+	panTo(worldX: number, worldY: number): void;
+	/** Sets the zoom level directly. */
+	zoomTo(zoom: number): void;
+	/** Adjusts camera to fit all entities in the viewport. */
+	zoomToFit(padding?: number): void;
+	/** Undoes the last command or command group. */
+	undo(): void;
+	/** Redoes the last undone command. */
+	redo(): void;
+	/** Returns the underlying LayoutEngine instance. */
+	getEngine(): LayoutEngine;
+}
+
+/** Props for the InfiniteCanvas component. */
 interface InfiniteCanvasProps {
+	/** The LayoutEngine instance powering this canvas. Create with `createLayoutEngine()`. */
 	engine: LayoutEngine;
-	/** Widget definitions. When provided, WidgetProvider is created internally. */
+	/** Widget definitions. When provided, a WidgetProvider is created internally. */
 	widgets?: WidgetDef[];
 	/** Grid configuration. Pass `false` to disable the grid entirely. */
 	grid?: Partial<GridConfig> | false;
-	/** Selection style configuration. */
+	/** Selection highlight style configuration. */
 	selection?: Partial<SelectionConfig>;
+	/** Called when the set of selected entities changes. */
+	onSelectionChange?: (entityIds: EntityId[]) => void;
+	/** Called when the camera (pan/zoom) changes. */
+	onCameraChange?: (camera: { x: number; y: number; zoom: number }) => void;
+	/** Called when navigation depth changes (entering/exiting containers). */
+	onNavigationChange?: (depth: number, containerId: EntityId | null) => void;
+	/** CSS class name applied to the root container div. */
 	className?: string;
+	/** Inline styles applied to the root container div. */
 	style?: React.CSSProperties;
+	/** Overlay children (toolbars, panels) rendered on top of the canvas. */
 	children?: React.ReactNode;
 }
 
-export function InfiniteCanvas({
+export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCanvasProps>(function InfiniteCanvas({
 	engine,
 	widgets,
 	grid,
 	selection,
+	onSelectionChange,
+	onCameraChange,
+	onNavigationChange,
 	className,
 	style,
 	children,
-}: InfiniteCanvasProps) {
+}, ref) {
 	const containerRef = useRef<HTMLDivElement>(null);
+
+	// Keep latest callback refs to avoid stale closures in the rAF loop
+	const onSelectionChangeRef = useRef(onSelectionChange);
+	const onCameraChangeRef = useRef(onCameraChange);
+	const onNavigationChangeRef = useRef(onNavigationChange);
+	useEffect(() => { onSelectionChangeRef.current = onSelectionChange; }, [onSelectionChange]);
+	useEffect(() => { onCameraChangeRef.current = onCameraChange; }, [onCameraChange]);
+	useEffect(() => { onNavigationChangeRef.current = onNavigationChange; }, [onNavigationChange]);
+
+	// Imperative handle
+	useImperativeHandle(ref, () => ({
+		panTo: (x, y) => { engine.panTo(x, y); engine.markDirty(); },
+		zoomTo: (zoom) => { engine.zoomTo(zoom); engine.markDirty(); },
+		zoomToFit: (padding) => { engine.zoomToFit(undefined, padding); engine.markDirty(); },
+		undo: () => { engine.undo(); engine.markDirty(); },
+		redo: () => { engine.redo(); engine.markDirty(); },
+		getEngine: () => engine,
+	}), [engine]);
 
 	// When widgets prop is provided, create an internal registry.
 	// Use a stable key derived from widget types so inline array literals
@@ -562,6 +610,20 @@ export function InfiniteCanvas({
 					const visible = engine.getVisibleEntities();
 					setVisibleEntities(visible.map((v) => v.entityId));
 				}
+
+				// 4. Fire event callbacks
+				if (changes.selectionChanged && onSelectionChangeRef.current) {
+					onSelectionChangeRef.current(engine.getSelectedEntities());
+				}
+				if (changes.cameraChanged && onCameraChangeRef.current) {
+					onCameraChangeRef.current({ x: camera.x, y: camera.y, zoom: camera.zoom });
+				}
+				if (changes.navigationChanged && onNavigationChangeRef.current) {
+					const navStack = engine.world.getResource(NavigationStackResource);
+					const depth = navStack.frames.length - 1;
+					const containerId = navStack.frames[navStack.frames.length - 1].containerId;
+					onNavigationChangeRef.current(depth, containerId);
+				}
 			}
 
 			rafId = requestAnimationFrame(loop);
@@ -682,7 +744,7 @@ export function InfiniteCanvas({
 			</ContainerRefProvider>
 		</EngineProvider>
 	);
-}
+});
 
 /** Bridge component — reads widget resolver from context and passes to WebGLWidgetLayer */
 function WebGLWidgetBridge({ engine, entities }: { engine: LayoutEngine; entities: EntityId[] }) {

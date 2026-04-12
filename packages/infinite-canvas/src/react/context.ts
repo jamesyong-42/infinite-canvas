@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { EntityId } from '../ecs/types.js';
 import type { LayoutEngine } from '../engine.js';
+import type { WidgetProps, WidgetSurface } from './registry.js';
 
 // === Engine Context ===
 
@@ -19,6 +20,10 @@ export function useContainerRef(): React.RefObject<HTMLDivElement | null> | null
 	return useContext(ContainerRefContext);
 }
 
+/**
+ * Returns the LayoutEngine instance from the nearest InfiniteCanvas context.
+ * Throws if used outside an InfiniteCanvas provider.
+ */
 export function useLayoutEngine(): LayoutEngine {
 	const engine = useContext(EngineContext);
 	if (!engine) {
@@ -27,15 +32,12 @@ export function useLayoutEngine(): LayoutEngine {
 	return engine;
 }
 
-/** @deprecated Use useLayoutEngine instead */
-export const useEngine = useLayoutEngine;
-
 // === Widget Resolver Context ===
 
-export type WidgetSurface = 'dom' | 'webgl';
+export type { WidgetSurface };
 
 export interface ResolvedWidget {
-	component: React.ComponentType<{ entityId: EntityId }>;
+	component: React.ComponentType<WidgetProps>;
 	surface: WidgetSurface;
 }
 

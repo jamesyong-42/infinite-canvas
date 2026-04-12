@@ -1,14 +1,10 @@
 // Engine
 export {
 	createLayoutEngine,
-	createCanvasEngine,
-	SpatialIndexResource,
 } from './engine.js';
 export type {
 	LayoutEngine,
 	LayoutEngineConfig,
-	CanvasEngine,
-	CanvasEngineConfig,
 	AddWidgetOptions,
 	PointerDirective,
 	ResizeHandlePos,
@@ -19,16 +15,16 @@ export type {
 
 // React component
 export { InfiniteCanvas } from './react/InfiniteCanvas.js';
+export type { InfiniteCanvasHandle } from './react/InfiniteCanvas.js';
 
 // Context hooks
 export {
 	useLayoutEngine,
-	useEngine,
 	useContainerRef,
 	useWidgetResolver,
 	WidgetResolverProvider,
 } from './react/context.js';
-export type { WidgetResolver, ResolvedWidget, WidgetSurface } from './react/context.js';
+export type { WidgetResolver, ResolvedWidget } from './react/context.js';
 
 // ECS subscription hooks
 export {
@@ -37,6 +33,7 @@ export {
 	useResource,
 	useQuery,
 	useTaggedEntities,
+	useCamera,
 } from './react/hooks.js';
 
 // Widget hooks
@@ -44,15 +41,13 @@ export {
 	useWidgetData,
 	useBreakpoint,
 	useChildren,
-	useWidgetChildren,
 	useIsSelected,
 	useUpdateWidget,
-	useUpdateData,
 } from './react/widget-hooks.js';
 
 // Widget registry & provider
 export { createWidgetRegistry } from './react/registry.js';
-export type { WidgetDef, WidgetRegistry } from './react/registry.js';
+export type { WidgetDef, WidgetRegistry, WidgetProps, WidgetSurface } from './react/registry.js';
 export { WidgetProvider } from './react/WidgetProvider.js';
 
 // Built-in components & tags

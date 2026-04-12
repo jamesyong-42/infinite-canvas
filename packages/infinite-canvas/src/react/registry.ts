@@ -2,11 +2,18 @@ import type { EntityId } from '../ecs/types.js';
 
 export type WidgetSurface = 'dom' | 'webgl';
 
+export interface WidgetProps {
+	entityId: EntityId;
+	width?: number;
+	height?: number;
+	zoom?: number;
+}
+
 export interface WidgetDef {
 	type: string;
 	/** Rendering surface — 'dom' (default) or 'webgl' (R3F). */
 	surface?: WidgetSurface;
-	component: React.ComponentType<{ entityId: EntityId; width?: number; height?: number; zoom?: number }>;
+	component: React.ComponentType<WidgetProps>;
 	defaultSize?: { width: number; height: number };
 	minSize?: { width: number; height: number };
 }
