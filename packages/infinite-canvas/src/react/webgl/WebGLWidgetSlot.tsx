@@ -1,8 +1,8 @@
+import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
 import type { Group } from 'three';
 import { WorldBounds } from '../../components.js';
-import type { EntityId } from '../../ecs/types.js';
 import { CameraResource } from '../../resources.js';
 import { useLayoutEngine } from '../context.js';
 import { useComponent, useResource } from '../hooks.js';

@@ -1,5 +1,5 @@
+import type { ComponentType, EntityId, TagType, World } from '@jamesyong42/reactive-ecs';
 import { Children, HandleSet, Parent } from './components.js';
-import type { ComponentType, EntityId, TagType, World } from './ecs/index.js';
 import type { NavigationFrame } from './resources.js';
 
 // === Serialization Types ===

@@ -1,3 +1,5 @@
+import type { EntityId, World } from '@jamesyong42/reactive-ecs';
+import { defineSystem } from '@jamesyong42/reactive-ecs';
 import type { CSSCursor, ResizeHandlePos } from './components.js';
 import {
 	Active,
@@ -15,8 +17,6 @@ import {
 	WidgetBreakpoint,
 	WorldBounds,
 } from './components.js';
-import type { EntityId, World } from './ecs/index.js';
-import { defineSystem } from './ecs/index.js';
 import { SpatialIndexResource } from './engine.js';
 import { HANDLE_HIT_SIZE_PX } from './interaction-constants.js';
 import { intersectsAABB, worldBoundsToAABB } from './math.js';

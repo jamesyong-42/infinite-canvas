@@ -1,3 +1,13 @@
+import type {
+	ComponentInit,
+	ComponentType,
+	EntityId,
+	SystemDef,
+	TagType,
+	Unsubscribe,
+	World,
+} from '@jamesyong42/reactive-ecs';
+import { createWorld, defineResource, SystemScheduler } from '@jamesyong42/reactive-ecs';
 import type { Command } from './commands.js';
 import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
 import type {
@@ -27,16 +37,6 @@ import {
 	WorldBounds,
 	ZIndex,
 } from './components.js';
-import type {
-	ComponentInit,
-	ComponentType,
-	EntityId,
-	SystemDef,
-	TagType,
-	Unsubscribe,
-	World,
-} from './ecs/index.js';
-import { createWorld, defineResource, SystemScheduler } from './ecs/index.js';
 import { DEAD_ZONE_MOUSE_PX, MIN_WIDGET_SIZE } from './interaction-constants.js';
 import { clamp, screenToWorld, worldBoundsToAABB } from './math.js';
 import { Profiler } from './profiler.js';

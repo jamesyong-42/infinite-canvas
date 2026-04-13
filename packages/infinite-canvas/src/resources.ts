@@ -1,6 +1,6 @@
+import type { EntityId } from '@jamesyong42/reactive-ecs';
+import { defineResource } from '@jamesyong42/reactive-ecs';
 import type { CSSCursor } from './components.js';
-import type { EntityId } from './ecs/index.js';
-import { defineResource } from './ecs/index.js';
 
 /** A single frame in the navigation stack, capturing the container and camera state. */
 export interface NavigationFrame {

@@ -24,6 +24,21 @@ importers:
         specifier: ^4.1.4
         version: 4.1.4(vite@8.0.8(esbuild@0.27.7)(jiti@2.6.1)(yaml@2.8.3))
 
+  ../reactive-ecs:
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.4.11
+        version: 2.4.11
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.9)(typescript@6.0.2)(yaml@2.8.3)
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.4(vite@8.0.8(esbuild@0.27.7)(jiti@2.6.1)(yaml@2.8.3))
+
   apps/playground:
     dependencies:
       '@jamesyong42/infinite-canvas':
@@ -74,6 +89,10 @@ importers:
         version: 8.0.8(esbuild@0.27.7)(jiti@2.6.1)(yaml@2.8.3)
 
   packages/infinite-canvas:
+    dependencies:
+      '@jamesyong42/reactive-ecs':
+        specifier: workspace:*
+        version: link:../../../reactive-ecs
     devDependencies:
       '@react-three/fiber':
         specifier: ^9.5.0

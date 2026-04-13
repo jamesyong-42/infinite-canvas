@@ -1,6 +1,6 @@
+import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useCallback } from 'react';
 import { Children, Selected, WidgetBreakpoint, WidgetData } from '../components.js';
-import type { EntityId } from '../ecs/types.js';
 import type { Breakpoint } from '../resources.js';
 import { useLayoutEngine } from './context.js';
 import { useComponent, useTag } from './hooks.js';

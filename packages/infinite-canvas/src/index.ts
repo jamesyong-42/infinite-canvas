@@ -1,5 +1,14 @@
 // Engine
 
+// Re-exported from @jamesyong42/reactive-ecs for convenience
+export type {
+	ComponentInit,
+	ComponentType,
+	EntityId,
+	ResourceType,
+	TagType,
+	Unsubscribe,
+} from '@jamesyong42/reactive-ecs';
 export type { Command } from './commands.js';
 // Commands
 export { CommandBuffer, MoveCommand, ResizeCommand, SetComponentCommand } from './commands.js';
@@ -33,15 +42,6 @@ export {
 	WorldBounds,
 	ZIndex,
 } from './components.js';
-// Re-exported from ./ecs/types for convenience — also available via @jamesyong42/infinite-canvas/ecs
-export type {
-	ComponentInit,
-	ComponentType,
-	EntityId,
-	ResourceType,
-	TagType,
-	Unsubscribe,
-} from './ecs/types.js';
 export type {
 	AddWidgetOptions,
 	FrameChanges,

@@ -1,5 +1,5 @@
+import type { ComponentType, EntityId, ResourceType, TagType } from '@jamesyong42/reactive-ecs';
 import { useEffect, useRef, useState } from 'react';
-import type { ComponentType, EntityId, ResourceType, TagType } from '../ecs/types.js';
 import { CameraResource } from '../resources.js';
 import { useLayoutEngine } from './context.js';
 

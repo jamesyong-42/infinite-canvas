@@ -1,6 +1,6 @@
+import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { Widget, WorldBounds } from '../components.js';
-import type { EntityId } from '../ecs/types.js';
 import type { Modifiers } from '../engine.js';
 import { useContainerRef, useLayoutEngine, useWidgetResolver } from './context.js';
 import { useComponent } from './hooks.js';

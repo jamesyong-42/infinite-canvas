@@ -49,11 +49,6 @@
 			"import": "./dist/index.js",
 			"require": "./dist/index.cjs"
 		},
-		"./ecs": {
-			"types": "./dist/ecs.d.ts",
-			"import": "./dist/ecs.js",
-			"require": "./dist/ecs.cjs"
-		},
 		"./advanced": {
 			"types": "./dist/advanced.d.ts",
 			"import": "./dist/advanced.js",
@@ -69,6 +64,9 @@
 		"test": "vitest run",
 		"prepack": "cp ../../README.md ./README.md && cp ../../LICENSE ./LICENSE",
 		"postpack": "rm -f ./README.md ./LICENSE"
+	},
+	"dependencies": {
+		"@jamesyong42/reactive-ecs": "workspace:*"
 	},
 	"peerDependencies": {
 		"@react-three/fiber": "^9.0.0",

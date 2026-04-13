@@ -65,13 +65,14 @@ export default function App() {
 
 ## Package
 
-Everything ships in a single package: **`@jamesyong42/infinite-canvas`**. It exposes three entry points:
+Everything ships in a single package: **`@jamesyong42/infinite-canvas`**. It exposes two entry points:
 
 | Import | Purpose |
 |--------|---------|
 | `@jamesyong42/infinite-canvas` | Main API -- `<InfiniteCanvas>`, `createLayoutEngine`, hooks, built-in components |
-| `@jamesyong42/infinite-canvas/ecs` | ECS primitives for advanced users (`defineComponent`, `defineSystem`, `World`) |
 | `@jamesyong42/infinite-canvas/advanced` | WebGL renderers, serialization, profiler, spatial index |
+
+The underlying ECS primitives (`defineComponent`, `defineSystem`, `World`, `SystemScheduler`) live in a separate package: [**`@jamesyong42/reactive-ecs`**](https://github.com/jamesyong-42/reactive-ecs).
 
 ## Why This Library?
 
@@ -318,7 +319,7 @@ useEffect(() => {
 Define custom components and systems to extend the canvas:
 
 ```tsx
-import { defineComponent, defineSystem } from '@jamesyong42/infinite-canvas/ecs';
+import { defineComponent, defineSystem } from '@jamesyong42/reactive-ecs';
 import { Visible } from '@jamesyong42/infinite-canvas';
 
 const Health = defineComponent('Health', { hp: 100, maxHp: 100 });

@@ -1,4 +1,4 @@
-import type { ComponentType, EntityId, World } from './ecs/index.js';
+import type { ComponentType, EntityId, World } from '@jamesyong42/reactive-ecs';
 import { MIN_WIDGET_SIZE } from './interaction-constants.js';
 
 // === Command Interface ===

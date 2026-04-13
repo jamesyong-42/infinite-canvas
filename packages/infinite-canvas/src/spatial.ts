@@ -7,7 +7,7 @@ const RBush = (
 	typeof rbushModule.default === 'function' ? rbushModule.default : RBushImport
 ) as typeof RBushImport;
 
-import type { EntityId } from './ecs/index.js';
+import type { EntityId } from '@jamesyong42/reactive-ecs';
 import type { AABB } from './math.js';
 
 export interface SpatialEntry extends AABB {

@@ -1,5 +1,5 @@
+import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { createContext, useContext } from 'react';
-import type { EntityId } from '../ecs/types.js';
 import type { LayoutEngine } from '../engine.js';
 import type { WidgetProps, WidgetSurface } from './registry.js';
 

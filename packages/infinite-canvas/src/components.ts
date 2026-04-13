@@ -1,5 +1,5 @@
-import type { EntityId } from './ecs/index.js';
-import { defineComponent, defineTag } from './ecs/index.js';
+import type { EntityId } from '@jamesyong42/reactive-ecs';
+import { defineComponent, defineTag } from '@jamesyong42/reactive-ecs';
 
 // === Spatial ===
 

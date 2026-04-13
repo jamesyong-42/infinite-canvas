@@ -1,4 +1,4 @@
-import type { EntityId } from '../ecs/types.js';
+import type { EntityId } from '@jamesyong42/reactive-ecs';
 
 export type WidgetSurface = 'dom' | 'webgl';
 

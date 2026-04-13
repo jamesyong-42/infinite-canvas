@@ -1,3 +1,4 @@
+import type { EntityId } from '@jamesyong42/reactive-ecs';
 import React, {
 	useCallback,
 	useEffect,
@@ -9,7 +10,6 @@ import React, {
 } from 'react';
 import { Vector2 } from 'three';
 import { Widget, WorldBounds } from '../components.js';
-import type { EntityId } from '../ecs/types.js';
 import type { LayoutEngine } from '../engine.js';
 import { DEAD_ZONE_TOUCH_PX } from '../interaction-constants.js';
 import { CursorResource, NavigationStackResource } from '../resources.js';

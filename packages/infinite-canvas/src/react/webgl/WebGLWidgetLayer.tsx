@@ -1,7 +1,7 @@
+import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import type { EntityId } from '../../ecs/types.js';
 import type { LayoutEngine } from '../../engine.js';
 import type { ResolvedWidget } from '../context.js';
 import { EngineProvider } from '../context.js';
