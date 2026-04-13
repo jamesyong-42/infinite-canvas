@@ -1,17 +1,17 @@
-export { defineComponent, defineTag, defineResource, defineSystem } from './define.js';
-export { createWorld } from './world.js';
+export { defineComponent, defineResource, defineSystem, defineTag } from './define.js';
 export { SystemScheduler } from './scheduler.js';
 export type {
-	EntityId,
+	ComponentChangedHandler,
+	ComponentInit,
 	ComponentType,
-	TagType,
+	EntityId,
+	FrameHandler,
+	QueryResult,
 	ResourceType,
 	SystemDef,
-	ComponentInit,
-	QueryResult,
-	World,
-	ComponentChangedHandler,
 	TagChangedHandler,
-	FrameHandler,
+	TagType,
 	Unsubscribe,
+	World,
 } from './types.js';
+export { createWorld } from './world.js';

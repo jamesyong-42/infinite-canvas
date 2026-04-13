@@ -1,10 +1,12 @@
 import RBushImport from 'rbush';
+
 // Handle CJS/ESM interop — rbush exports differently depending on context
 type RBushModule = typeof RBushImport & { default?: typeof RBushImport };
 const rbushModule = RBushImport as RBushModule;
 const RBush = (
 	typeof rbushModule.default === 'function' ? rbushModule.default : RBushImport
 ) as typeof RBushImport;
+
 import type { EntityId } from './ecs/index.js';
 import type { AABB } from './math.js';
 

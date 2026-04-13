@@ -5,6 +5,7 @@ import {
 	Container,
 	CursorHint,
 	CursorResource,
+	createLayoutEngine,
 	Draggable,
 	HandleSet,
 	Hitbox,
@@ -20,7 +21,6 @@ import {
 	WidgetData,
 	WorldBounds,
 	ZIndex,
-	createLayoutEngine,
 } from '../index.js';
 
 function createTestEngine() {

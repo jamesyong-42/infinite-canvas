@@ -8,7 +8,11 @@ export function Debug3D({
 	entityId,
 	width,
 	height,
-}: { entityId: EntityId; width: number; height: number }) {
+}: {
+	entityId: EntityId;
+	width: number;
+	height: number;
+}) {
 	const groupRef = useRef<Mesh>(null);
 	const data = useWidgetData(entityId);
 	const isSelected = useIsSelected(entityId);

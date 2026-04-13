@@ -1,6 +1,8 @@
+import type { EntityId, GridConfig, WidgetDef } from '@jamesyong42/infinite-canvas';
 import {
 	Children,
 	Container,
+	createLayoutEngine,
 	DEFAULT_GRID_CONFIG,
 	Draggable,
 	InfiniteCanvas,
@@ -11,9 +13,7 @@ import {
 	Widget,
 	WidgetData,
 	ZIndex,
-	createLayoutEngine,
 } from '@jamesyong42/infinite-canvas';
-import type { EntityId, GridConfig, WidgetDef } from '@jamesyong42/infinite-canvas';
 import { useEffect, useMemo, useState } from 'react';
 import { InspectorPanel } from './panels/InspectorPanel.js';
 import { NavigationBreadcrumbs } from './panels/NavigationBreadcrumbs.js';

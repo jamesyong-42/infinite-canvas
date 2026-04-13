@@ -1,4 +1,4 @@
-import type { LayoutEngine } from '@jamesyong42/infinite-canvas';
+import type { GridConfig, LayoutEngine } from '@jamesyong42/infinite-canvas';
 import {
 	BreakpointConfigResource,
 	Draggable,
@@ -10,7 +10,6 @@ import {
 	ZIndex,
 	ZoomConfigResource,
 } from '@jamesyong42/infinite-canvas';
-import type { GridConfig } from '@jamesyong42/infinite-canvas';
 import { useState } from 'react';
 
 interface SettingsPanelProps {

@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
 import type { ReactNode } from 'react';
+import { useCallback } from 'react';
 import { WidgetResolverProvider } from './context.js';
 import type { WidgetRegistry } from './registry.js';
 

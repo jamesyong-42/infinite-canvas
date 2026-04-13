@@ -1,5 +1,11 @@
-import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
 import type { Command } from './commands.js';
+import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
+import type {
+	CSSCursor,
+	InteractionRoleData,
+	InteractionRoleType,
+	ResizeHandlePos,
+} from './components.js';
 import {
 	Active,
 	Children,
@@ -22,12 +28,6 @@ import {
 	ZIndex,
 } from './components.js';
 import type {
-	CSSCursor,
-	InteractionRoleData,
-	InteractionRoleType,
-	ResizeHandlePos,
-} from './components.js';
-import type {
 	ComponentInit,
 	ComponentType,
 	EntityId,
@@ -36,10 +36,11 @@ import type {
 	Unsubscribe,
 	World,
 } from './ecs/index.js';
-import { SystemScheduler, createWorld, defineResource } from './ecs/index.js';
+import { createWorld, defineResource, SystemScheduler } from './ecs/index.js';
 import { DEAD_ZONE_MOUSE_PX, MIN_WIDGET_SIZE } from './interaction-constants.js';
 import { clamp, screenToWorld, worldBoundsToAABB } from './math.js';
 import { Profiler } from './profiler.js';
+import type { Breakpoint } from './resources.js';
 import {
 	BreakpointConfigResource,
 	CameraResource,
@@ -48,9 +49,8 @@ import {
 	ViewportResource,
 	ZoomConfigResource,
 } from './resources.js';
-import type { Breakpoint } from './resources.js';
-import { computeSnapGuides } from './snap.js';
 import type { EqualSpacingIndicator, SnapGuide, SnapResult } from './snap.js';
+import { computeSnapGuides } from './snap.js';
 import { SpatialIndex } from './spatial.js';
 import {
 	breakpointSystem,

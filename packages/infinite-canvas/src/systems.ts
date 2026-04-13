@@ -1,3 +1,4 @@
+import type { CSSCursor, ResizeHandlePos } from './components.js';
 import {
 	Active,
 	Children,
@@ -14,19 +15,18 @@ import {
 	WidgetBreakpoint,
 	WorldBounds,
 } from './components.js';
-import type { CSSCursor, ResizeHandlePos } from './components.js';
-import { defineSystem } from './ecs/index.js';
 import type { EntityId, World } from './ecs/index.js';
+import { defineSystem } from './ecs/index.js';
 import { SpatialIndexResource } from './engine.js';
 import { HANDLE_HIT_SIZE_PX } from './interaction-constants.js';
 import { intersectsAABB, worldBoundsToAABB } from './math.js';
+import type { Breakpoint } from './resources.js';
 import {
 	BreakpointConfigResource,
 	CameraResource,
 	NavigationStackResource,
 	ViewportResource,
 } from './resources.js';
-import type { Breakpoint } from './resources.js';
 
 /**
  * Propagate transforms down the parent-child hierarchy.

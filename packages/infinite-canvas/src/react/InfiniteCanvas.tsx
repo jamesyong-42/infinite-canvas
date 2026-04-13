@@ -13,16 +13,16 @@ import type { EntityId } from '../ecs/types.js';
 import type { LayoutEngine } from '../engine.js';
 import { DEAD_ZONE_TOUCH_PX } from '../interaction-constants.js';
 import { CursorResource, NavigationStackResource } from '../resources.js';
+import { ContainerRefProvider, EngineProvider, useWidgetResolver } from './context.js';
+import type { WidgetDef } from './registry.js';
+import { createWidgetRegistry } from './registry.js';
 import { SelectionOverlaySlot } from './SelectionOverlaySlot.js';
 import { WidgetProvider } from './WidgetProvider.js';
 import { WidgetSlot } from './WidgetSlot.js';
-import { ContainerRefProvider, EngineProvider, useWidgetResolver } from './context.js';
-import { createWidgetRegistry } from './registry.js';
-import type { WidgetDef } from './registry.js';
-import { GridRenderer } from './webgl/GridRenderer.js';
 import type { GridConfig } from './webgl/GridRenderer.js';
-import { SelectionRenderer } from './webgl/SelectionRenderer.js';
+import { GridRenderer } from './webgl/GridRenderer.js';
 import type { SelectionBounds, SelectionConfig } from './webgl/SelectionRenderer.js';
+import { SelectionRenderer } from './webgl/SelectionRenderer.js';
 import { WebGLWidgetLayer } from './webgl/WebGLWidgetLayer.js';
 
 /** Imperative handle exposed via `ref` on InfiniteCanvas for programmatic control. */

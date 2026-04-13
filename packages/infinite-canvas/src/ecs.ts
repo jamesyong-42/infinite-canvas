@@ -1,21 +1,21 @@
 // ECS primitives for advanced users
-export {
-	defineComponent,
-	defineTag,
-	defineResource,
-	defineSystem,
-	createWorld,
-	SystemScheduler,
-} from './ecs/index.js';
 
 export type {
-	EntityId,
+	ComponentInit,
 	ComponentType,
-	TagType,
+	EntityId,
+	QueryResult,
 	ResourceType,
 	SystemDef,
-	ComponentInit,
-	QueryResult,
-	World,
+	TagType,
 	Unsubscribe,
+	World,
+} from './ecs/index.js';
+export {
+	createWorld,
+	defineComponent,
+	defineResource,
+	defineSystem,
+	defineTag,
+	SystemScheduler,
 } from './ecs/index.js';

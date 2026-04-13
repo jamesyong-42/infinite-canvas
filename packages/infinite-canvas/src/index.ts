@@ -1,128 +1,117 @@
 // Engine
-export { createLayoutEngine } from './engine.js';
+
+export type { Command } from './commands.js';
+// Commands
+export { CommandBuffer, MoveCommand, ResizeCommand, SetComponentCommand } from './commands.js';
 export type {
+	CSSCursor,
+	CursorHintData,
+	HandleSetData,
+	InteractionRoleData,
+	InteractionRoleType,
+} from './components.js';
+// Built-in components & tags
+export {
+	Active,
+	Children,
+	Container,
+	CursorHint,
+	Draggable,
+	HandleSet,
+	Hitbox,
+	InteractionRole,
+	Locked,
+	Parent,
+	Resizable,
+	Selectable,
+	Selected,
+	Transform2D,
+	Visible,
+	Widget,
+	WidgetBreakpoint,
+	WidgetData,
+	WorldBounds,
+	ZIndex,
+} from './components.js';
+// Re-exported from ./ecs/types for convenience — also available via @jamesyong42/infinite-canvas/ecs
+export type {
+	ComponentInit,
+	ComponentType,
+	EntityId,
+	ResourceType,
+	TagType,
+	Unsubscribe,
+} from './ecs/types.js';
+export type {
+	AddWidgetOptions,
+	FrameChanges,
 	LayoutEngine,
 	LayoutEngineConfig,
-	AddWidgetOptions,
+	Modifiers,
 	PointerDirective,
 	ResizeHandlePos,
-	Modifiers,
 	VisibleEntity,
-	FrameChanges,
 } from './engine.js';
-
-// React component
-export { InfiniteCanvas } from './react/InfiniteCanvas.js';
-export type { InfiniteCanvasHandle } from './react/InfiniteCanvas.js';
-
+export { createLayoutEngine } from './engine.js';
+export type { AABB, Rect, Vec2 } from './math.js';
+// Math
+export {
+	clamp,
+	intersectsAABB,
+	pointInAABB,
+	screenToWorld,
+	worldBoundsToAABB,
+	worldToScreen,
+} from './math.js';
+// Profiler types (commonly needed)
+export type { FrameSample, ProfilerStats } from './profiler.js';
+export type { ResolvedWidget, WidgetResolver } from './react/context.js';
 // Context hooks
 export {
-	useLayoutEngine,
 	useContainerRef,
+	useLayoutEngine,
 	useWidgetResolver,
 	WidgetResolverProvider,
 } from './react/context.js';
-export type { WidgetResolver, ResolvedWidget } from './react/context.js';
-
 // ECS subscription hooks
 export {
-	useComponent,
-	useTag,
-	useResource,
-	useQuery,
-	useTaggedEntities,
 	useCamera,
+	useComponent,
+	useQuery,
+	useResource,
+	useTag,
+	useTaggedEntities,
 } from './react/hooks.js';
+export type { InfiniteCanvasHandle } from './react/InfiniteCanvas.js';
+// React component
+export { InfiniteCanvas } from './react/InfiniteCanvas.js';
+export type { WidgetDef, WidgetProps, WidgetRegistry, WidgetSurface } from './react/registry.js';
+// Widget registry & provider
+export { createWidgetRegistry } from './react/registry.js';
+export { WidgetProvider } from './react/WidgetProvider.js';
+export type { GridConfig } from './react/webgl/GridRenderer.js';
 
+// Grid & selection config (commonly needed for InfiniteCanvas props)
+export { DEFAULT_GRID_CONFIG } from './react/webgl/GridRenderer.js';
+export type { SelectionBounds, SelectionConfig } from './react/webgl/SelectionRenderer.js';
+export { DEFAULT_SELECTION_CONFIG } from './react/webgl/SelectionRenderer.js';
 // Widget hooks
 export {
-	useWidgetData,
 	useBreakpoint,
 	useChildren,
 	useIsSelected,
 	useUpdateWidget,
+	useWidgetData,
 } from './react/widget-hooks.js';
-
-// Widget registry & provider
-export { createWidgetRegistry } from './react/registry.js';
-export type { WidgetDef, WidgetRegistry, WidgetProps, WidgetSurface } from './react/registry.js';
-export { WidgetProvider } from './react/WidgetProvider.js';
-
-// Built-in components & tags
-export {
-	Transform2D,
-	WorldBounds,
-	ZIndex,
-	Parent,
-	Children,
-	Widget,
-	WidgetData,
-	WidgetBreakpoint,
-	Container,
-	Hitbox,
-	InteractionRole,
-	HandleSet,
-	CursorHint,
-	Selectable,
-	Draggable,
-	Resizable,
-	Locked,
-	Selected,
-	Active,
-	Visible,
-} from './components.js';
-export type {
-	InteractionRoleType,
-	InteractionRoleData,
-	HandleSetData,
-	CursorHintData,
-	CSSCursor,
-} from './components.js';
-
+export type { Breakpoint, CursorResourceData, NavigationFrame } from './resources.js';
 // Resources
 export {
+	BreakpointConfigResource,
 	CameraResource,
+	CursorResource,
+	NavigationStackResource,
 	ViewportResource,
 	ZoomConfigResource,
-	BreakpointConfigResource,
-	NavigationStackResource,
-	CursorResource,
 } from './resources.js';
-export type { Breakpoint, NavigationFrame, CursorResourceData } from './resources.js';
-
-// Math
-export {
-	screenToWorld,
-	worldToScreen,
-	intersectsAABB,
-	pointInAABB,
-	worldBoundsToAABB,
-	clamp,
-} from './math.js';
-export type { Vec2, Rect, AABB } from './math.js';
-
-// Commands
-export { CommandBuffer, MoveCommand, ResizeCommand, SetComponentCommand } from './commands.js';
-export type { Command } from './commands.js';
-
-// Grid & selection config (commonly needed for InfiniteCanvas props)
-export { DEFAULT_GRID_CONFIG } from './react/webgl/GridRenderer.js';
-export type { GridConfig } from './react/webgl/GridRenderer.js';
-export { DEFAULT_SELECTION_CONFIG } from './react/webgl/SelectionRenderer.js';
-export type { SelectionConfig, SelectionBounds } from './react/webgl/SelectionRenderer.js';
-
 // Snap types (for reading snap guide state)
-export type { SnapGuide, EqualSpacingIndicator, SnapResult, EntityBounds } from './snap.js';
-
-// Re-exported from ./ecs/types for convenience — also available via @jamesyong42/infinite-canvas/ecs
-export type {
-	EntityId,
-	ComponentType,
-	TagType,
-	ResourceType,
-	ComponentInit,
-	Unsubscribe,
-} from './ecs/types.js';
-
-// Profiler types (commonly needed)
-export type { FrameSample, ProfilerStats } from './profiler.js';
+export type { EntityBounds, EqualSpacingIndicator, SnapGuide, SnapResult } from './snap.js';

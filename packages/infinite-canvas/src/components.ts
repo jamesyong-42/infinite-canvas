@@ -1,5 +1,5 @@
-import { defineComponent, defineTag } from './ecs/index.js';
 import type { EntityId } from './ecs/index.js';
+import { defineComponent, defineTag } from './ecs/index.js';
 
 // === Spatial ===
 

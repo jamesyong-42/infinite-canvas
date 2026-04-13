@@ -94,7 +94,9 @@
 		"react-dom": "^19.0.0",
 		"three": "^0.183.2",
 		"tsup": "^8.0.0",
-		"vitest": "^3.0.0"
+		"vitest": "^4.1.4"
 	},
-	"files": ["dist"]
+	"files": [
+		"dist"
+	]
 }
