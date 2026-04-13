@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v0.1.0...infinite-canvas-v1.0.0) (2026-04-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* redesign widget API around schemas, archetypes, and engine.spawn
+
+### Bug Fixes
+
+* **ci:** consume @jamesyong42/reactive-ecs from npm, not sibling path ([2fa1927](https://github.com/jamesyong-42/infinite-canvas/commit/2fa1927fb7d222f03f4108c0190a6e3ec9cfecd9))
+
+
+### Code Refactoring
+
+* redesign widget API around schemas, archetypes, and engine.spawn ([eaadfd2](https://github.com/jamesyong-42/infinite-canvas/commit/eaadfd212108c525c36b9187914ccae85609ab96))
+
 ## [0.1.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v0.0.1...infinite-canvas-v0.1.0) (2026-04-12)
 
 
