@@ -9,6 +9,9 @@ export type {
 	TagType,
 	Unsubscribe,
 } from '@jamesyong42/reactive-ecs';
+// Archetype API
+export type { Archetype, ArchetypeRegistry, SpawnOptions } from './archetype.js';
+export { createArchetypeRegistry } from './archetype.js';
 export type { Command } from './commands.js';
 // Commands
 export { CommandBuffer, MoveCommand, ResizeCommand, SetComponentCommand } from './commands.js';
@@ -43,7 +46,6 @@ export {
 	ZIndex,
 } from './components.js';
 export type {
-	AddWidgetOptions,
 	FrameChanges,
 	LayoutEngine,
 	LayoutEngineConfig,
@@ -65,7 +67,7 @@ export {
 } from './math.js';
 // Profiler types (commonly needed)
 export type { FrameSample, ProfilerStats } from './profiler.js';
-export type { ResolvedWidget, WidgetResolver } from './react/context.js';
+export type { ResolvedWidget } from './react/context.js';
 // Context hooks
 export {
 	useContainerRef,
@@ -85,9 +87,17 @@ export {
 export type { InfiniteCanvasHandle } from './react/InfiniteCanvas.js';
 // React component
 export { InfiniteCanvas } from './react/InfiniteCanvas.js';
-export type { WidgetDef, WidgetProps, WidgetRegistry, WidgetSurface } from './react/registry.js';
-// Widget registry & provider
-export { createWidgetRegistry } from './react/registry.js';
+// Widget registry & types
+export type {
+	DomWidget,
+	DomWidgetProps,
+	R3FWidget,
+	R3FWidgetProps,
+	Widget as WidgetDef,
+	WidgetRegistry,
+	WidgetSurface,
+} from './react/registry.js';
+export { createWidgetRegistry, isR3FWidget } from './react/registry.js';
 export { WidgetProvider } from './react/WidgetProvider.js';
 export type { GridConfig } from './react/webgl/GridRenderer.js';
 
@@ -113,5 +123,7 @@ export {
 	ViewportResource,
 	ZoomConfigResource,
 } from './resources.js';
+// Standard Schema v1 (for widget data validation — bring your own validator)
+export type { StandardSchemaV1 } from './schema.js';
 // Snap types (for reading snap guide state)
 export type { EntityBounds, EqualSpacingIndicator, SnapGuide, SnapResult } from './snap.js';

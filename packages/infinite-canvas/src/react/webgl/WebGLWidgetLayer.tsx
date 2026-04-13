@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { LayoutEngine } from '../../engine.js';
 import type { ResolvedWidget } from '../context.js';
 import { EngineProvider } from '../context.js';
+import type { R3FWidgetProps } from '../registry.js';
 import { WebGLWidgetSlot } from './WebGLWidgetSlot.js';
 
 // === Camera sync component (runs inside R3F) ===
@@ -67,25 +68,12 @@ export function WebGLWidgetLayer({ engine, entities, resolve }: WebGLWidgetLayer
 	const widgetEntries = useMemo(() => {
 		const result: {
 			entityId: EntityId;
-			component: React.ComponentType<{
-				entityId: EntityId;
-				width: number;
-				height: number;
-				zoom: number;
-			}>;
+			component: React.ComponentType<R3FWidgetProps>;
 		}[] = [];
 		for (const id of entities) {
 			const resolved = resolve(id);
 			if (resolved && resolved.surface === 'webgl') {
-				result.push({
-					entityId: id,
-					component: resolved.component as React.ComponentType<{
-						entityId: EntityId;
-						width: number;
-						height: number;
-						zoom: number;
-					}>,
-				});
+				result.push({ entityId: id, component: resolved.component });
 			}
 		}
 		return result;

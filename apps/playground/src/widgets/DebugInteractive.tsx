@@ -1,4 +1,4 @@
-import type { EntityId } from '@jamesyong42/infinite-canvas';
+import type { DomWidget, EntityId } from '@jamesyong42/infinite-canvas';
 import {
 	Transform2D,
 	useBreakpoint,
@@ -8,12 +8,20 @@ import {
 	useWidgetData,
 } from '@jamesyong42/infinite-canvas';
 import { useState } from 'react';
+import { z } from 'zod';
 
 const COLOR = '#10b981';
 
-export function DebugInteractive({ entityId }: { entityId: EntityId }) {
+const schema = z.object({
+	title: z.string().default('Interactive'),
+	note: z.string().default(''),
+});
+
+export type DebugInteractiveData = z.infer<typeof schema>;
+
+function DebugInteractiveView({ entityId }: { entityId: EntityId }) {
 	const breakpoint = useBreakpoint(entityId);
-	const data = useWidgetData(entityId);
+	const data = useWidgetData<DebugInteractiveData>(entityId);
 	const isSelected = useIsSelected(entityId);
 	const updateData = useUpdateWidget(entityId);
 	const transform = useComponent(entityId, Transform2D);
@@ -123,3 +131,11 @@ export function DebugInteractive({ entityId }: { entityId: EntityId }) {
 		</div>
 	);
 }
+
+export const DebugInteractive: DomWidget<DebugInteractiveData> = {
+	type: 'debug-interactive',
+	schema,
+	defaultData: { title: 'Interactive', note: '' },
+	defaultSize: { width: 280, height: 200 },
+	component: DebugInteractiveView,
+};

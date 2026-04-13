@@ -1,5 +1,7 @@
-import type { EntityId } from '@jamesyong42/infinite-canvas';
+import type { Archetype, DomWidget, EntityId } from '@jamesyong42/infinite-canvas';
 import {
+	Children,
+	Container,
 	Transform2D,
 	useBreakpoint,
 	useChildren,
@@ -7,12 +9,19 @@ import {
 	useIsSelected,
 	useWidgetData,
 } from '@jamesyong42/infinite-canvas';
+import { z } from 'zod';
 
 const COLOR = '#8b5cf6';
 
-export function DebugContainer({ entityId }: { entityId: EntityId }) {
+const schema = z.object({
+	title: z.string().default('Container'),
+});
+
+export type DebugContainerData = z.infer<typeof schema>;
+
+function DebugContainerView({ entityId }: { entityId: EntityId }) {
 	const breakpoint = useBreakpoint(entityId);
-	const data = useWidgetData(entityId);
+	const data = useWidgetData<DebugContainerData>(entityId);
 	const isSelected = useIsSelected(entityId);
 	const children = useChildren(entityId);
 	const transform = useComponent(entityId, Transform2D);
@@ -103,3 +112,25 @@ export function DebugContainer({ entityId }: { entityId: EntityId }) {
 		</div>
 	);
 }
+
+export const DebugContainer: DomWidget<DebugContainerData> = {
+	type: 'debug-container',
+	schema,
+	defaultData: { title: 'Container' },
+	defaultSize: { width: 400, height: 300 },
+	component: DebugContainerView,
+};
+
+/**
+ * Container archetype — bundles the view with Container + Children components
+ * so `engine.spawn('debug-container', ...)` creates an enterable container
+ * with no extra setup in app code.
+ */
+export const DebugContainerArchetype: Archetype = {
+	id: 'debug-container',
+	widget: 'debug-container',
+	components: [
+		[Container, { enterable: true }],
+		[Children, { ids: [] as EntityId[] }],
+	],
+};

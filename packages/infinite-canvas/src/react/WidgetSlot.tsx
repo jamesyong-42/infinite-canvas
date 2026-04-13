@@ -22,8 +22,9 @@ export const WidgetSlot = memo(function WidgetSlot({ entityId, slotRef }: Widget
 
 	const widgetComp = useComponent(entityId, Widget);
 
+	// DOM slot — only renders DOM widgets. R3F widgets go through WebGLWidgetLayer.
 	const resolved = resolve?.(entityId, widgetComp?.type ?? '');
-	const WidgetComponent = resolved?.component ?? null;
+	const WidgetComponent = resolved && resolved.surface === 'dom' ? resolved.component : null;
 
 	// Register wrapper ref with the batch updater
 	useEffect(() => {

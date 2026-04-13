@@ -1,4 +1,4 @@
-import type { EntityId } from '@jamesyong42/infinite-canvas';
+import type { DomWidget, EntityId } from '@jamesyong42/infinite-canvas';
 import {
 	Transform2D,
 	useBreakpoint,
@@ -6,10 +6,19 @@ import {
 	useIsSelected,
 	useWidgetData,
 } from '@jamesyong42/infinite-canvas';
+import { z } from 'zod';
 
-export function DebugCard({ entityId }: { entityId: EntityId }) {
+const schema = z.object({
+	title: z.string().default('Card'),
+	color: z.string().default('#3b82f6'),
+	description: z.string().optional(),
+});
+
+export type DebugCardData = z.infer<typeof schema>;
+
+function DebugCardView({ entityId }: { entityId: EntityId }) {
 	const breakpoint = useBreakpoint(entityId);
-	const data = useWidgetData(entityId);
+	const data = useWidgetData<DebugCardData>(entityId);
 	const isSelected = useIsSelected(entityId);
 	const transform = useComponent(entityId, Transform2D);
 
@@ -108,3 +117,11 @@ export function DebugCard({ entityId }: { entityId: EntityId }) {
 		</div>
 	);
 }
+
+export const DebugCard: DomWidget<DebugCardData> = {
+	type: 'debug-card',
+	schema,
+	defaultData: { title: 'Card', color: '#3b82f6' },
+	defaultSize: { width: 250, height: 180 },
+	component: DebugCardView,
+};

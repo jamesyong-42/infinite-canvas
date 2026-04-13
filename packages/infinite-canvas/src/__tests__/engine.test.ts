@@ -634,9 +634,8 @@ describe('CanvasEngine', () => {
 
 		it('idle hover over widget body resolves to grab', () => {
 			const engine = createTestEngine();
-			engine.addWidget({
-				type: 'debug',
-				position: { x: 100, y: 100 },
+			engine.spawn('debug', {
+				at: { x: 100, y: 100 },
 				size: { width: 200, height: 150 },
 			});
 			engine.tick();
@@ -650,9 +649,8 @@ describe('CanvasEngine', () => {
 
 		it('idle hover off any widget resolves to default', () => {
 			const engine = createTestEngine();
-			engine.addWidget({
-				type: 'debug',
-				position: { x: 100, y: 100 },
+			engine.spawn('debug', {
+				at: { x: 100, y: 100 },
 				size: { width: 200, height: 150 },
 			});
 			engine.tick();
@@ -665,9 +663,8 @@ describe('CanvasEngine', () => {
 
 		it('tracking state before dead zone shows grab, not grabbing', () => {
 			const engine = createTestEngine();
-			engine.addWidget({
-				type: 'debug',
-				position: { x: 100, y: 100 },
+			engine.spawn('debug', {
+				at: { x: 100, y: 100 },
 				size: { width: 200, height: 150 },
 			});
 			engine.tick();
@@ -683,9 +680,8 @@ describe('CanvasEngine', () => {
 
 		it('dragging state shows grabbing', () => {
 			const engine = createTestEngine();
-			engine.addWidget({
-				type: 'debug',
-				position: { x: 100, y: 100 },
+			engine.spawn('debug', {
+				at: { x: 100, y: 100 },
 				size: { width: 200, height: 150 },
 			});
 			engine.tick();
@@ -702,9 +698,8 @@ describe('CanvasEngine', () => {
 
 		it('resizing state shows the directional cursor from the handle', () => {
 			const engine = createTestEngine();
-			const e = engine.addWidget({
-				type: 'debug',
-				position: { x: 100, y: 100 },
+			const e = engine.spawn('debug', {
+				at: { x: 100, y: 100 },
 				size: { width: 200, height: 150 },
 			});
 			engine.tick();
@@ -739,9 +734,8 @@ describe('CanvasEngine', () => {
 
 		it('idle hover over SE handle resolves to se-resize', () => {
 			const engine = createTestEngine();
-			const e = engine.addWidget({
-				type: 'debug',
-				position: { x: 100, y: 100 },
+			const e = engine.spawn('debug', {
+				at: { x: 100, y: 100 },
 				size: { width: 200, height: 150 },
 			});
 			engine.tick();

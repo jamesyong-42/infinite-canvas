@@ -1,7 +1,7 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { createContext, useContext } from 'react';
 import type { LayoutEngine } from '../engine.js';
-import type { WidgetProps, WidgetSurface } from './registry.js';
+import type { DomWidgetProps, R3FWidgetProps, WidgetSurface } from './registry.js';
 
 // === Engine Context ===
 
@@ -36,10 +36,13 @@ export function useLayoutEngine(): LayoutEngine {
 
 export type { WidgetSurface };
 
-export interface ResolvedWidget {
-	component: React.ComponentType<WidgetProps>;
-	surface: WidgetSurface;
-}
+/**
+ * Discriminated resolution of a widget by type. The surface determines which
+ * layer renders the component and with what prop shape.
+ */
+export type ResolvedWidget =
+	| { surface: 'dom'; component: React.ComponentType<DomWidgetProps> }
+	| { surface: 'webgl'; component: React.ComponentType<R3FWidgetProps> };
 
 export type WidgetResolver = (entityId: EntityId, widgetType: string) => ResolvedWidget | null;
 

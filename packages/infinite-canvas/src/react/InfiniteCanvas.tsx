@@ -14,8 +14,6 @@ import type { LayoutEngine } from '../engine.js';
 import { DEAD_ZONE_TOUCH_PX } from '../interaction-constants.js';
 import { CursorResource, NavigationStackResource } from '../resources.js';
 import { ContainerRefProvider, EngineProvider, useWidgetResolver } from './context.js';
-import type { WidgetDef } from './registry.js';
-import { createWidgetRegistry } from './registry.js';
 import { SelectionOverlaySlot } from './SelectionOverlaySlot.js';
 import { WidgetProvider } from './WidgetProvider.js';
 import { WidgetSlot } from './WidgetSlot.js';
@@ -43,10 +41,12 @@ export interface InfiniteCanvasHandle {
 
 /** Props for the InfiniteCanvas component. */
 interface InfiniteCanvasProps {
-	/** The LayoutEngine instance powering this canvas. Create with `createLayoutEngine()`. */
+	/**
+	 * The LayoutEngine instance powering this canvas. Create with `createLayoutEngine()`.
+	 * Widgets and archetypes must be registered on the engine — via config or
+	 * `engine.registerWidget` / `engine.registerArchetype`.
+	 */
 	engine: LayoutEngine;
-	/** Widget definitions. When provided, a WidgetProvider is created internally. */
-	widgets?: WidgetDef[];
 	/** Grid configuration. Pass `false` to disable the grid entirely. */
 	grid?: Partial<GridConfig> | false;
 	/** Selection highlight style configuration. */
@@ -69,7 +69,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 	function InfiniteCanvas(
 		{
 			engine,
-			widgets,
 			grid,
 			selection,
 			onSelectionChange,
@@ -126,15 +125,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			[engine],
 		);
 
-		// When widgets prop is provided, create an internal registry.
-		// Use a stable key derived from widget types so inline array literals
-		// don't cause registry recreation on every render.
-		const widgetKey = widgets?.map((w) => w.type).join('\0');
-		// biome-ignore lint/correctness/useExhaustiveDependencies: widgetKey is a stable proxy for the widgets array
-		const internalRegistry = useMemo(
-			() => (widgets ? createWidgetRegistry(widgets) : null),
-			[widgetKey],
-		);
 		const webglCanvasRef = useRef<HTMLCanvasElement>(null);
 		const gridRendererRef = useRef<GridRenderer | null>(null);
 		const selectionRendererRef = useRef<SelectionRenderer | null>(null);
@@ -780,11 +770,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 		return (
 			<EngineProvider value={engine}>
 				<ContainerRefProvider value={containerRef}>
-					{internalRegistry ? (
-						<WidgetProvider registry={internalRegistry}>{canvasContent}</WidgetProvider>
-					) : (
-						canvasContent
-					)}
+					<WidgetProvider engine={engine}>{canvasContent}</WidgetProvider>
 				</ContainerRefProvider>
 			</EngineProvider>
 		);

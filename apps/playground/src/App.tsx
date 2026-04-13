@@ -1,18 +1,9 @@
-import type { EntityId, GridConfig, WidgetDef } from '@jamesyong42/infinite-canvas';
+import type { GridConfig } from '@jamesyong42/infinite-canvas';
 import {
 	Children,
-	Container,
 	createLayoutEngine,
 	DEFAULT_GRID_CONFIG,
-	Draggable,
 	InfiniteCanvas,
-	Parent,
-	Resizable,
-	Selectable,
-	Transform2D,
-	Widget,
-	WidgetData,
-	ZIndex,
 } from '@jamesyong42/infinite-canvas';
 import { useEffect, useMemo, useState } from 'react';
 import { InspectorPanel } from './panels/InspectorPanel.js';
@@ -20,39 +11,18 @@ import { NavigationBreadcrumbs } from './panels/NavigationBreadcrumbs.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
 import { Debug3D } from './widgets/Debug3D.js';
 import { DebugCard } from './widgets/DebugCard.js';
-import { DebugContainer } from './widgets/DebugContainer.js';
+import { DebugContainer, DebugContainerArchetype } from './widgets/DebugContainer.js';
 import { DebugInteractive } from './widgets/DebugInteractive.js';
-
-const widgets: WidgetDef[] = [
-	{ type: 'debug-card', component: DebugCard, defaultSize: { width: 250, height: 180 } },
-	{
-		type: 'debug-interactive',
-		component: DebugInteractive,
-		defaultSize: { width: 280, height: 200 },
-	},
-	{
-		type: 'debug-container',
-		component: DebugContainer,
-		defaultSize: { width: 400, height: 300 },
-	},
-	{
-		type: 'debug-3d',
-		surface: 'webgl',
-		component: Debug3D,
-		defaultSize: { width: 250, height: 250 },
-	},
-];
 
 function createDemoScene() {
 	const engine = createLayoutEngine({
 		zoom: { min: 0.05, max: 8 },
+		widgets: [DebugCard, DebugInteractive, DebugContainer, Debug3D],
+		archetypes: [DebugContainerArchetype],
 	});
 
-	// Create demo widgets
-	engine.addWidget({
-		type: 'debug-card',
-		position: { x: 50, y: 50 },
-		size: { width: 250, height: 180 },
+	engine.spawn('debug-card', {
+		at: { x: 50, y: 50 },
 		data: {
 			title: 'Hello World',
 			color: '#3b82f6',
@@ -60,16 +30,14 @@ function createDemoScene() {
 		},
 		zIndex: 1,
 	});
-	engine.addWidget({
-		type: 'debug-card',
-		position: { x: 350, y: 50 },
+	engine.spawn('debug-card', {
+		at: { x: 350, y: 50 },
 		size: { width: 200, height: 150 },
 		data: { title: 'Another Card', color: '#ef4444' },
 		zIndex: 2,
 	});
-	engine.addWidget({
-		type: 'debug-card',
-		position: { x: 600, y: 50 },
+	engine.spawn('debug-card', {
+		at: { x: 600, y: 50 },
 		size: { width: 300, height: 200 },
 		data: {
 			title: 'Wide Card',
@@ -78,72 +46,50 @@ function createDemoScene() {
 		},
 		zIndex: 3,
 	});
-	engine.addWidget({
-		type: 'debug-interactive',
-		position: { x: 50, y: 280 },
-		size: { width: 280, height: 200 },
+	engine.spawn('debug-interactive', {
+		at: { x: 50, y: 280 },
 		data: { title: 'Click Counter' },
 		zIndex: 4,
 	});
-	engine.addWidget({
-		type: 'debug-interactive',
-		position: { x: 380, y: 280 },
+	engine.spawn('debug-interactive', {
+		at: { x: 380, y: 280 },
 		size: { width: 250, height: 180 },
-		data: { title: 'Text Input', note: '' },
+		data: { title: 'Text Input' },
 		zIndex: 5,
 	});
 
-	// Container with children
-	const container = engine.createEntity([
-		[Transform2D, { x: 50, y: 530, width: 500, height: 350, rotation: 0 }],
-		[Widget, { surface: 'dom', type: 'debug-container' }],
-		[WidgetData, { data: { title: 'My Container' } }],
-		[ZIndex, { value: 6 }],
-		[Container, { enterable: true }],
-		[Children, { ids: [] as EntityId[] }],
-		[Selectable],
-		[Draggable],
-		[Resizable],
-	]);
+	// Enterable container — archetype bundles Container + Children.
+	const container = engine.spawn('debug-container', {
+		at: { x: 50, y: 530 },
+		size: { width: 500, height: 350 },
+		data: { title: 'My Container' },
+		zIndex: 6,
+	});
 
-	// Create children inside the container
-	const child1 = engine.createEntity([
-		[Transform2D, { x: 30, y: 30, width: 200, height: 140, rotation: 0 }],
-		[Widget, { surface: 'dom', type: 'debug-card' }],
-		[WidgetData, { data: { title: 'Child A', color: '#8b5cf6' } }],
-		[Parent, { id: container }],
-		[ZIndex, { value: 1 }],
-		[Selectable],
-		[Draggable],
-		[Resizable],
-	]);
-
-	const child2 = engine.createEntity([
-		[Transform2D, { x: 260, y: 30, width: 200, height: 140, rotation: 0 }],
-		[Widget, { surface: 'dom', type: 'debug-interactive' }],
-		[WidgetData, { data: { title: 'Child B', note: '' } }],
-		[Parent, { id: container }],
-		[ZIndex, { value: 2 }],
-		[Selectable],
-		[Draggable],
-		[Resizable],
-	]);
-
-	// Update container's children list
+	const child1 = engine.spawn('debug-card', {
+		at: { x: 30, y: 30 },
+		size: { width: 200, height: 140 },
+		data: { title: 'Child A', color: '#8b5cf6' },
+		zIndex: 1,
+		parent: container,
+	});
+	const child2 = engine.spawn('debug-interactive', {
+		at: { x: 260, y: 30 },
+		size: { width: 200, height: 140 },
+		data: { title: 'Child B' },
+		zIndex: 2,
+		parent: container,
+	});
 	engine.set(container, Children, { ids: [child1, child2] });
 
-	// More widgets scattered around
-	engine.addWidget({
-		type: 'debug-card',
-		position: { x: 700, y: 300 },
+	engine.spawn('debug-card', {
+		at: { x: 700, y: 300 },
 		size: { width: 220, height: 160 },
 		data: { title: 'Far Away', color: '#06b6d4', description: 'Pan to find me!' },
 		zIndex: 7,
 	});
-	engine.addWidget({
-		type: 'debug-card',
-		position: { x: -300, y: -200 },
-		size: { width: 250, height: 180 },
+	engine.spawn('debug-card', {
+		at: { x: -300, y: -200 },
 		data: {
 			title: 'Negative Space',
 			color: '#84cc16',
@@ -152,22 +98,16 @@ function createDemoScene() {
 		zIndex: 8,
 	});
 
-	// WebGL 3D widgets
-	engine.addWidget({
-		type: 'debug-3d',
-		position: { x: 700, y: 530 },
-		size: { width: 250, height: 250 },
+	engine.spawn('debug-3d', {
+		at: { x: 700, y: 530 },
 		data: { title: '3D Cube', color: '#ec4899' },
 		zIndex: 9,
-		surface: 'webgl',
 	});
-	engine.addWidget({
-		type: 'debug-3d',
-		position: { x: 1000, y: 530 },
+	engine.spawn('debug-3d', {
+		at: { x: 1000, y: 530 },
 		size: { width: 200, height: 200 },
 		data: { title: '3D Blue', color: '#3b82f6' },
 		zIndex: 10,
-		surface: 'webgl',
 	});
 
 	return engine;
@@ -236,12 +176,7 @@ export function App() {
 
 	return (
 		<div className="h-screen w-screen">
-			<InfiniteCanvas
-				engine={engine}
-				widgets={widgets}
-				grid={gridConfig}
-				className="h-full w-full"
-			/>
+			<InfiniteCanvas engine={engine} grid={gridConfig} className="h-full w-full" />
 
 			{/* Navigation breadcrumbs + back button (top-left) */}
 			<NavigationBreadcrumbs engine={engine} />

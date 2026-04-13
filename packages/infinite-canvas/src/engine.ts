@@ -8,6 +8,8 @@ import type {
 	World,
 } from '@jamesyong42/reactive-ecs';
 import { createWorld, defineResource, SystemScheduler } from '@jamesyong42/reactive-ecs';
+import type { Archetype, ArchetypeRegistry, SpawnOptions } from './archetype.js';
+import { createArchetypeRegistry } from './archetype.js';
 import type { Command } from './commands.js';
 import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
 import type {
@@ -40,6 +42,8 @@ import {
 import { DEAD_ZONE_MOUSE_PX, MIN_WIDGET_SIZE } from './interaction-constants.js';
 import { clamp, screenToWorld, worldBoundsToAABB } from './math.js';
 import { Profiler } from './profiler.js';
+import type { Widget as WidgetDef, WidgetRegistry } from './react/registry.js';
+import { createWidgetRegistry } from './react/registry.js';
 import type { Breakpoint } from './resources.js';
 import {
 	BreakpointConfigResource,
@@ -152,32 +156,6 @@ export interface FrameChanges {
 
 // === Engine Config ===
 
-/** Options for creating a new widget entity via `engine.addWidget()`. */
-export interface AddWidgetOptions {
-	/** Widget type identifier, matched against registered widget definitions. */
-	type: string;
-	/** Initial world-space position. */
-	position: { x: number; y: number };
-	/** Initial world-space size. */
-	size: { width: number; height: number };
-	/** Initial rotation in radians. */
-	rotation?: number;
-	/** Arbitrary application data attached to the widget. */
-	data?: Record<string, unknown>;
-	/** Rendering surface: DOM (default) or WebGL. */
-	surface?: 'dom' | 'webgl';
-	/** Rendering and hit-test ordering. Higher values render on top. */
-	zIndex?: number;
-	/** Whether the widget can be selected (default: true). */
-	selectable?: boolean;
-	/** Whether the widget can be dragged (default: true). */
-	draggable?: boolean;
-	/** Whether the widget can be resized (default: true). */
-	resizable?: boolean;
-	/** Parent entity for hierarchy nesting. */
-	parent?: EntityId;
-}
-
 /** Configuration options for `createLayoutEngine()`. */
 export interface LayoutEngineConfig {
 	/** Maximum entity count (default: 10000). */
@@ -193,6 +171,10 @@ export interface LayoutEngineConfig {
 		/** Snap distance threshold in screen pixels. */
 		threshold?: number;
 	};
+	/** Widget definitions available to `spawn()`. */
+	widgets?: WidgetDef[];
+	/** Archetype definitions available to `spawn()`. */
+	archetypes?: Archetype[];
 }
 
 // === Engine ===
@@ -207,12 +189,30 @@ export interface LayoutEngine {
 
 	// Entity CRUD
 
-	/** Creates a bare entity with optional initial components/tags. */
+	/** Creates a bare entity with optional initial components/tags. Low-level escape hatch. */
 	createEntity(inits?: ComponentInit[]): EntityId;
-	/** Creates a new widget entity with the given type, position, size, and data. */
-	addWidget(opts: AddWidgetOptions): EntityId;
+	/**
+	 * Spawns a new entity from a registered archetype or widget type.
+	 * If `id` matches a registered archetype, that archetype is used.
+	 * Otherwise, if `id` matches a registered widget, a default archetype is synthesized.
+	 * Otherwise, a bare default archetype with type=`id` is used (useful in tests).
+	 */
+	spawn(id: string, opts?: SpawnOptions): EntityId;
 	/** Removes an entity and cleans up all components, tags, and spatial index entries. */
 	destroyEntity(id: EntityId): void;
+
+	// Widget / Archetype registries
+
+	/** Registers a widget definition. Auto-creates a matching default archetype if none exists. */
+	registerWidget(widget: WidgetDef): void;
+	/** Returns a registered widget by type, or null. */
+	getWidget(type: string): WidgetDef | null;
+	/** Returns all registered widgets. */
+	getWidgets(): WidgetDef[];
+	/** Registers a custom archetype. */
+	registerArchetype(archetype: Archetype): void;
+	/** Returns a registered archetype by id, or null. */
+	getArchetype(id: string): Archetype | null;
 
 	// Shorthand
 
@@ -365,6 +365,11 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 
 	const commandBuffer = new CommandBuffer();
 
+	// Widget + archetype registries. Archetype registry holds explicit archetypes
+	// and auto-synthesized defaults for widgets without explicit archetypes.
+	const widgetRegistry: WidgetRegistry = createWidgetRegistry();
+	const archetypeRegistry: ArchetypeRegistry = createArchetypeRegistry();
+
 	// Apply config
 	if (config?.zoom) {
 		world.setResource(ZoomConfigResource, config.zoom);
@@ -456,6 +461,14 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	unsubscribers.push(world.onTagRemoved(Draggable, refreshInteractionRole));
 	unsubscribers.push(world.onTagAdded(Selectable, refreshInteractionRole));
 	unsubscribers.push(world.onTagRemoved(Selectable, refreshInteractionRole));
+
+	// Pre-register widgets and archetypes from config
+	if (config?.widgets) {
+		for (const w of config.widgets) widgetRegistry.register(w);
+	}
+	if (config?.archetypes) {
+		for (const a of config.archetypes) archetypeRegistry.register(a);
+	}
 
 	// Initialize navigation — mark root entities as Active on first tick
 	world.setResource(NavigationStackResource, { changed: true });
@@ -604,35 +617,78 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			return entity;
 		},
 
-		addWidget(opts: AddWidgetOptions): EntityId {
+		spawn(id: string, opts: SpawnOptions = {}): EntityId {
+			// Resolve archetype: explicit → widget-derived default → bare default.
+			const archetype = archetypeRegistry.get(id);
+			const widgetTypeId = archetype?.widget ?? id;
+			const widget = widgetRegistry.get(widgetTypeId);
+
+			const surface = widget?.surface ?? 'dom';
+			const defaultData = (widget?.defaultData as Record<string, unknown> | undefined) ?? {};
+			const defaultSize = archetype?.defaultSize ??
+				widget?.defaultSize ?? { width: 100, height: 100 };
+
+			const position = opts.at ?? { x: 0, y: 0 };
+			const size = opts.size ?? defaultSize;
+			const data = { ...defaultData, ...opts.data };
+
 			const inits: ComponentInit[] = [
 				[
 					Transform2D,
 					{
-						x: opts.position.x,
-						y: opts.position.y,
-						width: opts.size.width,
-						height: opts.size.height,
+						x: position.x,
+						y: position.y,
+						width: size.width,
+						height: size.height,
 						rotation: opts.rotation ?? 0,
 					},
 				],
-				[Widget, { surface: opts.surface ?? 'dom', type: opts.type }],
+				[Widget, { surface, type: widgetTypeId }],
+				[WidgetData, { data }],
+				[ZIndex, { value: opts.zIndex ?? 0 }],
 			];
-			if (opts.data !== undefined) {
-				inits.push([WidgetData, { data: opts.data }]);
+
+			if (archetype?.components) {
+				for (const init of archetype.components) inits.push(init);
 			}
-			inits.push([ZIndex, { value: opts.zIndex ?? 0 }]);
-			// Selectable / Draggable trigger the reactive observer in
-			// createLayoutEngine which auto-attaches InteractionRole and (for
-			// Draggable) CursorHint. Users building entities via createEntity()
-			// with these tags get the same wiring for free.
-			if (opts.selectable !== false) inits.push([Selectable]);
-			if (opts.draggable !== false) inits.push([Draggable]);
-			if (opts.resizable !== false) inits.push([Resizable]);
+
 			if (opts.parent !== undefined) {
 				inits.push([Parent, { id: opts.parent }]);
 			}
+
+			// Interactive defaults (Selectable/Draggable/Resizable) trigger the
+			// reactive observer that auto-attaches InteractionRole + CursorHint.
+			if (archetype?.interactive !== false) {
+				inits.push([Selectable]);
+				inits.push([Draggable]);
+				inits.push([Resizable]);
+			}
+
+			if (archetype?.tags) {
+				for (const tag of archetype.tags) inits.push([tag]);
+			}
+
 			return engine.createEntity(inits);
+		},
+
+		registerWidget(widget: WidgetDef) {
+			widgetRegistry.register(widget);
+		},
+
+		getWidget(type: string) {
+			return widgetRegistry.get(type);
+		},
+
+		getWidgets() {
+			return widgetRegistry.getAll();
+		},
+
+		registerArchetype(archetype: Archetype) {
+			archetypeRegistry.register(archetype);
+		},
+
+		getArchetype(id: string) {
+			return archetypeRegistry.get(id);
 		},
 
 		destroyEntity(id: EntityId) {

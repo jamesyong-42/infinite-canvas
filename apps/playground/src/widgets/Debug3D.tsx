@@ -1,10 +1,18 @@
-import type { EntityId } from '@jamesyong42/infinite-canvas';
+import type { EntityId, R3FWidget } from '@jamesyong42/infinite-canvas';
 import { useIsSelected, useWidgetData } from '@jamesyong42/infinite-canvas';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
 import type { Mesh } from 'three';
+import { z } from 'zod';
 
-export function Debug3D({
+const schema = z.object({
+	title: z.string().default('3D'),
+	color: z.string().default('#3b82f6'),
+});
+
+export type Debug3DData = z.infer<typeof schema>;
+
+function Debug3DView({
 	entityId,
 	width,
 	height,
@@ -14,7 +22,7 @@ export function Debug3D({
 	height: number;
 }) {
 	const groupRef = useRef<Mesh>(null);
-	const data = useWidgetData(entityId);
+	const data = useWidgetData<Debug3DData>(entityId);
 	const isSelected = useIsSelected(entityId);
 
 	const color = data.color ?? '#3b82f6';
@@ -56,3 +64,12 @@ export function Debug3D({
 		</group>
 	);
 }
+
+export const Debug3D: R3FWidget<Debug3DData> = {
+	type: 'debug-3d',
+	surface: 'webgl',
+	schema,
+	defaultData: { title: '3D', color: '#3b82f6' },
+	defaultSize: { width: 250, height: 250 },
+	component: Debug3DView,
+};
