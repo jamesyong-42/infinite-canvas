@@ -66,7 +66,7 @@
 		"postpack": "rm -f ./README.md ./LICENSE"
 	},
 	"dependencies": {
-		"@jamesyong42/reactive-ecs": "workspace:*"
+		"@jamesyong42/reactive-ecs": "^0.1.1"
 	},
 	"peerDependencies": {
 		"@react-three/fiber": "^9.0.0",

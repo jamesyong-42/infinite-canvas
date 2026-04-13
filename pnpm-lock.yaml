@@ -24,21 +24,6 @@ importers:
         specifier: ^4.1.4
         version: 4.1.4(vite@8.0.8(esbuild@0.27.7)(jiti@2.6.1)(yaml@2.8.3))
 
-  ../reactive-ecs:
-    devDependencies:
-      '@biomejs/biome':
-        specifier: ^2.4.11
-        version: 2.4.11
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.1(jiti@2.6.1)(postcss@8.5.9)(typescript@6.0.2)(yaml@2.8.3)
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.2
-      vitest:
-        specifier: ^4.1.4
-        version: 4.1.4(vite@8.0.8(esbuild@0.27.7)(jiti@2.6.1)(yaml@2.8.3))
-
   apps/playground:
     dependencies:
       '@jamesyong42/infinite-canvas':
@@ -94,8 +79,8 @@ importers:
   packages/infinite-canvas:
     dependencies:
       '@jamesyong42/reactive-ecs':
-        specifier: workspace:*
-        version: link:../../../reactive-ecs
+        specifier: ^0.1.1
+        version: 0.1.1
     devDependencies:
       '@react-three/fiber':
         specifier: ^9.5.0
@@ -357,6 +342,10 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@jamesyong42/reactive-ecs@0.1.1':
+    resolution: {integrity: sha512-R/MlvF7RxBL0D2CK7o7oM9lxAaB7oxqknlkkyBGvpkPcfcN3ZQu6ukBIp/mG/swHmxd/Om65+fTpCJxpP7SCNA==}
+    engines: {node: '>=20'}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1627,6 +1616,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.27.7':
     optional: true
+
+  '@jamesyong42/reactive-ecs@0.1.1': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
