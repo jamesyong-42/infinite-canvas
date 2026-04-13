@@ -30,38 +30,41 @@ npm install three @react-three/fiber
 
 ```tsx
 import { useMemo } from 'react';
+import type { DomWidget, EntityId } from '@jamesyong42/infinite-canvas';
 import { createLayoutEngine, InfiniteCanvas, useWidgetData } from '@jamesyong42/infinite-canvas';
+import { z } from 'zod';
 
-function MyCard({ entityId }) {
-  const data = useWidgetData(entityId);
+const schema = z.object({ title: z.string().default('Card') });
+type CardData = z.infer<typeof schema>;
+
+function MyCardView({ entityId }: { entityId: EntityId }) {
+  const data = useWidgetData<CardData>(entityId);
   return <div style={{ padding: 16, background: 'white', borderRadius: 8 }}>{data.title}</div>;
 }
 
-const widgets = [
-  { type: 'card', component: MyCard, defaultSize: { width: 250, height: 180 } },
-];
+const MyCard: DomWidget<CardData> = {
+  type: 'card',
+  schema,
+  defaultData: { title: 'Card' },
+  defaultSize: { width: 250, height: 180 },
+  component: MyCardView,
+};
 
 export default function App() {
   const engine = useMemo(() => {
-    const e = createLayoutEngine({ zoom: { min: 0.05, max: 8 } });
-    e.addWidget({
-      type: 'card',
-      position: { x: 100, y: 100 },
-      size: { width: 250, height: 180 },
-      data: { title: 'Hello World' },
+    const e = createLayoutEngine({
+      zoom: { min: 0.05, max: 8 },
+      widgets: [MyCard],
     });
+    e.spawn('card', { at: { x: 100, y: 100 }, data: { title: 'Hello World' } });
     return e;
   }, []);
 
-  return (
-    <InfiniteCanvas
-      engine={engine}
-      widgets={widgets}
-      style={{ width: '100vw', height: '100vh' }}
-    />
-  );
+  return <InfiniteCanvas engine={engine} style={{ width: '100vw', height: '100vh' }} />;
 }
 ```
+
+Widgets declare a **schema** (any [Standard Schema v1](https://standardschema.dev)-compatible validator — Zod 3.24+, Valibot, ArkType) and **default data**. Entities are spawned by `engine.spawn(archetypeOrWidgetId, options)`. For widgets without a custom archetype, the engine synthesizes a default one that makes the entity selectable, draggable, and resizable.
 
 ## Package
 
@@ -106,8 +109,7 @@ The underlying ECS primitives (`defineComponent`, `defineSystem`, `World`, `Syst
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `engine` | `LayoutEngine` | Engine instance (required) |
-| `widgets` | `WidgetDef[]` | Widget type definitions |
+| `engine` | `LayoutEngine` | Engine instance (required) -- widgets and archetypes are registered on the engine, not passed as props |
 | `grid` | `Partial<GridConfig> \| false` | Grid configuration, or `false` to disable |
 | `selection` | `Partial<SelectionConfig>` | Selection style overrides |
 | `onSelectionChange` | `(ids: EntityId[]) => void` | Called when selected entities change |
@@ -119,10 +121,10 @@ The underlying ECS primitives (`defineComponent`, `defineSystem`, `World`, `Syst
 
 ## Widget Development
 
-Widgets are React components that receive an `entityId` prop and use hooks to read/write ECS data:
+A widget is a self-contained plugin: a schema describing its data, a default data object, and a React view. Export it as a `DomWidget<T>` (or `R3FWidget<T>` — see below) and register it on the engine.
 
 ```tsx
-import type { WidgetProps } from '@jamesyong42/infinite-canvas';
+import type { DomWidget, EntityId } from '@jamesyong42/infinite-canvas';
 import {
   Transform2D,
   useBreakpoint,
@@ -131,33 +133,103 @@ import {
   useUpdateWidget,
   useWidgetData,
 } from '@jamesyong42/infinite-canvas';
+import { z } from 'zod';
 
-function MyWidget({ entityId }: WidgetProps) {
-  const data = useWidgetData(entityId);            // custom widget data
-  const breakpoint = useBreakpoint(entityId);      // 'micro' | 'compact' | 'normal' | 'expanded' | 'detailed'
-  const isSelected = useIsSelected(entityId);      // selection state
-  const transform = useComponent(entityId, Transform2D);  // position/size
-  const updateWidget = useUpdateWidget(entityId);  // update widget data
+const schema = z.object({
+  title: z.string().default('Widget'),
+  note: z.string().default(''),
+});
+type MyWidgetData = z.infer<typeof schema>;
+
+function MyWidgetView({ entityId }: { entityId: EntityId }) {
+  const data = useWidgetData<MyWidgetData>(entityId);  // typed custom data
+  const breakpoint = useBreakpoint(entityId);          // 'micro' | 'compact' | 'normal' | 'expanded' | 'detailed'
+  const isSelected = useIsSelected(entityId);          // selection state
+  const transform = useComponent(entityId, Transform2D); // position/size
+  const updateWidget = useUpdateWidget(entityId);      // patch widget data
 
   if (breakpoint === 'micro') return <div>...</div>;   // minimal view
   if (breakpoint === 'compact') return <div>...</div>; // condensed view
   return <div>...</div>;                                // full view
 }
+
+export const MyWidget: DomWidget<MyWidgetData> = {
+  type: 'my-widget',
+  schema,
+  defaultData: { title: 'Widget', note: '' },
+  defaultSize: { width: 280, height: 200 },
+  component: MyWidgetView,
+};
 ```
 
-The `WidgetProps` interface provides `entityId`, `width`, `height`, and `zoom`.
+DOM widget components receive only `{ entityId }`. The outer slot div is sized by CSS, so read `Transform2D` via `useComponent` if you need width/height. Register the widget via `createLayoutEngine({ widgets: [MyWidget] })` or imperatively with `engine.registerWidget(MyWidget)`.
+
+## Archetypes
+
+An **archetype** is a recipe for spawning an entity — a bundle of components and tags, optionally referencing a widget type. Every widget you register gets a default archetype automatically (with `Selectable`, `Draggable`, `Resizable`). Write a custom archetype when you need to attach extra behaviour like `Container` + `Children` for an enterable container, or skip the interactive defaults for a locked decoration.
+
+```tsx
+import type { Archetype, DomWidget, EntityId } from '@jamesyong42/infinite-canvas';
+import { Children, Container } from '@jamesyong42/infinite-canvas';
+
+export const MyContainer: DomWidget<{ title: string }> = {
+  type: 'my-container',
+  schema,
+  defaultData: { title: 'Container' },
+  defaultSize: { width: 500, height: 350 },
+  component: MyContainerView,
+};
+
+export const MyContainerArchetype: Archetype = {
+  id: 'my-container',
+  widget: 'my-container',
+  components: [
+    [Container, { enterable: true }],
+    [Children, { ids: [] as EntityId[] }],
+  ],
+};
+
+// Use it:
+const engine = createLayoutEngine({
+  widgets: [MyContainer],
+  archetypes: [MyContainerArchetype],
+});
+const id = engine.spawn('my-container', { at: { x: 50, y: 50 }, data: { title: 'Hello' } });
+```
+
+Spawning is uniform: `engine.spawn(id, options)`. If `id` matches an archetype, that archetype is used; otherwise the engine synthesizes a default from the widget. Options:
+
+| Option | Description |
+|--------|-------------|
+| `at` | World-space position. Defaults to `{ x: 0, y: 0 }`. |
+| `size` | Overrides the widget's `defaultSize`. |
+| `data` | Patch merged into the widget's `defaultData`. |
+| `zIndex` | Rendering + hit-test order. |
+| `parent` | Parent entity id for nesting. |
+| `rotation` | Initial rotation in radians. |
 
 ## WebGL Widgets (R3F)
 
-Register widgets with `surface: 'webgl'` to render 3D content via React Three Fiber:
+Define an `R3FWidget<T>` with `surface: 'webgl'` to render 3D content via React Three Fiber. R3F widget views receive `{ entityId, width, height }` and render in local coordinates (origin at widget centre):
 
 ```tsx
+import type { EntityId, R3FWidget } from '@jamesyong42/infinite-canvas';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
+import { z } from 'zod';
+import type { Mesh } from 'three';
 
-function My3DWidget({ entityId, width, height }) {
-  const meshRef = useRef();
-  useFrame((_, delta) => { meshRef.current.rotation.y += delta; });
+const schema = z.object({ color: z.string().default('hotpink') });
+
+function My3DView({
+  entityId,
+  width,
+  height,
+}: { entityId: EntityId; width: number; height: number }) {
+  const meshRef = useRef<Mesh>(null);
+  useFrame((_, delta) => {
+    if (meshRef.current) meshRef.current.rotation.y += delta;
+  });
   return (
     <mesh ref={meshRef}>
       <boxGeometry args={[width * 0.5, height * 0.5, 50]} />
@@ -166,15 +238,20 @@ function My3DWidget({ entityId, width, height }) {
   );
 }
 
-<InfiniteCanvas
-  engine={engine}
-  widgets={[
-    { type: 'my-3d', surface: 'webgl', component: My3DWidget, defaultSize: { width: 250, height: 250 } },
-  ]}
-/>
+export const My3D: R3FWidget<z.infer<typeof schema>> = {
+  type: 'my-3d',
+  surface: 'webgl',
+  schema,
+  defaultData: { color: 'hotpink' },
+  defaultSize: { width: 250, height: 250 },
+  component: My3DView,
+};
+
+const engine = createLayoutEngine({ widgets: [My3D] });
+engine.spawn('my-3d', { at: { x: 100, y: 100 } });
 ```
 
-WebGL widgets get a transparent R3F canvas layered between the grid and DOM layers. The R3F camera is synced with the engine camera every frame. Widget components receive `entityId`, `width`, and `height` props and work in centered local coordinates.
+WebGL widgets get a transparent R3F canvas layered between the grid and DOM layers. The R3F camera is synced with the engine camera every frame.
 
 ## Configuration
 
@@ -283,7 +360,7 @@ Use a ref on `<InfiniteCanvas>` for imperative control from outside:
 ```tsx
 const canvasRef = useRef<InfiniteCanvasHandle>(null);
 
-<InfiniteCanvas ref={canvasRef} engine={engine} widgets={widgets} />
+<InfiniteCanvas ref={canvasRef} engine={engine} />
 
 // Later:
 canvasRef.current?.zoomToFit();
