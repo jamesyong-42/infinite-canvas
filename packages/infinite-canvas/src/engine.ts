@@ -53,6 +53,7 @@ import {
 	ViewportResource,
 	ZoomConfigResource,
 } from './resources.js';
+import type { StandardSchemaV1 } from './schema.js';
 import type { EqualSpacingIndicator, SnapGuide, SnapResult } from './snap.js';
 import { computeSnapGuides } from './snap.js';
 import { SpatialIndex } from './spatial.js';
@@ -198,6 +199,8 @@ export interface LayoutEngine {
 	 * Otherwise, a bare default archetype with type=`id` is used (useful in tests).
 	 */
 	spawn(id: string, opts?: SpawnOptions): EntityId;
+	/** Spawns at the current camera viewport centre (sized from the archetype/widget default). */
+	spawnAtCameraCenter(id: string, opts?: Omit<SpawnOptions, 'at'>): EntityId;
 	/** Removes an entity and cleans up all components, tags, and spatial index entries. */
 	destroyEntity(id: EntityId): void;
 
@@ -222,6 +225,16 @@ export interface LayoutEngine {
 	set<T>(entity: EntityId, type: ComponentType<T>, data: Partial<T>): void;
 	/** Checks if an entity has a component or tag. */
 	has(entity: EntityId, type: ComponentType | TagType): boolean;
+	/** Attaches a component to an entity. Uses type defaults if `data` is omitted. Marks dirty. */
+	addComponent<T>(entity: EntityId, type: ComponentType<T>, data?: T): void;
+	/** Removes a component from an entity. Marks dirty. */
+	removeComponent(entity: EntityId, type: ComponentType): void;
+	/** Adds a tag to an entity. Marks dirty. */
+	addTag(entity: EntityId, type: TagType): void;
+	/** Removes a tag from an entity. Marks dirty. */
+	removeTag(entity: EntityId, type: TagType): void;
+	/** Returns the Standard Schema for a widget entity's `WidgetData.data`, if the widget declared one. */
+	getSchemaFor(entity: EntityId): StandardSchemaV1 | undefined;
 
 	// Extensions
 
@@ -671,6 +684,22 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			return engine.createEntity(inits);
 		},
 
+		spawnAtCameraCenter(id: string, opts: Omit<SpawnOptions, 'at'> = {}): EntityId {
+			const camera = world.getResource(CameraResource);
+			const viewport = world.getResource(ViewportResource);
+			const centerX = camera.x + viewport.width / (2 * camera.zoom);
+			const centerY = camera.y + viewport.height / (2 * camera.zoom);
+			const archetype = archetypeRegistry.get(id);
+			const widget = widgetRegistry.get(archetype?.widget ?? id);
+			const size = opts.size ??
+				archetype?.defaultSize ??
+				widget?.defaultSize ?? { width: 100, height: 100 };
+			return engine.spawn(id, {
+				...opts,
+				at: { x: centerX - size.width / 2, y: centerY - size.height / 2 },
+			});
+		},
+
 		registerWidget(widget: WidgetDef) {
 			widgetRegistry.register(widget);
 		},
@@ -719,6 +748,32 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 		has(entity: EntityId, type: ComponentType | TagType): boolean {
 			if (type.__kind === 'tag') return world.hasTag(entity, type as TagType);
 			return world.hasComponent(entity, type as ComponentType);
+		},
+
+		addComponent<T>(entity: EntityId, type: ComponentType<T>, data?: T) {
+			world.addComponent(entity, type, data ?? type.defaults);
+			markDirtyInternal();
+		},
+
+		removeComponent(entity: EntityId, type: ComponentType) {
+			world.removeComponent(entity, type);
+			markDirtyInternal();
+		},
+
+		addTag(entity: EntityId, type: TagType) {
+			world.addTag(entity, type);
+			markDirtyInternal();
+		},
+
+		removeTag(entity: EntityId, type: TagType) {
+			world.removeTag(entity, type);
+			markDirtyInternal();
+		},
+
+		getSchemaFor(entity: EntityId): StandardSchemaV1 | undefined {
+			const w = world.getComponent(entity, Widget);
+			if (!w) return undefined;
+			return widgetRegistry.get(w.type)?.schema;
 		},
 
 		// === Extensions ===

@@ -162,3 +162,118 @@ export function useCamera(): { x: number; y: number; zoom: number } {
 	const cam = useResource(CameraResource);
 	return { x: cam?.x ?? 0, y: cam?.y ?? 0, zoom: cam?.zoom ?? 1 };
 }
+
+function sameIdList(a: readonly number[], b: readonly number[]): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
+function sameTypeList<T extends { name: string }>(a: readonly T[], b: readonly T[]): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
+/**
+ * Reactively returns the IDs of every live entity in the world.
+ * Updates on entity create and destroy.
+ */
+export function useAllEntities(): EntityId[] {
+	const engine = useLayoutEngine();
+	const [entities, setEntities] = useState<EntityId[]>(() => engine.world.getAllEntities());
+
+	useEffect(() => {
+		const refresh = () => {
+			const next = engine.world.getAllEntities();
+			setEntities((prev) => (sameIdList(prev, next) ? prev : next));
+		};
+		refresh();
+		const unsub1 = engine.world.onEntityCreated(refresh);
+		const unsub2 = engine.world.onEntityDestroyed(refresh);
+		return () => {
+			unsub1();
+			unsub2();
+		};
+	}, [engine]);
+
+	return entities;
+}
+
+/**
+ * Reactively returns the ComponentTypes currently attached to an entity.
+ * Polls per frame (engine only ticks when dirty), but never re-renders unless the set changes.
+ */
+export function useEntityComponents(entity: EntityId): ComponentType[] {
+	const engine = useLayoutEngine();
+	const [types, setTypes] = useState<ComponentType[]>(() => engine.world.getComponentsOf(entity));
+
+	useEffect(() => {
+		setTypes(engine.world.getComponentsOf(entity));
+		const unsub = engine.onFrame(() => {
+			const next = engine.world.getComponentsOf(entity);
+			setTypes((prev) => (sameTypeList(prev, next) ? prev : next));
+		});
+		return unsub;
+	}, [engine, entity]);
+
+	return types;
+}
+
+/**
+ * Reactively returns the TagTypes currently attached to an entity.
+ */
+export function useEntityTags(entity: EntityId): TagType[] {
+	const engine = useLayoutEngine();
+	const [types, setTypes] = useState<TagType[]>(() => engine.world.getTagsOf(entity));
+
+	useEffect(() => {
+		setTypes(engine.world.getTagsOf(entity));
+		const unsub = engine.onFrame(() => {
+			const next = engine.world.getTagsOf(entity);
+			setTypes((prev) => (sameTypeList(prev, next) ? prev : next));
+		});
+		return unsub;
+	}, [engine, entity]);
+
+	return types;
+}
+
+/**
+ * Reactively returns every ComponentType the world has observed.
+ * Grows over time as new component types are first used.
+ */
+export function useRegisteredComponents(): ComponentType[] {
+	const engine = useLayoutEngine();
+	const [types, setTypes] = useState<ComponentType[]>(() => engine.world.getRegisteredComponents());
+
+	useEffect(() => {
+		setTypes(engine.world.getRegisteredComponents());
+		const unsub = engine.onFrame(() => {
+			const next = engine.world.getRegisteredComponents();
+			setTypes((prev) => (sameTypeList(prev, next) ? prev : next));
+		});
+		return unsub;
+	}, [engine]);
+
+	return types;
+}
+
+/**
+ * Reactively returns every TagType the world has observed.
+ */
+export function useRegisteredTags(): TagType[] {
+	const engine = useLayoutEngine();
+	const [types, setTypes] = useState<TagType[]>(() => engine.world.getRegisteredTags());
+
+	useEffect(() => {
+		setTypes(engine.world.getRegisteredTags());
+		const unsub = engine.onFrame(() => {
+			const next = engine.world.getRegisteredTags();
+			setTypes((prev) => (sameTypeList(prev, next) ? prev : next));
+		});
+		return unsub;
+	}, [engine]);
+
+	return types;
+}
