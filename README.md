@@ -17,6 +17,7 @@ Build Figma-style infinite canvases in React -- drag, resize, snap, zoom, nested
 - **Undo / redo** -- Command buffer with grouped operations (an entire drag is one undo step)
 - **Hierarchical navigation** -- Enter and exit nested containers with camera state preservation
 - **ECS architecture** -- Extensible via custom components, tags, and systems with topologically-sorted scheduling
+- **Card widgets** -- iOS-style preset-sized tiles (small / medium / large / xl) with rounded corners, soft shadows, and lift-on-drag animation
 - **Performance** -- SDF shaders for grid and selection chrome, RBush spatial indexing, viewport culling, per-system profiling
 - **Live ECS editor** -- Drop-in `<EcsDevtools>` panel for spawning, inspecting, and editing components and tags at runtime
 - **Dark mode** -- Full dark mode support across canvas, widgets, and UI chrome
@@ -214,6 +215,51 @@ Spawning is uniform: `engine.spawn(id, options)`. If `id` matches an archetype, 
 | `zIndex` | Rendering + hit-test order. |
 | `parent` | Parent entity id for nesting. |
 | `rotation` | Initial rotation in radians. |
+
+The `interactive` field on `Archetype` accepts a boolean or an object. Pass `{ selectable, draggable, resizable }` (any subset) when you want finer control — for example, a card that moves but never resizes: `{ selectable: true, draggable: true, resizable: false }`. Omitted keys default to `false` in the object form.
+
+## Card Widgets
+
+**Card widgets** are fixed-size, non-resizable widgets that sit on an iOS-style preset grid. They ship with rounded corners, a soft drop shadow, a hairline ring, and a subtle lift animation while dragging. Use them when you want dashboard-style tiles rather than free-form resizable surfaces.
+
+```tsx
+import { createCardWidget } from '@jamesyong42/infinite-canvas';
+import { z } from 'zod';
+
+const schema = z.object({ label: z.string().default('Hi') });
+
+export const Greeting = createCardWidget<{ label: string }>({
+  type: 'greeting-card',
+  size: 'small',                 // 'small' | 'medium' | 'large' | 'xl'
+  schema,
+  defaultData: { label: 'Hi' },
+  render: ({ data }) => (
+    <div className="flex h-full w-full items-center justify-center bg-white">
+      {data.label}
+    </div>
+  ),
+});
+
+// Register both the widget and the matching archetype.
+const engine = createLayoutEngine({
+  widgets: [Greeting.widget],
+  archetypes: [Greeting.archetype],
+});
+engine.spawn('greeting-card', { at: { x: 50, y: 50 } });
+```
+
+Preset sizes (default, matching iOS widget conventions on a 19 px grid):
+
+| Preset | Width × Height |
+|--------|----------------|
+| `small`  | 155 × 155 |
+| `medium` | 329 × 155 |
+| `large`  | 329 × 345 |
+| `xl`     | 329 × 535 |
+
+Override per-engine via `createLayoutEngine({ cardPresets: { presets: { small: { width: 200, height: 200 } }, gap: 24 } })`. Omitted presets keep their defaults.
+
+Under the hood: the returned widget wraps your `render` in `<CardFrame>` (exported for manual composition), the archetype is non-resizable, and it bundles a `Card` component. A built-in `cardSystem` stamps `Transform2D.width/height` from `Card.preset` each tick — to change a card's size at runtime, update the preset: `engine.set(id, Card, { preset: 'large' })`. Reading the `Dragging` tag from the frame drives the lift affordance; you can read it elsewhere too via `useTag(entityId, Dragging)`.
 
 ## WebGL Widgets (R3F)
 
@@ -525,20 +571,24 @@ z:3  UI chrome
 | `InteractionRole` | Interaction behavior (drag, select, resize, etc.) |
 | `HandleSet` | Child handle entity references |
 | `CursorHint` | Cursor style on hover/active |
+| `Card` | Marks an iOS-style card; carries the preset (`small`/`medium`/`large`/`xl`) |
 
 ### ECS Tags
 
-`Selectable` `Draggable` `Resizable` `Locked` `Selected` `Active` `Visible`
+`Selectable` `Draggable` `Resizable` `Locked` `Selected` `Dragging` `Active` `Visible`
+
+`Dragging` is a transient state tag (parallels `Selected`): added when the drag dead zone is crossed, removed on pointer up or cancel. Read via `useTag(entityId, Dragging)` to drive drag-time affordances.
 
 ### Systems (execution order)
 
-1. `transformPropagate` -- Propagate transforms down hierarchy, compute WorldBounds
-2. `handleSync` -- Synchronize resize handle entities with parent widgets
-3. `hitboxWorldBounds` -- Compute world-space hitbox bounds
-4. `navigationFilter` -- Filter entities to active navigation layer
-5. `cull` -- Mark viewport-visible entities
-6. `breakpoint` -- Compute responsive breakpoints
-7. `sort` -- Z-index ordering
+1. `card` -- Stamp Transform2D size from Card preset
+2. `transformPropagate` -- Propagate transforms down hierarchy, compute WorldBounds
+3. `handleSync` -- Synchronize resize handle entities with parent widgets
+4. `hitboxWorldBounds` -- Compute world-space hitbox bounds
+5. `navigationFilter` -- Filter entities to active navigation layer
+6. `cull` -- Mark viewport-visible entities
+7. `breakpoint` -- Compute responsive breakpoints
+8. `sort` -- Z-index ordering
 
 ## Performance Profiling
 

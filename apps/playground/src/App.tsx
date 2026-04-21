@@ -10,16 +10,25 @@ import { useEffect, useMemo, useState } from 'react';
 import { InspectorPanel } from './panels/InspectorPanel.js';
 import { NavigationBreadcrumbs } from './panels/NavigationBreadcrumbs.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
+import { ClockCard } from './widgets/ClockCard.js';
 import { Debug3D } from './widgets/Debug3D.js';
 import { DebugCard } from './widgets/DebugCard.js';
 import { DebugContainer, DebugContainerArchetype } from './widgets/DebugContainer.js';
 import { DebugInteractive } from './widgets/DebugInteractive.js';
+import { WeatherCard } from './widgets/WeatherCard.js';
 
 function createDemoScene() {
 	const engine = createLayoutEngine({
 		zoom: { min: 0.05, max: 8 },
-		widgets: [DebugCard, DebugInteractive, DebugContainer, Debug3D],
-		archetypes: [DebugContainerArchetype],
+		widgets: [
+			DebugCard,
+			DebugInteractive,
+			DebugContainer,
+			Debug3D,
+			ClockCard.widget,
+			WeatherCard.widget,
+		],
+		archetypes: [DebugContainerArchetype, ClockCard.archetype, WeatherCard.archetype],
 	});
 
 	engine.spawn('debug-card', {
@@ -109,6 +118,19 @@ function createDemoScene() {
 		size: { width: 200, height: 200 },
 		data: { title: '3D Blue', color: '#3b82f6' },
 		zIndex: 10,
+	});
+
+	// iOS-style cards — fixed preset sizes, non-resizable, lift-on-drag.
+	engine.spawn('clock-card', { at: { x: 950, y: 50 }, zIndex: 11 });
+	engine.spawn('weather-card', {
+		at: { x: 950, y: 240 },
+		data: { location: 'Cupertino', temp: 72, high: 78, low: 60, condition: 'sunny' },
+		zIndex: 12,
+	});
+	engine.spawn('weather-card', {
+		at: { x: 950, y: 420 },
+		data: { location: 'London', temp: 55, high: 59, low: 48, condition: 'rainy' },
+		zIndex: 13,
 	});
 
 	return engine;
