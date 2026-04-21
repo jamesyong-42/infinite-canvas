@@ -10,25 +10,32 @@ import { useEffect, useMemo, useState } from 'react';
 import { InspectorPanel } from './panels/InspectorPanel.js';
 import { NavigationBreadcrumbs } from './panels/NavigationBreadcrumbs.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
+import { BatteryCard } from './widgets/BatteryCard.js';
+import { CalendarCard } from './widgets/CalendarCard.js';
 import { ClockCard } from './widgets/ClockCard.js';
 import { Debug3D } from './widgets/Debug3D.js';
 import { DebugCard } from './widgets/DebugCard.js';
 import { DebugContainer, DebugContainerArchetype } from './widgets/DebugContainer.js';
 import { DebugInteractive } from './widgets/DebugInteractive.js';
+import { FitnessCard } from './widgets/FitnessCard.js';
+import { PhotosCard } from './widgets/PhotosCard.js';
+import { StocksCard } from './widgets/StocksCard.js';
 import { WeatherCard } from './widgets/WeatherCard.js';
 
 function createDemoScene() {
+	const cards = [
+		ClockCard,
+		BatteryCard,
+		CalendarCard,
+		WeatherCard,
+		StocksCard,
+		FitnessCard,
+		PhotosCard,
+	];
 	const engine = createLayoutEngine({
 		zoom: { min: 0.05, max: 8 },
-		widgets: [
-			DebugCard,
-			DebugInteractive,
-			DebugContainer,
-			Debug3D,
-			ClockCard.widget,
-			WeatherCard.widget,
-		],
-		archetypes: [DebugContainerArchetype, ClockCard.archetype, WeatherCard.archetype],
+		widgets: [DebugCard, DebugInteractive, DebugContainer, Debug3D, ...cards.map((c) => c.widget)],
+		archetypes: [DebugContainerArchetype, ...cards.map((c) => c.archetype)],
 	});
 
 	engine.spawn('debug-card', {
@@ -121,16 +128,35 @@ function createDemoScene() {
 	});
 
 	// iOS-style cards — fixed preset sizes, non-resizable, lift-on-drag.
-	engine.spawn('clock-card', { at: { x: 950, y: 50 }, zIndex: 11 });
-	engine.spawn('weather-card', {
-		at: { x: 950, y: 240 },
-		data: { location: 'Cupertino', temp: 72, high: 78, low: 60, condition: 'sunny' },
-		zIndex: 12,
+	// Grid pitch is 155px + 19px gap = 174px; aligned to the iOS widget grid.
+	const GX = 950; // origin x
+	const GY = 50; // origin y
+	const PITCH = 174;
+
+	// Left column (2 small-wide slots = 329px):
+	engine.spawn('clock-card', { at: { x: GX, y: GY }, zIndex: 11 });
+	engine.spawn('battery-card', { at: { x: GX + PITCH, y: GY }, zIndex: 12 });
+	engine.spawn('calendar-card', {
+		at: { x: GX, y: GY + PITCH },
+		data: {
+			dateIso: null,
+			nextEvent: 'Design review',
+			nextEventTime: '3:30 PM',
+		},
+		zIndex: 13,
 	});
 	engine.spawn('weather-card', {
-		at: { x: 950, y: 420 },
-		data: { location: 'London', temp: 55, high: 59, low: 48, condition: 'rainy' },
-		zIndex: 13,
+		at: { x: GX, y: GY + PITCH * 2 },
+		data: { location: 'Cupertino', temp: 72, high: 78, low: 60, condition: 'sunny' },
+		zIndex: 14,
+	});
+	engine.spawn('stocks-card', { at: { x: GX, y: GY + PITCH * 3 }, zIndex: 15 });
+	engine.spawn('fitness-card', { at: { x: GX, y: GY + PITCH * 4 }, zIndex: 16 });
+
+	// Right column (one xl photo card):
+	engine.spawn('photos-card', {
+		at: { x: GX + PITCH * 2 + 19, y: GY },
+		zIndex: 17,
 	});
 
 	return engine;
