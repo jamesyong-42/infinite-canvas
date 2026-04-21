@@ -15,8 +15,8 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      release_created: ${{ steps.release.outputs['packages/infinite-canvas--release_created'] }}
+      tag_name: ${{ steps.release.outputs['packages/infinite-canvas--tag_name'] }}
     steps:
       - id: release
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
@@ -26,9 +26,13 @@ jobs:
       # GITHUB_TOKEN-created releases don't fire `release: published` events
       # (GitHub's recursion guard). Dispatch the npm publish explicitly —
       # workflow_dispatch IS exempt from the guard and fires normally.
+      #
+      # release-please outputs are path-prefixed in manifest mode: our package
+      # lives at `packages/infinite-canvas`, so the keys are
+      # `packages/infinite-canvas--release_created` / `--tag_name`.
       - name: Trigger npm publish
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ steps.release.outputs['packages/infinite-canvas--release_created'] }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run release-npm.yml --repo "${{ github.repository }}" --ref "${{ steps.release.outputs.tag_name }}"
+          gh workflow run release-npm.yml --repo "${{ github.repository }}" --ref "${{ steps.release.outputs['packages/infinite-canvas--tag_name'] }}"
