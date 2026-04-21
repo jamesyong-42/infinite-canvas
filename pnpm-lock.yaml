@@ -79,8 +79,8 @@ importers:
   packages/infinite-canvas:
     dependencies:
       '@jamesyong42/reactive-ecs':
-        specifier: ^0.1.1
-        version: 0.1.1
+        specifier: ^0.2.0
+        version: 0.2.0
     devDependencies:
       '@react-three/fiber':
         specifier: ^9.5.0
@@ -343,8 +343,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@jamesyong42/reactive-ecs@0.1.1':
-    resolution: {integrity: sha512-R/MlvF7RxBL0D2CK7o7oM9lxAaB7oxqknlkkyBGvpkPcfcN3ZQu6ukBIp/mG/swHmxd/Om65+fTpCJxpP7SCNA==}
+  '@jamesyong42/reactive-ecs@0.2.0':
+    resolution: {integrity: sha512-vE0U4Jk65y2AmVaTdqFBSrqBOxQnunBRdP+MPjPBSbeurCkJ0NiBVEtifQ/J6whIEYOJSEYtjlUwmCTw32Yrcw==}
     engines: {node: '>=20'}
 
   '@jridgewell/gen-mapping@0.3.13':
@@ -1617,7 +1617,7 @@ snapshots:
   '@esbuild/win32-x64@0.27.7':
     optional: true
 
-  '@jamesyong42/reactive-ecs@0.1.1': {}
+  '@jamesyong42/reactive-ecs@0.2.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
