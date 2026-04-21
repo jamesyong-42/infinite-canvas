@@ -216,7 +216,7 @@ Spawning is uniform: `engine.spawn(id, options)`. If `id` matches an archetype, 
 | `parent` | Parent entity id for nesting. |
 | `rotation` | Initial rotation in radians. |
 
-The `interactive` field on `Archetype` accepts a boolean or an object. Pass `{ selectable, draggable, resizable }` (any subset) when you want finer control — for example, a card that moves but never resizes: `{ selectable: true, draggable: true, resizable: false }`. Omitted keys default to `false` in the object form.
+The `interactive` field on `Archetype` accepts a boolean or an object. Pass `{ selectable, draggable, resizable, selectionFrame }` (any subset) when you want finer control. Cards that move, select, but never resize and render their own chrome: `{ selectable: true, draggable: true, resizable: false, selectionFrame: false }`. Omitted keys default to `false`, except `selectionFrame` which follows `selectable` (an entity you can select gets a frame unless you opt out).
 
 ## Card Widgets
 
@@ -260,6 +260,8 @@ Preset sizes (default, matching iOS widget conventions on a 19 px grid):
 Override per-engine via `createLayoutEngine({ cardPresets: { presets: { small: { width: 200, height: 200 } }, gap: 24 } })`. Omitted presets keep their defaults.
 
 Under the hood: the returned widget wraps your `render` in `<CardFrame>` (exported for manual composition), the archetype is non-resizable, and it bundles a `Card` component. A built-in `cardSystem` stamps `Transform2D.width/height` from `Card.preset` each tick — to change a card's size at runtime, update the preset: `engine.set(id, Card, { preset: 'large' })`. Reading the `Dragging` tag from the frame drives the lift affordance; you can read it elsewhere too via `useTag(entityId, Dragging)`.
+
+Cards also opt out of the engine-drawn selection + hover outline (`selectionFrame: false` in their archetype) — the iOS rounded chrome in `<CardFrame>` is the card's visual contract, so the standard blue frame would fight it. If you need a selected/hover affordance inside a card, read `useIsSelected(entityId)` / `useTag(entityId, /* Hovered tag */)` from within `render` and style accordingly.
 
 ## WebGL Widgets (R3F)
 
@@ -575,9 +577,10 @@ z:3  UI chrome
 
 ### ECS Tags
 
-`Selectable` `Draggable` `Resizable` `Locked` `Selected` `Dragging` `Active` `Visible`
+`Selectable` `Draggable` `Resizable` `SelectionFrame` `Locked` `Selected` `Dragging` `Active` `Visible`
 
-`Dragging` is a transient state tag (parallels `Selected`): added when the drag dead zone is crossed, removed on pointer up or cancel. Read via `useTag(entityId, Dragging)` to drive drag-time affordances.
+- `Dragging` — transient state tag (parallels `Selected`): added when the drag dead zone is crossed, removed on pointer up or cancel. Read via `useTag(entityId, Dragging)` to drive drag-time affordances.
+- `SelectionFrame` — opts an entity into the engine-drawn selection + hover outline. Granted automatically to Selectable entities via the archetype's `interactive` caps; widgets that render their own chrome (e.g. cards) opt out.
 
 ### Systems (execution order)
 

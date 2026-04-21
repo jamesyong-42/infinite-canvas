@@ -172,6 +172,13 @@ export const Selected = defineTag('Selected');
  * Renderers read this to apply transient drag affordances (e.g. scale/shadow lift).
  */
 export const Dragging = defineTag('Dragging');
+/**
+ * Entities with this tag get the engine-drawn selection + hover outline frame.
+ * Granted automatically to Selectable entities unless explicitly disabled via
+ * `Archetype.interactive.selectionFrame: false`. Widgets that render their own
+ * selected/hover chrome (e.g. iOS-style cards) opt out.
+ */
+export const SelectionFrame = defineTag('SelectionFrame');
 /** Indicates the entity is currently being interacted with (drag, resize). */
 export const Active = defineTag('Active');
 /** Indicates the entity is within the visible viewport. Set by the cull system. */

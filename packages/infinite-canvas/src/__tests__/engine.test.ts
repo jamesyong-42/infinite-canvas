@@ -17,6 +17,7 @@ import {
 	Resizable,
 	Selectable,
 	Selected,
+	SelectionFrame,
 	Transform2D,
 	Visible,
 	Widget,
@@ -968,22 +969,24 @@ describe('CanvasEngine', () => {
 	});
 
 	describe('archetype.interactive shape', () => {
-		it('defaults (undefined) grant Selectable + Draggable + Resizable', () => {
+		it('defaults (undefined) grant Selectable + Draggable + Resizable + SelectionFrame', () => {
 			const engine = createTestEngine();
 			engine.registerArchetype({ id: 'arch-default' });
 			const e = engine.spawn('arch-default');
 			expect(engine.has(e, Selectable)).toBe(true);
 			expect(engine.has(e, Draggable)).toBe(true);
 			expect(engine.has(e, Resizable)).toBe(true);
+			expect(engine.has(e, SelectionFrame)).toBe(true);
 		});
 
-		it('`true` grants all three (same as undefined)', () => {
+		it('`true` grants all four (same as undefined)', () => {
 			const engine = createTestEngine();
 			engine.registerArchetype({ id: 'arch-true', interactive: true });
 			const e = engine.spawn('arch-true');
 			expect(engine.has(e, Selectable)).toBe(true);
 			expect(engine.has(e, Draggable)).toBe(true);
 			expect(engine.has(e, Resizable)).toBe(true);
+			expect(engine.has(e, SelectionFrame)).toBe(true);
 		});
 
 		it('`false` grants none', () => {
@@ -993,18 +996,47 @@ describe('CanvasEngine', () => {
 			expect(engine.has(e, Selectable)).toBe(false);
 			expect(engine.has(e, Draggable)).toBe(false);
 			expect(engine.has(e, Resizable)).toBe(false);
+			expect(engine.has(e, SelectionFrame)).toBe(false);
 		});
 
 		it('object form picks specific capabilities (iOS card shape)', () => {
 			const engine = createTestEngine();
 			engine.registerArchetype({
 				id: 'arch-card',
-				interactive: { selectable: true, draggable: true, resizable: false },
+				interactive: {
+					selectable: true,
+					draggable: true,
+					resizable: false,
+					selectionFrame: false,
+				},
 			});
 			const e = engine.spawn('arch-card');
 			expect(engine.has(e, Selectable)).toBe(true);
 			expect(engine.has(e, Draggable)).toBe(true);
 			expect(engine.has(e, Resizable)).toBe(false);
+			expect(engine.has(e, SelectionFrame)).toBe(false);
+		});
+
+		it('object form: selectionFrame defaults to selectable when omitted', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({
+				id: 'arch-follows',
+				interactive: { selectable: true, draggable: true },
+			});
+			const e = engine.spawn('arch-follows');
+			// selectable: true → selectionFrame follows → true
+			expect(engine.has(e, SelectionFrame)).toBe(true);
+		});
+
+		it('object form: selectionFrame is false when entity is not selectable', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({
+				id: 'arch-noselect',
+				interactive: { draggable: true },
+			});
+			const e = engine.spawn('arch-noselect');
+			expect(engine.has(e, Selectable)).toBe(false);
+			expect(engine.has(e, SelectionFrame)).toBe(false);
 		});
 
 		it('object form omitted keys default to false', () => {
@@ -1017,6 +1049,7 @@ describe('CanvasEngine', () => {
 			expect(engine.has(e, Selectable)).toBe(false);
 			expect(engine.has(e, Draggable)).toBe(false);
 			expect(engine.has(e, Resizable)).toBe(true);
+			expect(engine.has(e, SelectionFrame)).toBe(false);
 		});
 	});
 

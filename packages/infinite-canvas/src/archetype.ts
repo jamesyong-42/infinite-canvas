@@ -25,16 +25,26 @@ export interface Archetype {
 	/**
 	 * Which interaction capabilities to grant on spawn.
 	 *
-	 * - `true` (default) / `undefined`: add Selectable, Draggable, and Resizable.
+	 * - `true` (default) / `undefined`: add Selectable, Draggable, Resizable,
+	 *   and the SelectionFrame (engine-drawn outline).
 	 * - `false`: add none (backdrops, decorations, locked entities).
 	 * - object form: pick and choose — e.g. iOS-style cards use
-	 *   `{ selectable: true, draggable: true, resizable: false }` so they
-	 *   can be moved and selected but never resized.
+	 *   `{ selectable: true, draggable: true, resizable: false, selectionFrame: false }`
+	 *   so they can be moved and selected but never resized, and they render
+	 *   their own chrome instead of the engine-drawn frame.
 	 *
-	 * Omitted keys default to `false` in the object form; pass only the
-	 * capabilities you want.
+	 * Omitted interaction keys default to `false`. `selectionFrame` is an
+	 * exception: if omitted, it follows `selectable` (an entity you can
+	 * select gets a frame unless you explicitly opt out).
 	 */
-	interactive?: boolean | { selectable?: boolean; draggable?: boolean; resizable?: boolean };
+	interactive?:
+		| boolean
+		| {
+				selectable?: boolean;
+				draggable?: boolean;
+				resizable?: boolean;
+				selectionFrame?: boolean;
+		  };
 	/** Overrides the widget's defaultSize. */
 	defaultSize?: { width: number; height: number };
 }

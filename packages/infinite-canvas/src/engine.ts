@@ -33,6 +33,7 @@ import {
 	Resizable,
 	Selectable,
 	Selected,
+	SelectionFrame,
 	Transform2D,
 	Visible,
 	Widget,
@@ -690,25 +691,41 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 				inits.push([Parent, { id: opts.parent }]);
 			}
 
-			// Interactive defaults (Selectable/Draggable/Resizable) trigger the
-			// reactive observer that auto-attaches InteractionRole + CursorHint.
-			// Accepts boolean (all-or-none) or an object picking specific caps,
-			// e.g. iOS-style cards pass `{ draggable: true, selectable: true }`
-			// so they move but never resize.
+			// Interactive defaults (Selectable/Draggable/Resizable/SelectionFrame)
+			// trigger the reactive observer that auto-attaches InteractionRole +
+			// CursorHint for the interaction tags. Accepts boolean (all-or-none)
+			// or an object picking specific caps. `selectionFrame` controls the
+			// engine-drawn outline and defaults to `selectable` so Selectable
+			// entities are framed unless they explicitly opt out (iOS cards).
 			const interactiveConfig = archetype?.interactive;
 			const caps =
 				interactiveConfig === false
-					? { selectable: false, draggable: false, resizable: false }
+					? {
+							selectable: false,
+							draggable: false,
+							resizable: false,
+							selectionFrame: false,
+						}
 					: interactiveConfig === undefined || interactiveConfig === true
-						? { selectable: true, draggable: true, resizable: true }
-						: {
-								selectable: interactiveConfig.selectable ?? false,
-								draggable: interactiveConfig.draggable ?? false,
-								resizable: interactiveConfig.resizable ?? false,
-							};
+						? {
+								selectable: true,
+								draggable: true,
+								resizable: true,
+								selectionFrame: true,
+							}
+						: (() => {
+								const selectable = interactiveConfig.selectable ?? false;
+								return {
+									selectable,
+									draggable: interactiveConfig.draggable ?? false,
+									resizable: interactiveConfig.resizable ?? false,
+									selectionFrame: interactiveConfig.selectionFrame ?? selectable,
+								};
+							})();
 			if (caps.selectable) inits.push([Selectable]);
 			if (caps.draggable) inits.push([Draggable]);
 			if (caps.resizable) inits.push([Resizable]);
+			if (caps.selectionFrame) inits.push([SelectionFrame]);
 
 			if (archetype?.tags) {
 				for (const tag of archetype.tags) inits.push([tag]);

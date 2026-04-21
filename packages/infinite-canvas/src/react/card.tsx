@@ -115,7 +115,14 @@ export function createCardWidget<T>(opts: CreateCardWidgetOptions<T>): {
 		id: opts.type,
 		widget: opts.type,
 		components: [[Card, { preset: opts.size }]],
-		interactive: { selectable: true, draggable: true, resizable: false },
+		interactive: {
+			selectable: true,
+			draggable: true,
+			resizable: false,
+			// Cards render their own chrome via CardFrame — opt out of the
+			// engine-drawn selection/hover outline.
+			selectionFrame: false,
+		},
 		defaultSize,
 	};
 

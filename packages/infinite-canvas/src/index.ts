@@ -40,6 +40,7 @@ export {
 	Resizable,
 	Selectable,
 	Selected,
+	SelectionFrame,
 	Transform2D,
 	Visible,
 	Widget,

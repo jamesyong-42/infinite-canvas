@@ -9,7 +9,7 @@ import React, {
 	useState,
 } from 'react';
 import { Vector2 } from 'three';
-import { Widget, WorldBounds } from '../components.js';
+import { SelectionFrame, Widget, WorldBounds } from '../components.js';
 import type { LayoutEngine } from '../engine.js';
 import { DEAD_ZONE_TOUCH_PX } from '../interaction-constants.js';
 import { CursorResource, NavigationStackResource } from '../resources.js';
@@ -595,6 +595,9 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 						const selected = engine.getSelectedEntities();
 						const selBounds: SelectionBounds[] = [];
 						for (const id of selected) {
+							// Widgets that render their own chrome (e.g. cards) opt out
+							// of the engine-drawn frame by lacking the SelectionFrame tag.
+							if (!engine.has(id, SelectionFrame)) continue;
 							const wb = engine.get(id, WorldBounds);
 							if (wb)
 								selBounds.push({
@@ -606,7 +609,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 						}
 						const hovId = engine.getHoveredEntity();
 						let hovBounds: SelectionBounds | null = null;
-						if (hovId !== null) {
+						if (hovId !== null && engine.has(hovId, SelectionFrame)) {
 							const wb = engine.get(hovId, WorldBounds);
 							if (wb)
 								hovBounds = {

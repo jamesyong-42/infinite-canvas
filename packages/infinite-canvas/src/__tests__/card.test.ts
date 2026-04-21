@@ -5,6 +5,7 @@ import {
 	Draggable,
 	Resizable,
 	Selectable,
+	SelectionFrame,
 	Transform2D,
 } from '../index.js';
 import { createCardWidget } from '../react/card.js';
@@ -61,7 +62,7 @@ describe('createCardWidget', () => {
 		expect(small.archetype.defaultSize).toEqual({ width: 155, height: 155 });
 	});
 
-	it('archetype is selectable + draggable but not resizable', () => {
+	it('archetype is selectable + draggable but not resizable, and skips the selection frame', () => {
 		const card = createCardWidget({
 			type: 'c-cap',
 			size: 'medium',
@@ -73,6 +74,7 @@ describe('createCardWidget', () => {
 			selectable: true,
 			draggable: true,
 			resizable: false,
+			selectionFrame: false,
 		});
 	});
 
@@ -90,7 +92,7 @@ describe('createCardWidget', () => {
 		expect(cardInit?.[1]).toEqual({ preset: 'xl' });
 	});
 
-	it('spawn end-to-end: preset enforced, not resizable, is draggable', () => {
+	it('spawn end-to-end: preset enforced, not resizable, is draggable, no selection frame', () => {
 		const card = createCardWidget({
 			type: 'c-e2e',
 			size: 'medium',
@@ -110,6 +112,7 @@ describe('createCardWidget', () => {
 		expect(engine.has(id, Draggable)).toBe(true);
 		expect(engine.has(id, Selectable)).toBe(true);
 		expect(engine.has(id, Resizable)).toBe(false);
+		expect(engine.has(id, SelectionFrame)).toBe(false);
 
 		const t = engine.get(id, Transform2D);
 		expect(t?.width).toBe(329);
