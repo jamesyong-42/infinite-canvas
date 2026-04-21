@@ -5,6 +5,7 @@ import {
 	DEFAULT_GRID_CONFIG,
 	InfiniteCanvas,
 } from '@jamesyong42/infinite-canvas';
+import { EcsDevtools } from '@jamesyong42/infinite-canvas/devtools';
 import { useEffect, useMemo, useState } from 'react';
 import { InspectorPanel } from './panels/InspectorPanel.js';
 import { NavigationBreadcrumbs } from './panels/NavigationBreadcrumbs.js';
@@ -117,6 +118,7 @@ export function App() {
 	const engine = useMemo(() => createDemoScene(), []);
 	const [showSettings, setShowSettings] = useState(false);
 	const [showInspector, setShowInspector] = useState(false);
+	const [showEcs, setShowEcs] = useState(false);
 	const [dark, setDark] = useState(() => {
 		if (typeof window !== 'undefined') {
 			const saved = localStorage.getItem('ic-dark-mode');
@@ -259,6 +261,35 @@ export function App() {
 
 			<button
 				type="button"
+				onClick={() => setShowEcs((s) => !s)}
+				className={`absolute bottom-4 right-16 z-50 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-colors ${
+					showEcs
+						? 'bg-neutral-800 text-white dark:bg-white dark:text-neutral-800'
+						: 'bg-white text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-200'
+				}`}
+				title="ECS Editor"
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				>
+					<title>ECS Editor</title>
+					<rect x="3" y="3" width="7" height="7" rx="1" />
+					<rect x="14" y="3" width="7" height="7" rx="1" />
+					<rect x="3" y="14" width="7" height="7" rx="1" />
+					<rect x="14" y="14" width="7" height="7" rx="1" />
+				</svg>
+			</button>
+
+			<button
+				type="button"
 				onClick={() => setShowInspector((s) => !s)}
 				className={`absolute bottom-4 right-4 z-50 flex h-10 w-10 items-center justify-center rounded-full shadow-lg transition-colors ${
 					showInspector
@@ -294,6 +325,7 @@ export function App() {
 				/>
 			)}
 			{showInspector && <InspectorPanel engine={engine} onClose={() => setShowInspector(false)} />}
+			{showEcs && <EcsDevtools engine={engine} onClose={() => setShowEcs(false)} />}
 		</div>
 	);
 }

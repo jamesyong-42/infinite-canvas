@@ -53,6 +53,11 @@
 			"types": "./dist/advanced.d.ts",
 			"import": "./dist/advanced.js",
 			"require": "./dist/advanced.cjs"
+		},
+		"./devtools": {
+			"types": "./dist/devtools.d.ts",
+			"import": "./dist/devtools.js",
+			"require": "./dist/devtools.cjs"
 		}
 	},
 	"main": "./dist/index.cjs",
@@ -66,7 +71,7 @@
 		"postpack": "rm -f ./README.md ./LICENSE"
 	},
 	"dependencies": {
-		"@jamesyong42/reactive-ecs": "^0.1.1"
+		"@jamesyong42/reactive-ecs": "^0.2.0"
 	},
 	"peerDependencies": {
 		"@react-three/fiber": "^9.0.0",

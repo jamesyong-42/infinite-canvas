@@ -77,9 +77,14 @@ export {
 } from './react/context.js';
 // ECS subscription hooks
 export {
+	useAllEntities,
 	useCamera,
 	useComponent,
+	useEntityComponents,
+	useEntityTags,
 	useQuery,
+	useRegisteredComponents,
+	useRegisteredTags,
 	useResource,
 	useTag,
 	useTaggedEntities,

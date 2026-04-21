@@ -18,6 +18,7 @@ Build Figma-style infinite canvases in React -- drag, resize, snap, zoom, nested
 - **Hierarchical navigation** -- Enter and exit nested containers with camera state preservation
 - **ECS architecture** -- Extensible via custom components, tags, and systems with topologically-sorted scheduling
 - **Performance** -- SDF shaders for grid and selection chrome, RBush spatial indexing, viewport culling, per-system profiling
+- **Live ECS editor** -- Drop-in `<EcsDevtools>` panel for spawning, inspecting, and editing components and tags at runtime
 - **Dark mode** -- Full dark mode support across canvas, widgets, and UI chrome
 
 ## Quick Start
@@ -68,12 +69,13 @@ Widgets declare a **schema** (any [Standard Schema v1](https://standardschema.de
 
 ## Package
 
-Everything ships in a single package: **`@jamesyong42/infinite-canvas`**. It exposes two entry points:
+Everything ships in a single package: **`@jamesyong42/infinite-canvas`**. It exposes three entry points:
 
 | Import | Purpose |
 |--------|---------|
 | `@jamesyong42/infinite-canvas` | Main API -- `<InfiniteCanvas>`, `createLayoutEngine`, hooks, built-in components |
 | `@jamesyong42/infinite-canvas/advanced` | WebGL renderers, serialization, profiler, spatial index |
+| `@jamesyong42/infinite-canvas/devtools` | `<EcsDevtools>` live ECS editor (see [Devtools](#devtools)) |
 
 The underlying ECS primitives (`defineComponent`, `defineSystem`, `World`, `SystemScheduler`) live in a separate package: [**`@jamesyong42/reactive-ecs`**](https://github.com/jamesyong-42/reactive-ecs).
 
@@ -103,6 +105,11 @@ The underlying ECS primitives (`defineComponent`, `defineSystem`, `World`, `Syst
 | `useQuery(...types)` | Entity IDs matching component/tag types |
 | `useTaggedEntities(type)` | All entity IDs with a specific tag |
 | `useResource<T>(type)` | Read an ECS resource reactively |
+| `useAllEntities()` | Every live entity ID (reactive on create/destroy) |
+| `useEntityComponents(entityId)` | `ComponentType[]` currently on an entity |
+| `useEntityTags(entityId)` | `TagType[]` currently on an entity |
+| `useRegisteredComponents()` | Every `ComponentType` the world has observed |
+| `useRegisteredTags()` | Every `TagType` the world has observed |
 | `useLayoutEngine()` | Access the `LayoutEngine` instance from context |
 
 ### InfiniteCanvas Props
@@ -333,6 +340,42 @@ deserializeWorld(engine.world, saved, componentTypes, tagTypes);
 engine.markDirty();
 ```
 
+## Devtools
+
+A live ECS editor ships in `@jamesyong42/infinite-canvas/devtools`. Drop it in during development to spawn widgets, inspect entities, edit components, and toggle tags at runtime — FLECS Explorer-style, but driven by the live React tree.
+
+```tsx
+import { InfiniteCanvas } from '@jamesyong42/infinite-canvas';
+import { EcsDevtools } from '@jamesyong42/infinite-canvas/devtools';
+
+function App() {
+  const engine = useMemo(() => createLayoutEngine({ widgets: [MyWidget] }), []);
+  const [showDevtools, setShowDevtools] = useState(false);
+
+  return (
+    <>
+      <InfiniteCanvas engine={engine} />
+      {showDevtools && <EcsDevtools engine={engine} onClose={() => setShowDevtools(false)} />}
+    </>
+  );
+}
+```
+
+What the panel does:
+
+- **Spawn** any registered widget at the current viewport centre.
+- **List** all widget entities (or all entities with `show all`).
+- **Inspect** the canvas-selected entity: its components and tags.
+- **Edit** component fields inline — primitive types get typed inputs, everything else falls back to a JSON input. `WidgetData.data` is edited field-by-field.
+- **Add / remove** components and toggle tags without leaving the canvas.
+- **Destroy** entities.
+
+Pass `engine` as a prop when the devtools render outside the `<InfiniteCanvas>` subtree (the usual case, since the panel is typically absolute-positioned above the canvas). If rendered inside, the prop is optional — it reads from context.
+
+Styling is self-contained (a single scoped `<style>` injected once, classnames prefixed `ic-ecs-`). Dark mode is auto via `prefers-color-scheme` or an ancestor `.dark` class. No stylesheet import required.
+
+The devtools consume the same introspection primitives (`useAllEntities`, `useEntityComponents`, `useRegisteredComponents`, etc.) that are exported from the main entry point, so you can build your own inspector UI on top of them if you need something bespoke.
+
 ## Programmatic Control
 
 ### Camera
@@ -352,6 +395,27 @@ engine.undo();
 engine.redo();
 engine.markDirty();
 ```
+
+### Spawning & ECS mutation
+
+Runtime spawning and component edits go through the engine so it can cascade handles and mark dirty in one step:
+
+```tsx
+// Spawn at the viewport centre (sized from the widget/archetype default)
+const id = engine.spawnAtCameraCenter('my-widget');
+
+// Component mutation
+engine.addComponent(id, Container, { enterable: true });
+engine.removeComponent(id, Container);
+engine.set(id, Transform2D, { x: 200 });          // partial merge
+engine.addTag(id, Selected);
+engine.removeTag(id, Draggable);
+
+// Widget-aware introspection
+engine.getSchemaFor(id);   // Standard Schema for the widget's data, if declared
+```
+
+All of these mark the engine dirty internally — no separate `markDirty` call needed.
 
 ### Imperative Handle
 
