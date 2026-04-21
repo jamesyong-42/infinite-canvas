@@ -29,6 +29,7 @@ export {
 	Container,
 	CursorHint,
 	Draggable,
+	Dragging,
 	HandleSet,
 	Hitbox,
 	InteractionRole,

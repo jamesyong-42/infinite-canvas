@@ -24,6 +24,7 @@ import {
 	Container,
 	CursorHint,
 	Draggable,
+	Dragging,
 	HandleSet,
 	Hitbox,
 	InteractionRole,
@@ -999,6 +1000,12 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 						if (t) startPositions.set(e, { x: t.x, y: t.y });
 					}
 
+					// Mark each participating entity as Dragging (transient state tag).
+					// Renderers read this via useTag to apply lift/shadow affordances.
+					for (const e of startPositions.keys()) {
+						world.addTag(e, Dragging);
+					}
+
 					// Start undo group for the entire drag operation
 					commandBuffer.beginGroup();
 
@@ -1142,6 +1149,10 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			const prevState = inputState;
 
 			if (prevState.mode === 'dragging') {
+				// Clear Dragging state tag from every participating entity.
+				for (const e of prevState.startPositions.keys()) {
+					if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
+				}
 				// Fix #5: Restore original z-indices on drag end
 				for (const [entity, originalZ] of prevState.originalZIndices) {
 					world.setComponent(entity, ZIndex, { value: originalZ });
@@ -1202,6 +1213,12 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			// End any open undo group to prevent leaked groups
 			if (inputState.mode === 'dragging' || inputState.mode === 'resizing') {
 				commandBuffer.endGroup();
+			}
+			// Clear Dragging tag from every participating entity.
+			if (inputState.mode === 'dragging') {
+				for (const e of inputState.startPositions.keys()) {
+					if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
+				}
 			}
 			// Clear snap state
 			currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };

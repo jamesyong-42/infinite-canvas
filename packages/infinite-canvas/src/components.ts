@@ -152,6 +152,12 @@ export const Resizable = defineTag('Resizable');
 export const Locked = defineTag('Locked');
 /** Indicates the entity is currently selected. */
 export const Selected = defineTag('Selected');
+/**
+ * Indicates the entity is currently being dragged by the user.
+ * Added after the drag dead-zone is crossed; removed on pointer up/cancel.
+ * Renderers read this to apply transient drag affordances (e.g. scale/shadow lift).
+ */
+export const Dragging = defineTag('Dragging');
 /** Indicates the entity is currently being interacted with (drag, resize). */
 export const Active = defineTag('Active');
 /** Indicates the entity is within the visible viewport. Set by the cull system. */

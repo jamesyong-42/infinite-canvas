@@ -7,6 +7,7 @@ import {
 	CursorResource,
 	createLayoutEngine,
 	Draggable,
+	Dragging,
 	HandleSet,
 	Hitbox,
 	InteractionRole,
@@ -215,6 +216,78 @@ describe('CanvasEngine', () => {
 			if (!t) throw new Error('Transform2D component missing');
 			expect(t.x).toBeGreaterThan(100); // moved
 			expect(t.y).toBeGreaterThan(100);
+		});
+
+		describe('Dragging state tag', () => {
+			const mods = { shift: false, ctrl: false, alt: false, meta: false };
+
+			it('is absent before drag start', () => {
+				const engine = createTestEngine();
+				const e = createWidget(engine, 100, 100, 200, 150);
+				engine.tick();
+				expect(engine.has(e, Dragging)).toBe(false);
+
+				// Pointer down + dead-zone-only move should NOT set the tag.
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerMove(152, 151, mods);
+				expect(engine.has(e, Dragging)).toBe(false);
+			});
+
+			it('is added once the drag dead zone is crossed', () => {
+				const engine = createTestEngine();
+				const e = createWidget(engine, 100, 100, 200, 150);
+				engine.tick();
+
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerMove(160, 160, mods); // past dead zone
+				expect(engine.has(e, Dragging)).toBe(true);
+			});
+
+			it('is removed on pointer up', () => {
+				const engine = createTestEngine();
+				const e = createWidget(engine, 100, 100, 200, 150);
+				engine.tick();
+
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerMove(160, 160, mods);
+				expect(engine.has(e, Dragging)).toBe(true);
+
+				engine.handlePointerUp();
+				expect(engine.has(e, Dragging)).toBe(false);
+			});
+
+			it('is removed on pointer cancel', () => {
+				const engine = createTestEngine();
+				const e = createWidget(engine, 100, 100, 200, 150);
+				engine.tick();
+
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerMove(160, 160, mods);
+				expect(engine.has(e, Dragging)).toBe(true);
+
+				engine.handlePointerCancel();
+				expect(engine.has(e, Dragging)).toBe(false);
+			});
+
+			it('covers every selected entity in a multi-drag', () => {
+				const engine = createTestEngine();
+				const a = createWidget(engine, 100, 100, 200, 150);
+				const b = createWidget(engine, 400, 100, 200, 150);
+				engine.tick();
+
+				// Select both (shift-click second).
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerUp();
+				engine.handlePointerDown(450, 150, 0, { ...mods, shift: true });
+				engine.handlePointerMove(460, 160, { ...mods, shift: true }); // drag starts
+
+				expect(engine.has(a, Dragging)).toBe(true);
+				expect(engine.has(b, Dragging)).toBe(true);
+
+				engine.handlePointerUp();
+				expect(engine.has(a, Dragging)).toBe(false);
+				expect(engine.has(b, Dragging)).toBe(false);
+			});
 		});
 	});
 
