@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v1.0.0...infinite-canvas-v1.1.0) (2026-04-21)
+
+
+### Features
+
+* live ECS editor + engine mutation sugar ([#4](https://github.com/jamesyong-42/infinite-canvas/issues/4)) ([d71bc8d](https://github.com/jamesyong-42/infinite-canvas/commit/d71bc8d81c73d95eab10721c6ae5f655ac647141))
+
 ## [1.0.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v0.1.0...infinite-canvas-v1.0.0) (2026-04-13)
 
 
