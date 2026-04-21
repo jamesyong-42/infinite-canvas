@@ -70,6 +70,9 @@ export {
 } from './math.js';
 // Profiler types (commonly needed)
 export type { FrameSample, ProfilerStats } from './profiler.js';
+// Card widget helpers
+export type { CardFrameProps, CreateCardWidgetOptions } from './react/card.js';
+export { CardFrame, createCardWidget } from './react/card.js';
 export type { ResolvedWidget } from './react/context.js';
 // Context hooks
 export {
