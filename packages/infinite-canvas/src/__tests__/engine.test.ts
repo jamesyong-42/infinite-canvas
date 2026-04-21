@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	Active,
+	Card,
+	CardPresetsResource,
 	Children,
 	Container,
 	CursorHint,
@@ -1015,6 +1017,94 @@ describe('CanvasEngine', () => {
 			expect(engine.has(e, Selectable)).toBe(false);
 			expect(engine.has(e, Draggable)).toBe(false);
 			expect(engine.has(e, Resizable)).toBe(true);
+		});
+	});
+
+	describe('card system', () => {
+		it('stamps Transform2D size from Card preset', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 50, y: 50, width: 999, height: 999, rotation: 0 }],
+				[Card, { preset: 'small' }],
+			]);
+			engine.tick();
+
+			const t = engine.get(e, Transform2D);
+			// iOS small preset defaults to 155x155.
+			expect(t?.width).toBe(155);
+			expect(t?.height).toBe(155);
+			// Position is untouched.
+			expect(t?.x).toBe(50);
+			expect(t?.y).toBe(50);
+		});
+
+		it('re-stamps when preset changes', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 0, height: 0, rotation: 0 }],
+				[Card, { preset: 'small' }],
+			]);
+			engine.tick();
+			expect(engine.get(e, Transform2D)?.width).toBe(155);
+
+			engine.set(e, Card, { preset: 'large' });
+			engine.tick();
+
+			const t = engine.get(e, Transform2D);
+			expect(t?.width).toBe(329);
+			expect(t?.height).toBe(345);
+		});
+
+		it('overwrites manual width/height changes (preset is authoritative)', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 0, height: 0, rotation: 0 }],
+				[Card, { preset: 'medium' }],
+			]);
+			engine.tick();
+			expect(engine.get(e, Transform2D)?.width).toBe(329);
+
+			// Try to force a different size — system must reconcile next tick.
+			engine.set(e, Transform2D, { width: 50, height: 50 });
+			engine.tick();
+
+			const t = engine.get(e, Transform2D);
+			expect(t?.width).toBe(329);
+			expect(t?.height).toBe(155);
+		});
+
+		it('leaves non-Card entities untouched', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 42, height: 42, rotation: 0 }],
+			]);
+			engine.tick();
+			const t = engine.get(e, Transform2D);
+			expect(t?.width).toBe(42);
+			expect(t?.height).toBe(42);
+		});
+
+		it('honours cardPresets config override', () => {
+			const engine = createLayoutEngine({
+				cardPresets: {
+					presets: { small: { width: 200, height: 200 } },
+				},
+			});
+			engine.setViewport(1000, 800);
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 0, height: 0, rotation: 0 }],
+				[Card, { preset: 'small' }],
+			]);
+			engine.tick();
+
+			const t = engine.get(e, Transform2D);
+			expect(t?.width).toBe(200);
+			expect(t?.height).toBe(200);
+			// Unspecified presets keep defaults.
+			expect(engine.world.getResource(CardPresetsResource).presets.medium).toEqual({
+				width: 329,
+				height: 155,
+			});
 		});
 	});
 });

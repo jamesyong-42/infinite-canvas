@@ -51,6 +51,20 @@ export const WidgetBreakpoint = defineComponent('WidgetBreakpoint', {
 	screenHeight: 0,
 });
 
+// === Card ===
+
+/** iOS-style card size presets. Actual dimensions live in CardPresetsResource. */
+export type CardPreset = 'small' | 'medium' | 'large' | 'xl';
+
+/**
+ * Marks an entity as an iOS-style card with a fixed preset size.
+ * The `cardSystem` reconciles `Transform2D.width/height` from the preset
+ * each tick, so cards cannot be resized freely — change `preset` instead.
+ */
+export const Card = defineComponent('Card', {
+	preset: 'small' as CardPreset,
+});
+
 // === Container ===
 
 /** Marks an entity as an enterable container (double-click/double-tap to enter). */

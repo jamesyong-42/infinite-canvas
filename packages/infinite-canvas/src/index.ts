@@ -16,6 +16,7 @@ export type { Command } from './commands.js';
 // Commands
 export { CommandBuffer, MoveCommand, ResizeCommand, SetComponentCommand } from './commands.js';
 export type {
+	CardPreset,
 	CSSCursor,
 	CursorHintData,
 	HandleSetData,
@@ -25,6 +26,7 @@ export type {
 // Built-in components & tags
 export {
 	Active,
+	Card,
 	Children,
 	Container,
 	CursorHint,
@@ -124,6 +126,7 @@ export type { Breakpoint, CursorResourceData, NavigationFrame } from './resource
 export {
 	BreakpointConfigResource,
 	CameraResource,
+	CardPresetsResource,
 	CursorResource,
 	NavigationStackResource,
 	ViewportResource,

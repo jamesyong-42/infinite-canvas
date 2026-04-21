@@ -13,6 +13,7 @@ import { createArchetypeRegistry } from './archetype.js';
 import type { Command } from './commands.js';
 import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
 import type {
+	CardPreset,
 	CSSCursor,
 	InteractionRoleData,
 	InteractionRoleType,
@@ -49,6 +50,7 @@ import type { Breakpoint } from './resources.js';
 import {
 	BreakpointConfigResource,
 	CameraResource,
+	CardPresetsResource,
 	CursorResource,
 	NavigationStackResource,
 	ViewportResource,
@@ -60,6 +62,7 @@ import { computeSnapGuides } from './snap.js';
 import { SpatialIndex } from './spatial.js';
 import {
 	breakpointSystem,
+	cardSystem,
 	cullSystem,
 	handleSyncSystem,
 	hitboxWorldBoundsSystem,
@@ -177,6 +180,14 @@ export interface LayoutEngineConfig {
 	widgets?: WidgetDef[];
 	/** Archetype definitions available to `spawn()`. */
 	archetypes?: Archetype[];
+	/**
+	 * Override the default iOS-style card preset sizes (small/medium/large/xl).
+	 * Partial — unspecified presets keep their built-in defaults.
+	 */
+	cardPresets?: {
+		presets?: Partial<Record<CardPreset, { width: number; height: number }>>;
+		gap?: number;
+	};
 }
 
 // === Engine ===
@@ -391,6 +402,13 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	if (config?.breakpoints) {
 		world.setResource(BreakpointConfigResource, config.breakpoints);
 	}
+	if (config?.cardPresets) {
+		const current = world.getResource(CardPresetsResource);
+		world.setResource(CardPresetsResource, {
+			presets: { ...current.presets, ...(config.cardPresets.presets ?? {}) },
+			gap: config.cardPresets.gap ?? current.gap,
+		});
+	}
 
 	// Apply snap config
 	let snapEnabledInit = true;
@@ -398,7 +416,9 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	if (config?.snap?.enabled !== undefined) snapEnabledInit = config.snap.enabled;
 	if (config?.snap?.threshold !== undefined) snapThresholdInit = config.snap.threshold;
 
-	// Register built-in systems
+	// Register built-in systems. cardSystem runs first via its `before`
+	// declaration so Transform2D reflects card presets before propagation.
+	scheduler.register(cardSystem);
 	scheduler.register(transformPropagateSystem);
 	scheduler.register(handleSyncSystem);
 	scheduler.register(hitboxWorldBoundsSystem);
