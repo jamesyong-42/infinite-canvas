@@ -23,10 +23,18 @@ export interface Archetype {
 	/** Extra tags added on spawn, beyond the interactive defaults. */
 	tags?: TagType[];
 	/**
-	 * Whether the entity is user-interactive (Selectable + Draggable + Resizable).
-	 * Default: true. Set `false` for backdrops, decorations, or locked entities.
+	 * Which interaction capabilities to grant on spawn.
+	 *
+	 * - `true` (default) / `undefined`: add Selectable, Draggable, and Resizable.
+	 * - `false`: add none (backdrops, decorations, locked entities).
+	 * - object form: pick and choose — e.g. iOS-style cards use
+	 *   `{ selectable: true, draggable: true, resizable: false }` so they
+	 *   can be moved and selected but never resized.
+	 *
+	 * Omitted keys default to `false` in the object form; pass only the
+	 * capabilities you want.
 	 */
-	interactive?: boolean;
+	interactive?: boolean | { selectable?: boolean; draggable?: boolean; resizable?: boolean };
 	/** Overrides the widget's defaultSize. */
 	defaultSize?: { width: number; height: number };
 }

@@ -964,4 +964,57 @@ describe('CanvasEngine', () => {
 			expect(afterRole?.layer).toBe(beforeRole?.layer);
 		});
 	});
+
+	describe('archetype.interactive shape', () => {
+		it('defaults (undefined) grant Selectable + Draggable + Resizable', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({ id: 'arch-default' });
+			const e = engine.spawn('arch-default');
+			expect(engine.has(e, Selectable)).toBe(true);
+			expect(engine.has(e, Draggable)).toBe(true);
+			expect(engine.has(e, Resizable)).toBe(true);
+		});
+
+		it('`true` grants all three (same as undefined)', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({ id: 'arch-true', interactive: true });
+			const e = engine.spawn('arch-true');
+			expect(engine.has(e, Selectable)).toBe(true);
+			expect(engine.has(e, Draggable)).toBe(true);
+			expect(engine.has(e, Resizable)).toBe(true);
+		});
+
+		it('`false` grants none', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({ id: 'arch-false', interactive: false });
+			const e = engine.spawn('arch-false');
+			expect(engine.has(e, Selectable)).toBe(false);
+			expect(engine.has(e, Draggable)).toBe(false);
+			expect(engine.has(e, Resizable)).toBe(false);
+		});
+
+		it('object form picks specific capabilities (iOS card shape)', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({
+				id: 'arch-card',
+				interactive: { selectable: true, draggable: true, resizable: false },
+			});
+			const e = engine.spawn('arch-card');
+			expect(engine.has(e, Selectable)).toBe(true);
+			expect(engine.has(e, Draggable)).toBe(true);
+			expect(engine.has(e, Resizable)).toBe(false);
+		});
+
+		it('object form omitted keys default to false', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({
+				id: 'arch-sparse',
+				interactive: { resizable: true },
+			});
+			const e = engine.spawn('arch-sparse');
+			expect(engine.has(e, Selectable)).toBe(false);
+			expect(engine.has(e, Draggable)).toBe(false);
+			expect(engine.has(e, Resizable)).toBe(true);
+		});
+	});
 });

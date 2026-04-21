@@ -672,11 +672,23 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 
 			// Interactive defaults (Selectable/Draggable/Resizable) trigger the
 			// reactive observer that auto-attaches InteractionRole + CursorHint.
-			if (archetype?.interactive !== false) {
-				inits.push([Selectable]);
-				inits.push([Draggable]);
-				inits.push([Resizable]);
-			}
+			// Accepts boolean (all-or-none) or an object picking specific caps,
+			// e.g. iOS-style cards pass `{ draggable: true, selectable: true }`
+			// so they move but never resize.
+			const interactiveConfig = archetype?.interactive;
+			const caps =
+				interactiveConfig === false
+					? { selectable: false, draggable: false, resizable: false }
+					: interactiveConfig === undefined || interactiveConfig === true
+						? { selectable: true, draggable: true, resizable: true }
+						: {
+								selectable: interactiveConfig.selectable ?? false,
+								draggable: interactiveConfig.draggable ?? false,
+								resizable: interactiveConfig.resizable ?? false,
+							};
+			if (caps.selectable) inits.push([Selectable]);
+			if (caps.draggable) inits.push([Draggable]);
+			if (caps.resizable) inits.push([Resizable]);
 
 			if (archetype?.tags) {
 				for (const tag of archetype.tags) inits.push([tag]);
