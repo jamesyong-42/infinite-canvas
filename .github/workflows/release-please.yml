@@ -7,13 +7,28 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      # GITHUB_TOKEN-created releases don't fire `release: published` events
+      # (GitHub's recursion guard). Dispatch the npm publish explicitly —
+      # workflow_dispatch IS exempt from the guard and fires normally.
+      - name: Trigger npm publish
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run release-npm.yml --repo "${{ github.repository }}" --ref "${{ steps.release.outputs.tag_name }}"
