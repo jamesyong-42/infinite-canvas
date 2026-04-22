@@ -1,7 +1,7 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useFrame, useThree } from '@react-three/fiber';
 import type * as React from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Group } from 'three';
 import { ExtrudeGeometry, Shape } from 'three';
 import type { Archetype } from '../../ecs/archetype.js';
@@ -13,6 +13,7 @@ import { useLayoutEngine } from '../../react/context/engine-context.js';
 import { useTag } from '../../react/hooks/ecs.js';
 import { useWidgetData } from '../../react/hooks/widget.js';
 import type { R3FWidget, R3FWidgetProps } from '../../react/widgets/registry.js';
+import { useSharedGeometry } from '../compositor/hooks.js';
 import { R3FAnimationSignal } from '../compositor/state.js';
 
 /**
@@ -57,7 +58,12 @@ interface CardBackProps {
 }
 
 function CardBack({ width, height, color, roughness, metalness }: CardBackProps) {
-	const geometry = useMemo(() => makeRoundedCardGeometry(width, height, 21.67, 3), [width, height]);
+	// Cards of the same preset size share one geometry instance via the
+	// compositor's ResourceRegistry. With many widgets of one archetype, GPU
+	// geometry memory stays O(1) instead of O(N).
+	const geometry = useSharedGeometry(`card-back:${width}x${height}:r21.67:d3`, () =>
+		makeRoundedCardGeometry(width, height, 21.67, 3),
+	);
 	return (
 		<mesh geometry={geometry} position={[0, 0, -6]} receiveShadow>
 			<meshStandardMaterial color={color} roughness={roughness} metalness={metalness} />

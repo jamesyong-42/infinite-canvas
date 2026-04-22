@@ -1,7 +1,9 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import type { BufferGeometry, Material, Texture } from 'three';
 import { useLayoutEngine } from '../../react/context/engine-context.js';
 import { useComponent } from '../../react/hooks/ecs.js';
+import { useCompositor } from './CompositorContext.js';
 import { R3FAnimationSignal, type R3FPhase, R3FRenderState } from './state.js';
 
 /**
@@ -37,4 +39,60 @@ export function useWidgetAnimation(entityId: EntityId, active: boolean): void {
 export function useWidgetPhase(entityId: EntityId): R3FPhase | null {
 	const state = useComponent(entityId, R3FRenderState);
 	return state?.phase ?? null;
+}
+
+/**
+ * Acquires a shared geometry from the Compositor's `ResourceRegistry`,
+ * keyed by `cacheKey`. The factory runs only on first acquisition; later
+ * callers with the same key get the same instance. Released automatically
+ * on unmount; the registry disposes when the last holder releases.
+ *
+ * Use for geometries that are expensive to build and frequently identical
+ * across widget instances — e.g. preset card backs.
+ */
+export function useSharedGeometry<T extends BufferGeometry>(cacheKey: string, factory: () => T): T {
+	const { registry } = useCompositor();
+	// Stash factory in a ref so re-renders with a fresh closure don't churn
+	// the useMemo deps. The registry only invokes factory on first acquire
+	// for `cacheKey`, so the latest closure is what runs when it matters.
+	const factoryRef = useRef(factory);
+	factoryRef.current = factory;
+	const geometry = useMemo(
+		() => registry.acquireGeometry(cacheKey, factoryRef.current),
+		[registry, cacheKey],
+	);
+	useEffect(() => {
+		return () => registry.releaseGeometry(cacheKey);
+	}, [registry, cacheKey]);
+	return geometry;
+}
+
+/** Same contract as {@link useSharedGeometry}, for materials. */
+export function useSharedMaterial<T extends Material>(cacheKey: string, factory: () => T): T {
+	const { registry } = useCompositor();
+	const factoryRef = useRef(factory);
+	factoryRef.current = factory;
+	const material = useMemo(
+		() => registry.acquireMaterial(cacheKey, factoryRef.current),
+		[registry, cacheKey],
+	);
+	useEffect(() => {
+		return () => registry.releaseMaterial(cacheKey);
+	}, [registry, cacheKey]);
+	return material;
+}
+
+/** Same contract as {@link useSharedGeometry}, for textures. */
+export function useSharedTexture<T extends Texture>(cacheKey: string, factory: () => T): T {
+	const { registry } = useCompositor();
+	const factoryRef = useRef(factory);
+	factoryRef.current = factory;
+	const texture = useMemo(
+		() => registry.acquireTexture(cacheKey, factoryRef.current),
+		[registry, cacheKey],
+	);
+	useEffect(() => {
+		return () => registry.releaseTexture(cacheKey);
+	}, [registry, cacheKey]);
+	return texture;
 }

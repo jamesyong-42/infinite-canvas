@@ -1,6 +1,7 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { createContext, useContext } from 'react';
 import type { OrthographicCamera, Scene } from 'three';
+import type { ResourceRegistry } from './ResourceRegistry.js';
 import type { WidgetRenderTargetPool } from './WidgetRenderTargetPool.js';
 
 /**
@@ -19,6 +20,7 @@ export type CompositorWidgetEntry = {
 
 export type CompositorContextValue = {
 	pool: WidgetRenderTargetPool;
+	registry: ResourceRegistry;
 	register: (entityId: EntityId, entry: CompositorWidgetEntry) => () => void;
 };
 

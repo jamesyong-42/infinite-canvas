@@ -2,7 +2,14 @@ export { CompositionMaterial } from './CompositionMaterial.js';
 export { Compositor } from './Compositor.js';
 export type { CompositorContextValue, CompositorWidgetEntry } from './CompositorContext.js';
 export { CompositorContext, useCompositor } from './CompositorContext.js';
-export { useWidgetAnimation, useWidgetPhase } from './hooks.js';
+export {
+	useSharedGeometry,
+	useSharedMaterial,
+	useSharedTexture,
+	useWidgetAnimation,
+	useWidgetPhase,
+} from './hooks.js';
+export { ResourceRegistry } from './ResourceRegistry.js';
 export type { R3FPaintedAt, R3FPhase, R3FRenderBudgetData, R3FRenderStateData } from './state.js';
 export { R3FAnimationSignal, R3FRenderBudget, R3FRenderState } from './state.js';
 export { VirtualWidget } from './VirtualWidget.js';

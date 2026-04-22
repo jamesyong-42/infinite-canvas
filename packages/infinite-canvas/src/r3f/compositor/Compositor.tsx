@@ -6,6 +6,7 @@ import { WorldBounds } from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
 import { CompositionMaterial } from './CompositionMaterial.js';
 import { CompositorContext, type CompositorWidgetEntry } from './CompositorContext.js';
+import { ResourceRegistry } from './ResourceRegistry.js';
 import { R3FRenderState } from './state.js';
 import { WidgetRenderTargetPool } from './WidgetRenderTargetPool.js';
 
@@ -40,6 +41,9 @@ export function Compositor({
 	const poolRef = useRef<WidgetRenderTargetPool | null>(null);
 	if (!poolRef.current) poolRef.current = new WidgetRenderTargetPool();
 	const pool = poolRef.current;
+	const registryRef = useRef<ResourceRegistry | null>(null);
+	if (!registryRef.current) registryRef.current = new ResourceRegistry();
+	const registry = registryRef.current;
 
 	// Per-widget composition quad mesh kept in the default scene. Mounted /
 	// removed as widgets register / unregister.
@@ -83,7 +87,15 @@ export function Compositor({
 		[defaultScene, pool],
 	);
 
-	const ctxValue = useMemo(() => ({ pool, register }), [pool, register]);
+	const ctxValue = useMemo(() => ({ pool, registry, register }), [pool, registry, register]);
+
+	// Dispose pool + registry when the Compositor unmounts.
+	useEffect(() => {
+		return () => {
+			pool.dispose();
+			registry.dispose();
+		};
+	}, [pool, registry]);
 
 	// Custom render loop. Priority > 0 suppresses R3F's default render so we
 	// own the entire pass.
