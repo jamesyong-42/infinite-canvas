@@ -174,6 +174,18 @@ export type {
 } from './r3f/widgets/geometry-card.js';
 export { createGeometryCardWidget } from './r3f/widgets/geometry-card.js';
 
+// === R3F compositor hooks (for widget authors) ===
+
+export type { R3FPhase } from './r3f/compositor/index.js';
+export {
+	useSharedGeometry,
+	useSharedMaterial,
+	useSharedTexture,
+	useWidgetAnimation,
+	useWidgetInvalidate,
+	useWidgetPhase,
+} from './r3f/compositor/index.js';
+
 // === Grid + selection config (needed for InfiniteCanvas props) ===
 
 export type { GridConfig } from './webgl/renderers/GridRenderer.js';

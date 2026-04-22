@@ -1,5 +1,5 @@
 import type { GeometryCardRenderProps } from '@jamesyong42/infinite-canvas';
-import { createGeometryCardWidget } from '@jamesyong42/infinite-canvas';
+import { createGeometryCardWidget, useWidgetAnimation } from '@jamesyong42/infinite-canvas';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
 import type { Mesh } from 'three';
@@ -10,9 +10,12 @@ const schema = z.object({
 });
 type TorusKnotData = z.infer<typeof schema>;
 
-function TorusKnotScene({ data, width, height }: GeometryCardRenderProps<TorusKnotData>) {
+function TorusKnotScene({ entityId, data, width, height }: GeometryCardRenderProps<TorusKnotData>) {
 	const meshRef = useRef<Mesh>(null);
 	const size = Math.min(width, height);
+
+	// Tell the compositor this widget needs continuous frames.
+	useWidgetAnimation(entityId, true);
 
 	useFrame((_, dt) => {
 		if (!meshRef.current) return;

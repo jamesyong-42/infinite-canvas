@@ -1,5 +1,5 @@
 import type { GeometryCardRenderProps } from '@jamesyong42/infinite-canvas';
-import { createGeometryCardWidget } from '@jamesyong42/infinite-canvas';
+import { createGeometryCardWidget, useWidgetAnimation } from '@jamesyong42/infinite-canvas';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
 import type { Mesh } from 'three';
@@ -10,9 +10,17 @@ const schema = z.object({
 });
 type MatteSphereData = z.infer<typeof schema>;
 
-function MatteSphereScene({ data, width, height }: GeometryCardRenderProps<MatteSphereData>) {
+function MatteSphereScene({
+	entityId,
+	data,
+	width,
+	height,
+}: GeometryCardRenderProps<MatteSphereData>) {
 	const meshRef = useRef<Mesh>(null);
 	const size = Math.min(width, height);
+
+	// Tell the compositor this widget needs continuous frames.
+	useWidgetAnimation(entityId, true);
 
 	useFrame((_, dt) => {
 		if (meshRef.current) meshRef.current.rotation.y += dt * 0.3;

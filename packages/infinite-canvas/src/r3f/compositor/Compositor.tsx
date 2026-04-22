@@ -2,7 +2,7 @@ import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Mesh, OrthographicCamera, PlaneGeometry } from 'three';
-import { WorldBounds } from '../../ecs/components.js';
+import { Dragging, WorldBounds } from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
 import { CompositionMaterial } from './CompositionMaterial.js';
 import { CompositorContext, type CompositorWidgetEntry } from './CompositorContext.js';
@@ -34,6 +34,7 @@ export function Compositor({
 	children: React.ReactNode;
 }) {
 	const { gl, size, scene: defaultScene, set } = useThree();
+	const invalidate = useThree((s) => s.invalidate);
 
 	// Per-widget registry, kept outside React state so registration/dirty
 	// tracking does not trigger re-renders.
@@ -64,6 +65,12 @@ export function Compositor({
 	// Per-widget composition quad mesh kept in the default scene. Mounted /
 	// removed as widgets register / unregister.
 	const quadsRef = useRef(new Map<EntityId, Mesh>());
+
+	// Per-widget drag-lift state, lerped at composition time. Lives outside
+	// the per-widget scene so the widget's FBO never has to grow to fit
+	// scaled-up content (which would clip rounded corners against the FBO
+	// rectangle). RFC-002 § Phase 7 in spirit.
+	const liftRef = useRef(new Map<EntityId, { scale: number; z: number }>());
 
 	// World-space ortho camera that drives the composition pass. Replaces
 	// the role the previous CameraSync played for the shared scene.
@@ -97,6 +104,7 @@ export function Compositor({
 					(m.material as CompositionMaterial).dispose();
 					quadsRef.current.delete(entityId);
 				}
+				liftRef.current.delete(entityId);
 				pool.release(entityId);
 			};
 		},
@@ -176,6 +184,11 @@ export function Compositor({
 		// widget's FBO has been painted at least once — checked via
 		// fboGeneration >= 0 so a freshly-acquired (empty) target never gets
 		// sampled into the composition.
+		//
+		// Drag-lift is applied here (composition layer), not inside the
+		// widget's FBO — keeping the FBO at exactly widget bounds means
+		// rounded corners never get clipped by the FBO rectangle.
+		let liftStillSettling = false;
 		for (const [entityId, mesh] of quadsRef.current) {
 			const wb = world.getComponent(entityId, WorldBounds);
 			const state = world.getComponent(entityId, R3FRenderState);
@@ -184,9 +197,29 @@ export function Compositor({
 				mesh.visible = false;
 				continue;
 			}
+
+			// Lerp drag-lift toward target.
+			const dragging = world.hasTag(entityId, Dragging);
+			const targetScale = dragging ? 1.05 : 1;
+			const targetZ = dragging ? 8 : 0;
+			let lift = liftRef.current.get(entityId);
+			if (!lift) {
+				lift = { scale: 1, z: 0 };
+				liftRef.current.set(entityId, lift);
+			}
+			lift.scale += (targetScale - lift.scale) * 0.2;
+			lift.z += (targetZ - lift.z) * 0.2;
+			if (Math.abs(targetScale - lift.scale) > 0.001 || Math.abs(targetZ - lift.z) > 0.01) {
+				liftStillSettling = true;
+			} else {
+				// Snap to target so we don't drift forever within the epsilon.
+				lift.scale = targetScale;
+				lift.z = targetZ;
+			}
+
 			mesh.visible = true;
-			mesh.position.set(wb.worldX + wb.worldWidth / 2, -(wb.worldY + wb.worldHeight / 2), 0);
-			mesh.scale.set(wb.worldWidth, wb.worldHeight, 1);
+			mesh.position.set(wb.worldX + wb.worldWidth / 2, -(wb.worldY + wb.worldHeight / 2), lift.z);
+			mesh.scale.set(wb.worldWidth * lift.scale, wb.worldHeight * lift.scale, 1);
 			(mesh.material as CompositionMaterial).setMap(fbo.texture);
 		}
 
@@ -200,6 +233,20 @@ export function Compositor({
 		// Stash this frame's repaint count where ProfilerProbe can read it.
 		COMPOSITOR_TELEMETRY.widgetsRepainted = widgetsRepainted;
 		COMPOSITOR_TELEMETRY.fboBytes = pool.bytesUsed();
+
+		// Self-sustain the demand loop while a lift is settling, OR while
+		// any widget is in Hot phase (animation-signalled widgets — e.g.
+		// rotating mesh — need continuous frames). invalidate() inside a
+		// useFrame sets internal.frames to 2, so the loop keeps spinning.
+		let anyHot = false;
+		for (const eid of widgetsRef.current.keys()) {
+			const s = world.getComponent(eid, R3FRenderState);
+			if (s?.phase === 'Hot') {
+				anyHot = true;
+				break;
+			}
+		}
+		if (liftStillSettling || anyHot) invalidate();
 	}, 1);
 
 	return <CompositorContext.Provider value={ctxValue}>{children}</CompositorContext.Provider>;

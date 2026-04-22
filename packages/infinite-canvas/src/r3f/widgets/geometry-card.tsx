@@ -1,20 +1,14 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
-import { useFrame, useThree } from '@react-three/fiber';
 import type * as React from 'react';
-import { useEffect, useRef } from 'react';
-import type { Group } from 'three';
 import { ExtrudeGeometry, Shape } from 'three';
 import type { Archetype } from '../../ecs/archetype.js';
 import type { CardPreset } from '../../ecs/components.js';
-import { Card, Dragging } from '../../ecs/components.js';
+import { Card } from '../../ecs/components.js';
 import { DEFAULT_CARD_PRESET_SIZES } from '../../ecs/resources.js';
 import type { StandardSchemaV1 } from '../../ecs/schema.js';
-import { useLayoutEngine } from '../../react/context/engine-context.js';
-import { useTag } from '../../react/hooks/ecs.js';
 import { useWidgetData } from '../../react/hooks/widget.js';
 import type { R3FWidget, R3FWidgetProps } from '../../react/widgets/registry.js';
 import { useSharedGeometry } from '../compositor/hooks.js';
-import { R3FAnimationSignal } from '../compositor/state.js';
 
 /**
  * Pure-three rounded-rect extrude geometry — avoids a drei dependency.
@@ -145,54 +139,12 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 
 	const Component: React.ComponentType<R3FWidgetProps> = ({ entityId, width, height }) => {
 		const data = useWidgetData<T>(entityId);
-		const dragging = useTag(entityId, Dragging);
-		const groupRef = useRef<Group>(null);
-		const invalidate = useThree((s) => s.invalidate);
-		const engine = useLayoutEngine();
-		const animatingRef = useRef(false);
-		// Skip the first effect run — at mount the spring is already at rest
-		// (scale 1, z 0) and `dragging` is false, so kicking the state
-		// machine to Hot would be a wasted Hot→Warm cycle.
-		const initRef = useRef(true);
-
-		// On *transitions* of dragging, kick the spring: tag the widget so
-		// the state machine moves it to Hot, and invalidate so useFrame
-		// starts firing.
-		useEffect(() => {
-			if (initRef.current) {
-				initRef.current = false;
-				return;
-			}
-			animatingRef.current = true;
-			engine.world.addTag(entityId, R3FAnimationSignal);
-			invalidate();
-		}, [dragging, engine, entityId, invalidate]);
-
-		// Spring-lerp the group scale + z on drag for the iOS lift feel.
-		// Early-exits when settled; clears the animation signal so the state
-		// machine returns the widget to Warm.
-		useFrame(() => {
-			if (!animatingRef.current) return;
-			const g = groupRef.current;
-			if (!g) return;
-			const targetScale = dragging ? 1.05 : 1;
-			const targetZ = dragging ? 8 : 0;
-			const s = g.scale.x;
-			const nextS = s + (targetScale - s) * 0.2;
-			const nextZ = g.position.z + (targetZ - g.position.z) * 0.2;
-			g.scale.setScalar(nextS);
-			g.position.z = nextZ;
-
-			if (Math.abs(targetScale - nextS) > 0.001 || Math.abs(targetZ - nextZ) > 0.01) {
-				invalidate();
-			} else {
-				animatingRef.current = false;
-				engine.world.removeTag(entityId, R3FAnimationSignal);
-			}
-		});
+		// Drag-lift (scale + z) is applied at the composition layer, not
+		// inside this widget's FBO — keeps rounded corners from clipping
+		// against the FBO rectangle when the lift expands the content.
 
 		return (
-			<group ref={groupRef}>
+			<group>
 				{resolvedBack && (
 					<CardBack
 						width={width}
