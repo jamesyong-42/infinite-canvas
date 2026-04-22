@@ -1,11 +1,17 @@
-import type { World } from '@jamesyong42/reactive-ecs';
+import type { EntityId, World } from '@jamesyong42/reactive-ecs';
 import { defineSystem } from '@jamesyong42/reactive-ecs';
-import { Active, Visible, WorldBounds } from '../components.js';
+import { Active, Culled, Visible, WorldBounds } from '../components.js';
 import { intersectsAABB, worldBoundsToAABB } from '../math.js';
 import { CameraResource, SpatialIndexResource, ViewportResource } from '../resources.js';
 
 /**
- * Viewport culling — mark Active entities that intersect the viewport as Visible.
+ * Viewport culling — for every `Active` entity, sets exactly one of `Visible`
+ * (intersects viewport+overscan) or `Culled` (outside it). Non-Active entities
+ * carry neither tag.
+ *
+ * The `Culled` tag is consumed by render layers that want to keep cached state
+ * without rendering — the R3F compositor (RFC-002) holds Culled widgets in its
+ * Cold pool and skips ticks/paints for them.
  */
 export const cullSystem = defineSystem({
 	name: 'cull',
@@ -26,15 +32,18 @@ export const cullSystem = defineSystem({
 			maxY: camera.y + viewport.height / camera.zoom + overscan,
 		};
 
-		for (const entity of world.queryTagged(Visible)) {
-			world.removeTag(entity, Visible);
-		}
+		// Clear previous frame's tags before recomputing.
+		for (const entity of world.queryTagged(Visible)) world.removeTag(entity, Visible);
+		for (const entity of world.queryTagged(Culled)) world.removeTag(entity, Culled);
+
+		const visibleIds = new Set<EntityId>();
 
 		if (spatialIndex && spatialIndex.size > 0) {
 			const candidates = spatialIndex.search(vpWorldAABB);
 			for (const entry of candidates) {
 				if (world.hasTag(entry.entityId, Active)) {
 					world.addTag(entry.entityId, Visible);
+					visibleIds.add(entry.entityId);
 				}
 			}
 		} else {
@@ -42,8 +51,14 @@ export const cullSystem = defineSystem({
 				const wb = world.getComponent(entity, WorldBounds);
 				if (wb && intersectsAABB(worldBoundsToAABB(wb), vpWorldAABB)) {
 					world.addTag(entity, Visible);
+					visibleIds.add(entity);
 				}
 			}
+		}
+
+		// Tag remaining Active entities as Culled to maintain the invariant.
+		for (const entity of world.queryTagged(Active)) {
+			if (!visibleIds.has(entity)) world.addTag(entity, Culled);
 		}
 	},
 });

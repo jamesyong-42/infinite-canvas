@@ -52,8 +52,8 @@ export function serializeWorld(
 
 		for (const type of tagTypes) {
 			if (world.hasTag(entityId, type)) {
-				// Skip runtime-only tags (Active, Visible — they're recomputed)
-				if (type.name !== 'Active' && type.name !== 'Visible') {
+				// Skip runtime-only tags (Active, Visible, Culled — they're recomputed)
+				if (type.name !== 'Active' && type.name !== 'Visible' && type.name !== 'Culled') {
 					tags.push(type.name);
 				}
 			}
@@ -177,7 +177,7 @@ export function serializeEntities(
 
 		for (const type of tagTypes) {
 			if (world.hasTag(entityId, type)) {
-				if (type.name !== 'Active' && type.name !== 'Visible') {
+				if (type.name !== 'Active' && type.name !== 'Visible' && type.name !== 'Culled') {
 					tags.push(type.name);
 				}
 			}

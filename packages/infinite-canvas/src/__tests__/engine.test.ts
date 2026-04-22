@@ -5,6 +5,7 @@ import {
 	CardPresetsResource,
 	Children,
 	Container,
+	Culled,
 	CursorHint,
 	CursorResource,
 	createLayoutEngine,
@@ -90,6 +91,31 @@ describe('CanvasEngine', () => {
 
 			expect(engine.world.hasTag(inView, Visible)).toBe(true);
 			expect(engine.world.hasTag(outOfView, Visible)).toBe(false);
+		});
+
+		it('maintains the Visible/Culled invariant for Active entities', () => {
+			const engine = createTestEngine();
+			const inView = createWidget(engine, 100, 100);
+			const outOfView = createWidget(engine, 5000, 5000);
+			engine.tick();
+
+			// In-viewport: Visible, not Culled.
+			expect(engine.world.hasTag(inView, Active)).toBe(true);
+			expect(engine.world.hasTag(inView, Visible)).toBe(true);
+			expect(engine.world.hasTag(inView, Culled)).toBe(false);
+
+			// Out-of-viewport: Culled, not Visible.
+			expect(engine.world.hasTag(outOfView, Active)).toBe(true);
+			expect(engine.world.hasTag(outOfView, Visible)).toBe(false);
+			expect(engine.world.hasTag(outOfView, Culled)).toBe(true);
+
+			// Pan so the previously-out-of-view entity comes into view; tags swap.
+			engine.panBy(-5000, -5000);
+			engine.tick();
+			expect(engine.world.hasTag(outOfView, Visible)).toBe(true);
+			expect(engine.world.hasTag(outOfView, Culled)).toBe(false);
+			expect(engine.world.hasTag(inView, Visible)).toBe(false);
+			expect(engine.world.hasTag(inView, Culled)).toBe(true);
 		});
 
 		it('returns visible entities sorted by z-index', () => {

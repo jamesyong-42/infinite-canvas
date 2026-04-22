@@ -183,3 +183,14 @@ export const SelectionFrame = defineTag('SelectionFrame');
 export const Active = defineTag('Active');
 /** Indicates the entity is within the visible viewport. Set by the cull system. */
 export const Visible = defineTag('Visible');
+/**
+ * Indicates the entity is `Active` but **outside** the visible viewport
+ * (+overscan). The complement of `Visible` for Active entities — the cull
+ * system maintains the invariant that every Active entity carries exactly
+ * one of `Visible` or `Culled`.
+ *
+ * Render layers consume this to keep state cached without rendering: DOM
+ * widgets may stay mounted-but-hidden for fast re-reveal, and the R3F
+ * compositor (RFC-002) holds widget render targets in its Cold pool.
+ */
+export const Culled = defineTag('Culled');
