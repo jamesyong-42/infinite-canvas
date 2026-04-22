@@ -406,7 +406,7 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	if (config?.cardPresets) {
 		const current = world.getResource(CardPresetsResource);
 		world.setResource(CardPresetsResource, {
-			presets: { ...current.presets, ...(config.cardPresets.presets ?? {}) },
+			presets: { ...current.presets, ...config.cardPresets.presets },
 			gap: config.cardPresets.gap ?? current.gap,
 		});
 	}
