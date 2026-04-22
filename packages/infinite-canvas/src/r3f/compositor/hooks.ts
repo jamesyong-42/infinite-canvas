@@ -1,5 +1,6 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
-import { useEffect, useMemo, useRef } from 'react';
+import { useThree } from '@react-three/fiber';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { BufferGeometry, Material, Texture } from 'three';
 import { useLayoutEngine } from '../../react/context/engine-context.js';
 import { useComponent } from '../../react/hooks/ecs.js';
@@ -39,6 +40,34 @@ export function useWidgetAnimation(entityId: EntityId, active: boolean): void {
 export function useWidgetPhase(entityId: EntityId): R3FPhase | null {
 	const state = useComponent(entityId, R3FRenderState);
 	return state?.phase ?? null;
+}
+
+/**
+ * Returns a function that schedules a one-shot repaint of the widget. Use
+ * when widget content changes outside of React's render cycle (e.g., a
+ * subscription to an external store, an imperative WebSocket message).
+ *
+ * Internally bumps `paintGeneration` so the compositor's dirty check picks
+ * the widget up on the next frame, and invalidates the canvas so that
+ * frame is actually scheduled.
+ */
+export function useWidgetInvalidate(entityId: EntityId): () => void {
+	const engine = useLayoutEngine();
+	const invalidate = useThree((s) => s.invalidate);
+	return useCallback(() => {
+		const current = engine.world.getComponent(entityId, R3FRenderState);
+		if (!current) {
+			// State not tracked yet — just kick the canvas; the state machine
+			// will create the component on its next pass.
+			invalidate();
+			return;
+		}
+		engine.world.setComponent(entityId, R3FRenderState, {
+			...current,
+			paintGeneration: current.paintGeneration + 1,
+		});
+		invalidate();
+	}, [engine, entityId, invalidate]);
 }
 
 /**

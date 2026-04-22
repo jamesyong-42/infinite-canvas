@@ -28,15 +28,21 @@ export function WidgetStateMachine({ engine }: { engine: LayoutEngine }) {
 				const widget = world.getComponent(entity, Widget);
 				if (!widget || widget.surface !== 'webgl') continue;
 
+				const current = world.getComponent(entity, R3FRenderState);
+				const animating = world.hasTag(entity, R3FAnimationSignal);
+				// fboGeneration starts at -1 and is bumped to >= 0 by the
+				// compositor after a successful paint. "Has valid FBO" is the
+				// signal the state machine needs to distinguish Waking from
+				// Warm.
+				const hasFbo = (current?.fboGeneration ?? -1) >= 0;
+
 				const nextPhase = computePhase(
 					world.hasTag(entity, Active),
 					world.hasTag(entity, Visible),
 					world.hasTag(entity, Culled),
-					world.hasTag(entity, R3FAnimationSignal),
+					animating,
+					hasFbo,
 				);
-
-				const current = world.getComponent(entity, R3FRenderState);
-				const animating = world.hasTag(entity, R3FAnimationSignal);
 
 				if (!current) {
 					world.addComponent(entity, R3FRenderState, {
@@ -68,17 +74,26 @@ export function WidgetStateMachine({ engine }: { engine: LayoutEngine }) {
 /**
  * Pure function version of the state-machine transition rule. Exported so
  * tests can pin the truth table without mounting React.
+ *
+ * `hasFbo` distinguishes Warm (texture present, can be sampled) from Waking
+ * (Visible but no valid texture yet — the compositor must paint before the
+ * widget is composited). After eviction (Phase 6) a Cold widget can lose
+ * its texture and re-enter as Waking.
  */
 export function computePhase(
 	active: boolean,
 	visible: boolean,
 	culled: boolean,
 	animationSignal: boolean,
+	hasFbo: boolean,
 ): R3FPhase {
 	if (!active) return 'Dormant';
-	if (visible) return animationSignal ? 'Hot' : 'Warm';
+	if (visible) {
+		if (animationSignal) return 'Hot';
+		return hasFbo ? 'Warm' : 'Waking';
+	}
 	if (culled) return 'Cold';
-	// No viewport yet (e.g. before first cull tick) — treat as Cold so we
-	// don't spuriously paint before the engine knows where we are.
+	// No viewport tag yet (e.g. before first cull tick) — treat as Cold so
+	// we don't spuriously paint before the engine knows where we are.
 	return 'Cold';
 }

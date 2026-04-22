@@ -7,6 +7,7 @@ export {
 	useSharedMaterial,
 	useSharedTexture,
 	useWidgetAnimation,
+	useWidgetInvalidate,
 	useWidgetPhase,
 } from './hooks.js';
 export { ResourceRegistry } from './ResourceRegistry.js';

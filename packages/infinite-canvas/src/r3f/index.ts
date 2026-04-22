@@ -19,6 +19,7 @@ export {
 	useSharedMaterial,
 	useSharedTexture,
 	useWidgetAnimation,
+	useWidgetInvalidate,
 	useWidgetPhase,
 	VirtualWidget,
 	WidgetRenderTargetPool,
