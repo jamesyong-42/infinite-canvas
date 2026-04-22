@@ -6,11 +6,11 @@ import type { LayoutEngine } from '../ecs/engine/index.js';
 import { EngineProvider } from '../react/context/engine-context.js';
 import type { ResolvedWidget } from '../react/context/widget-resolver-context.js';
 import type { R3FWidgetProps } from '../react/widgets/registry.js';
-import { CameraSync } from './CameraSync.js';
+import { Compositor } from './compositor/Compositor.js';
+import { VirtualWidget } from './compositor/VirtualWidget.js';
 import { WidgetStateMachine } from './compositor/WidgetStateMachine.js';
 import { EngineInvalidator } from './EngineInvalidator.js';
 import { ProfilerProbe } from './ProfilerProbe.js';
-import { R3FWidgetSlot } from './R3FWidgetSlot.js';
 
 interface R3FManagerProps {
 	engine: LayoutEngine;
@@ -21,23 +21,22 @@ interface R3FManagerProps {
 /**
  * Top-level coordinator for the R3F (React Three Fiber) rendering layer.
  *
- * Owns the `<Canvas>`, drives camera sync with the engine, mounts the
- * profiler probe, and renders one {@link R3FWidgetSlot} per R3F-surface
- * widget entity. Mirrors the role {@link WebGLManager} plays for the
- * vanilla-WebGL layer: one component/class per rendering surface that
- * InfiniteCanvas composes together.
+ * Mounts a single `<Canvas>` and lets the {@link Compositor} drive the
+ * render loop — each R3F widget paints into its own `WebGLRenderTarget`
+ * via {@link VirtualWidget} and a final composition pass samples those
+ * textures into the visible canvas (RFC-002 Phase 4).
  */
 export function R3FManager({ engine, entities, resolve }: R3FManagerProps) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 
-	// Create a stable orthographic camera (R3F needs one at init)
+	// R3F needs an initial camera; the Compositor swaps in its own world-space
+	// ortho camera as the canvas default once mounted.
 	const initialCamera = useMemo(() => {
 		const cam = new THREE.OrthographicCamera(0, 1, 0, -1, 0.1, 10000);
 		cam.position.set(0, 0, 1000);
 		return cam;
 	}, []);
 
-	// Build a map of entityId → component for rendering
 	const widgetEntries = useMemo(() => {
 		const result: {
 			entityId: EntityId;
@@ -69,11 +68,12 @@ export function R3FManager({ engine, entities, resolve }: R3FManagerProps) {
 			<EngineProvider value={engine}>
 				<EngineInvalidator engine={engine} />
 				<WidgetStateMachine engine={engine} />
-				<CameraSync engine={engine} />
 				<ProfilerProbe engine={engine} widgetCount={widgetEntries.length} />
-				{widgetEntries.map(({ entityId, component }) => (
-					<R3FWidgetSlot key={entityId} entityId={entityId} component={component} />
-				))}
+				<Compositor engine={engine}>
+					{widgetEntries.map(({ entityId, component }) => (
+						<VirtualWidget key={entityId} entityId={entityId} component={component} />
+					))}
+				</Compositor>
 			</EngineProvider>
 		</Canvas>
 	);

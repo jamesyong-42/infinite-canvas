@@ -1,7 +1,27 @@
-export { CameraSync } from './CameraSync.js';
+export type {
+	CompositorContextValue,
+	CompositorWidgetEntry,
+	R3FPaintedAt,
+	R3FPhase,
+	R3FRenderBudgetData,
+	R3FRenderStateData,
+} from './compositor/index.js';
+export {
+	CompositionMaterial,
+	Compositor,
+	CompositorContext,
+	R3FAnimationSignal,
+	R3FRenderBudget,
+	R3FRenderState,
+	useCompositor,
+	useWidgetAnimation,
+	useWidgetPhase,
+	VirtualWidget,
+	WidgetRenderTargetPool,
+	WidgetStateMachine,
+} from './compositor/index.js';
 export { ProfilerProbe } from './ProfilerProbe.js';
 export { R3FManager } from './R3FManager.js';
-export { R3FWidgetSlot } from './R3FWidgetSlot.js';
 export type {
 	CreateGeometryCardWidgetOptions,
 	GeometryCardBackground,

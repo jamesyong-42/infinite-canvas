@@ -2,6 +2,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useRef } from 'react';
 import { Widget } from '../ecs/components.js';
 import type { LayoutEngine } from '../ecs/engine/index.js';
+import { COMPOSITOR_TELEMETRY } from './compositor/Compositor.js';
 import { R3FRenderState } from './compositor/state.js';
 
 /**
@@ -24,6 +25,9 @@ export function ProfilerProbe({
 	const prevPointsRef = useRef(0);
 	const prevLinesRef = useRef(0);
 
+	// Priority 2 so the probe samples AFTER the Compositor (priority 1) has
+	// run its render loop — gives accurate per-frame repaint counts and FBO
+	// bytes for this exact tick.
 	useFrame(() => {
 		const profiler = engine.profiler;
 		if (!profiler.isEnabled()) {
@@ -90,13 +94,11 @@ export function ProfilerProbe({
 			geometries: info.memory.geometries,
 			textures: info.memory.textures,
 			activeWidgets: widgetCount,
-			// RFC-002 compositor fields — Phase 3b fills the phase histogram;
-			// widgetsRepainted and fboBytes arrive in Phase 4 with the pool.
-			widgetsRepainted: 0,
-			fboBytes: 0,
+			widgetsRepainted: COMPOSITOR_TELEMETRY.widgetsRepainted,
+			fboBytes: COMPOSITOR_TELEMETRY.fboBytes,
 			phases,
 		});
-	});
+	}, 2);
 
 	return null;
 }

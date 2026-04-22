@@ -44,22 +44,27 @@ export { WebGLManager } from './webgl/WebGLManager.js';
 
 // === R3F layer (React Three Fiber) ===
 
-export { CameraSync } from './r3f/CameraSync.js';
 export type {
+	CompositorContextValue,
+	CompositorWidgetEntry,
 	R3FPaintedAt,
 	R3FPhase,
 	R3FRenderBudgetData,
 	R3FRenderStateData,
 } from './r3f/compositor/index.js';
 export {
+	CompositionMaterial,
+	Compositor,
+	CompositorContext,
 	R3FAnimationSignal,
 	R3FRenderBudget,
 	R3FRenderState,
+	useCompositor,
 	useWidgetAnimation,
 	useWidgetPhase,
+	VirtualWidget,
 	WidgetRenderTargetPool,
 	WidgetStateMachine,
 } from './r3f/compositor/index.js';
 export { ProfilerProbe } from './r3f/ProfilerProbe.js';
 export { R3FManager } from './r3f/R3FManager.js';
-export { R3FWidgetSlot } from './r3f/R3FWidgetSlot.js';
