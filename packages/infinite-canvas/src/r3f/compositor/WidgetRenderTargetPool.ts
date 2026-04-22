@@ -93,6 +93,11 @@ export class WidgetRenderTargetPool {
 		return this.entries.size;
 	}
 
+	/** True after `dispose()` — callers should re-create the pool instead of using it. */
+	isDisposed(): boolean {
+		return this.disposed;
+	}
+
 	/** Iterate live entries. */
 	forEach(cb: (entityId: EntityId, rt: WebGLRenderTarget) => void): void {
 		for (const [id, entry] of this.entries) cb(id, entry.rt);

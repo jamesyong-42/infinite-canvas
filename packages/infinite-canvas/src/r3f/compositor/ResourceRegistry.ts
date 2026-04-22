@@ -25,6 +25,7 @@ export class ResourceRegistry {
 	private geometries = new Map<string, Entry<BufferGeometry>>();
 	private materials = new Map<string, Entry<Material>>();
 	private textures = new Map<string, Entry<Texture>>();
+	private disposed = false;
 
 	acquireGeometry<T extends BufferGeometry>(key: string, factory: () => T): T {
 		const existing = this.geometries.get(key);
@@ -105,12 +106,19 @@ export class ResourceRegistry {
 
 	/** Dispose every resource and clear the registry. */
 	dispose(): void {
+		if (this.disposed) return;
 		for (const { resource } of this.geometries.values()) resource.dispose();
 		for (const { resource } of this.materials.values()) resource.dispose();
 		for (const { resource } of this.textures.values()) resource.dispose();
 		this.geometries.clear();
 		this.materials.clear();
 		this.textures.clear();
+		this.disposed = true;
+	}
+
+	/** True after `dispose()` — callers should re-create the registry instead of using it. */
+	isDisposed(): boolean {
+		return this.disposed;
 	}
 
 	private release<T extends Disposable>(map: Map<string, Entry<T>>, key: string): void {

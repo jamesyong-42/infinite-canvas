@@ -38,16 +38,27 @@ export function Compositor({
 	// Per-widget registry, kept outside React state so registration/dirty
 	// tracking does not trigger re-renders.
 	const widgetsRef = useRef(new Map<EntityId, CompositorWidgetEntry>());
+
+	// Pool + registry are created lazily and re-created if a previous instance
+	// was disposed (React StrictMode mounts → cleanup → remount; the cleanup
+	// disposes the resource but the same component instance is re-used, so
+	// the ref still points at the disposed object).
 	const poolRef = useRef<WidgetRenderTargetPool | null>(null);
-	if (!poolRef.current) poolRef.current = new WidgetRenderTargetPool();
+	if (!poolRef.current || poolRef.current.isDisposed()) {
+		poolRef.current = new WidgetRenderTargetPool();
+	}
 	const pool = poolRef.current;
 	const registryRef = useRef<ResourceRegistry | null>(null);
-	if (!registryRef.current) registryRef.current = new ResourceRegistry();
+	if (!registryRef.current || registryRef.current.isDisposed()) {
+		registryRef.current = new ResourceRegistry();
+	}
 	const registry = registryRef.current;
 
 	// Per-Compositor unit-square geometry — shared across all composition
-	// quads in this canvas, scaled per-mesh. Owned by the instance so HMR /
-	// remount cleanly disposes it instead of leaking module-scoped state.
+	// quads in this canvas, scaled per-mesh. Not disposed in cleanup: GC
+	// reclaims it when the Compositor instance is fully released, and
+	// disposing here would leave a stale BufferGeometry across StrictMode's
+	// double-mount cycle (Three.js doesn't expose a public "isDisposed").
 	const quadGeometry = useMemo(() => new PlaneGeometry(1, 1), []);
 
 	// Per-widget composition quad mesh kept in the default scene. Mounted /
@@ -94,14 +105,15 @@ export function Compositor({
 
 	const ctxValue = useMemo(() => ({ pool, registry, register }), [pool, registry, register]);
 
-	// Dispose pool + registry + shared geometry when the Compositor unmounts.
+	// Dispose pool + registry on unmount (the lazy-init at the top of the
+	// component re-creates them on the next render if React mounts us
+	// again — StrictMode cleanup-then-remount, HMR, etc.).
 	useEffect(() => {
 		return () => {
 			pool.dispose();
 			registry.dispose();
-			quadGeometry.dispose();
 		};
-	}, [pool, registry, quadGeometry]);
+	}, [pool, registry]);
 
 	// Custom render loop. Priority > 0 suppresses R3F's default render so we
 	// own the entire pass.
