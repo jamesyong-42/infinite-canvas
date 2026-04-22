@@ -82,6 +82,13 @@ export {
 	useWidgetResolver,
 	WidgetResolverProvider,
 } from './react/context.js';
+// 3D geometry card widget helper
+export type {
+	CreateGeometryCardWidgetOptions,
+	GeometryCardBackground,
+	GeometryCardRenderProps,
+} from './react/geometry-card.js';
+export { createGeometryCardWidget } from './react/geometry-card.js';
 // ECS subscription hooks
 export {
 	useAllEntities,

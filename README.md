@@ -17,7 +17,7 @@ Build Figma-style infinite canvases in React -- drag, resize, snap, zoom, nested
 - **Undo / redo** -- Command buffer with grouped operations (an entire drag is one undo step)
 - **Hierarchical navigation** -- Enter and exit nested containers with camera state preservation
 - **ECS architecture** -- Extensible via custom components, tags, and systems with topologically-sorted scheduling
-- **Card widgets** -- iOS-style preset-sized tiles (small / medium / large / xl) with rounded corners, soft shadows, and lift-on-drag animation
+- **Card widgets** -- iOS-style preset-sized tiles (small / medium / large / xl) with rounded corners, soft shadows, and lift-on-drag animation; DOM or R3F/PBR flavors via `createCardWidget` / `createGeometryCardWidget`
 - **Performance** -- SDF shaders for grid and selection chrome, RBush spatial indexing, viewport culling, per-system profiling
 - **Live ECS editor** -- Drop-in `<EcsDevtools>` panel for spawning, inspecting, and editing components and tags at runtime
 - **Dark mode** -- Full dark mode support across canvas, widgets, and UI chrome
@@ -262,6 +262,50 @@ Override per-engine via `createLayoutEngine({ cardPresets: { presets: { small: {
 Under the hood: the returned widget wraps your `render` in `<CardFrame>` (exported for manual composition), the archetype is non-resizable, and it bundles a `Card` component. A built-in `cardSystem` stamps `Transform2D.width/height` from `Card.preset` each tick — to change a card's size at runtime, update the preset: `engine.set(id, Card, { preset: 'large' })`. Reading the `Dragging` tag from the frame drives the lift affordance; you can read it elsewhere too via `useTag(entityId, Dragging)`.
 
 Cards also opt out of the engine-drawn selection + hover outline (`selectionFrame: false` in their archetype) — the iOS rounded chrome in `<CardFrame>` is the card's visual contract, so the standard blue frame would fight it. If you need a selected/hover affordance inside a card, read `useIsSelected(entityId)` / `useTag(entityId, /* Hovered tag */)` from within `render` and style accordingly.
+
+### 3D Card Widgets
+
+`createGeometryCardWidget` is the R3F counterpart — same preset sizes, non-resizable archetype, and drag-lift behavior, but the widget body is a three.js scene instead of DOM content. The helper pairs cleanly with PBR materials.
+
+```tsx
+import { createGeometryCardWidget } from '@jamesyong42/infinite-canvas';
+import { useFrame } from '@react-three/fiber';
+import { useRef } from 'react';
+import type { Mesh } from 'three';
+import { z } from 'zod';
+
+const schema = z.object({ color: z.string().default('#F5B8D0') });
+
+export const Sphere = createGeometryCardWidget<{ color: string }>({
+  type: 'sphere',
+  size: 'small',
+  schema,
+  defaultData: { color: '#F5B8D0' },
+  background: 'card',                 // or 'transparent' — the geometry floats over the canvas
+  geometry: ({ data, width }) => {
+    const ref = useRef<Mesh>(null);
+    useFrame((_, dt) => { if (ref.current) ref.current.rotation.y += dt * 0.3; });
+    return (
+      <group>
+        <pointLight position={[80, 80, 120]} intensity={160} distance={300} decay={1.4} />
+        <ambientLight intensity={0.3} />
+        <mesh ref={ref}>
+          <sphereGeometry args={[width * 0.32, 48, 48]} />
+          <meshStandardMaterial color={data.color} roughness={0.35} />
+        </mesh>
+      </group>
+    );
+  },
+});
+```
+
+`background` options:
+
+- `'card'` (default) — a rounded iOS-style card mesh sits behind the geometry in the same widget group.
+- `'transparent'` — no back plane; the geometry floats over whatever's behind the widget.
+- `{ color, roughness?, metalness? }` — card back with custom PBR parameters for tinted or glossy variants.
+
+**Lighting caveat.** All R3F widgets share a single `<Canvas>`, so lights and `envMap`s you declare inside one widget's render function affect every other 3D widget. Keep per-widget lights `pointLight`s with `distance` scoped to the widget's size, or add one shared `<Environment>` at the app level (if you control the R3F canvas). The helper itself adds no lights — declare what you need inside your `geometry` component.
 
 ## WebGL Widgets (R3F)
 
