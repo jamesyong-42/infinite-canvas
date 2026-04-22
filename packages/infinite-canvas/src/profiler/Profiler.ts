@@ -52,6 +52,15 @@ export interface TickSample {
 	};
 }
 
+/** Per-phase widget count snapshot for the compositor state machine (RFC-002). */
+export interface R3FPhaseHistogram {
+	hot: number;
+	warm: number;
+	cold: number;
+	waking: number;
+	dormant: number;
+}
+
 export interface R3FSample {
 	timestamp: number;
 	/** Delta since the previous R3F frame (ms). */
@@ -65,6 +74,19 @@ export interface R3FSample {
 	geometries: number;
 	textures: number;
 	activeWidgets: number;
+	/**
+	 * Number of per-widget FBO repaints this frame. Zero before the compositor
+	 * lands (RFC-002 Phase 4); zero on idle frames once it has.
+	 */
+	widgetsRepainted: number;
+	/** Total bytes consumed by the widget render-target pool. */
+	fboBytes: number;
+	/** Compositor state-machine phase histogram across all R3F widgets. */
+	phases: R3FPhaseHistogram;
+	/** GPU time spent on per-widget paints this frame (ms). Optional — populated only when timestamp queries are available (WebGL `WEBGL_timer_query` or WebGPU). */
+	gpuPaintMs?: number;
+	/** GPU time spent on the composition pass this frame (ms). Optional — same caveat as `gpuPaintMs`. */
+	gpuCompositeMs?: number;
 }
 
 // === Stats shapes ===
@@ -116,6 +138,16 @@ export interface R3FStats {
 	geometries: number;
 	textures: number;
 	activeWidgets: number;
+	/** Avg per-widget repaints per frame across the sample window. */
+	avgWidgetsRepainted: number;
+	/** Latest FBO pool memory usage (bytes). */
+	fboBytes: number;
+	/** Latest phase histogram across the R3F widget set. */
+	phases: R3FPhaseHistogram;
+	/** Avg GPU paint time per frame (ms). Undefined if no samples carried timestamps. */
+	avgGpuPaintMs?: number;
+	/** Avg GPU composition time per frame (ms). */
+	avgGpuCompositeMs?: number;
 	sampleCount: number;
 }
 
@@ -491,6 +523,9 @@ export class Profiler {
 				geometries: 0,
 				textures: 0,
 				activeWidgets: 0,
+				avgWidgetsRepainted: 0,
+				fboBytes: 0,
+				phases: { hot: 0, warm: 0, cold: 0, waking: 0, dormant: 0 },
 				sampleCount: 0,
 			};
 		}
@@ -499,6 +534,10 @@ export class Profiler {
 		// Latest snapshot for gauge-style values.
 		const latestIdx = this.r3fFilled ? (this.r3fWrite - 1 + R3F_RING_SIZE) % R3F_RING_SIZE : n - 1;
 		const latest = samples[latestIdx];
+
+		const gpuPaintSamples = samples.filter((s) => s.gpuPaintMs !== undefined);
+		const gpuCompositeSamples = samples.filter((s) => s.gpuCompositeMs !== undefined);
+
 		return {
 			fps,
 			frameTime: {
@@ -514,6 +553,17 @@ export class Profiler {
 			geometries: latest.geometries,
 			textures: latest.textures,
 			activeWidgets: latest.activeWidgets,
+			avgWidgetsRepainted: mean(samples.map((s) => s.widgetsRepainted)),
+			fboBytes: latest.fboBytes,
+			phases: latest.phases,
+			avgGpuPaintMs:
+				gpuPaintSamples.length > 0
+					? mean(gpuPaintSamples.map((s) => s.gpuPaintMs as number))
+					: undefined,
+			avgGpuCompositeMs:
+				gpuCompositeSamples.length > 0
+					? mean(gpuCompositeSamples.map((s) => s.gpuCompositeMs as number))
+					: undefined,
 			sampleCount: n,
 		};
 	}

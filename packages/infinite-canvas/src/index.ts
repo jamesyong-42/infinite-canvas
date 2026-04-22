@@ -84,6 +84,7 @@ export type {
 	EcsStats,
 	FrameTimeStats,
 	ProfilerStats,
+	R3FPhaseHistogram,
 	R3FSample,
 	R3FStats,
 	TickSample,

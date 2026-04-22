@@ -62,6 +62,11 @@ export function ProfilerProbe({
 			geometries: info.memory.geometries,
 			textures: info.memory.textures,
 			activeWidgets: widgetCount,
+			// RFC-002 compositor fields — populated once Phase 4+ lands; zero
+			// until then so the profiler shape is stable across phases.
+			widgetsRepainted: 0,
+			fboBytes: 0,
+			phases: { hot: 0, warm: 0, cold: 0, waking: 0, dormant: 0 },
 		});
 	});
 
