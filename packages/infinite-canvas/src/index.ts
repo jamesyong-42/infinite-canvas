@@ -1,5 +1,3 @@
-// Engine
-
 // Re-exported from @jamesyong42/reactive-ecs for convenience
 export type {
 	ComponentInit,
@@ -9,12 +7,18 @@ export type {
 	TagType,
 	Unsubscribe,
 } from '@jamesyong42/reactive-ecs';
-// Archetype API
-export type { Archetype, ArchetypeRegistry, SpawnOptions } from './archetype.js';
-export { createArchetypeRegistry } from './archetype.js';
-export type { Command } from './commands.js';
-// Commands
-export { CommandBuffer, MoveCommand, ResizeCommand, SetComponentCommand } from './commands.js';
+
+// === ECS core ===
+
+export type { Archetype, ArchetypeRegistry, SpawnOptions } from './ecs/archetype.js';
+export { createArchetypeRegistry } from './ecs/archetype.js';
+export type { Command } from './ecs/commands.js';
+export {
+	CommandBuffer,
+	MoveCommand,
+	ResizeCommand,
+	SetComponentCommand,
+} from './ecs/commands.js';
 export type {
 	CardPreset,
 	CSSCursor,
@@ -22,8 +26,7 @@ export type {
 	HandleSetData,
 	InteractionRoleData,
 	InteractionRoleType,
-} from './components.js';
-// Built-in components & tags
+} from './ecs/components.js';
 export {
 	Active,
 	Card,
@@ -48,7 +51,10 @@ export {
 	WidgetData,
 	WorldBounds,
 	ZIndex,
-} from './components.js';
+} from './ecs/components.js';
+
+// === Engine ===
+
 export type {
 	FrameChanges,
 	LayoutEngine,
@@ -57,10 +63,12 @@ export type {
 	PointerDirective,
 	ResizeHandlePos,
 	VisibleEntity,
-} from './engine.js';
-export { createLayoutEngine } from './engine.js';
-export type { AABB, Rect, Vec2 } from './math.js';
-// Math
+} from './ecs/engine/index.js';
+export { createLayoutEngine } from './ecs/engine/index.js';
+
+// === Math ===
+
+export type { AABB, Rect, Vec2 } from './ecs/math.js';
 export {
 	clamp,
 	intersectsAABB,
@@ -68,8 +76,10 @@ export {
 	screenToWorld,
 	worldBoundsToAABB,
 	worldToScreen,
-} from './math.js';
-// Profiler types (commonly needed)
+} from './ecs/math.js';
+
+// === Profiler types (commonly needed) ===
+
 export type {
 	EcsStats,
 	FrameTimeStats,
@@ -79,70 +89,11 @@ export type {
 	TickSample,
 	WebGLPass,
 	WebGLStats,
-} from './profiler.js';
-// Card widget helpers
-export type { CardFrameProps, CreateCardWidgetOptions } from './react/card.js';
-export { CardFrame, createCardWidget } from './react/card.js';
-export type { ResolvedWidget } from './react/context.js';
-// Context hooks
-export {
-	useContainerRef,
-	useLayoutEngine,
-	useWidgetResolver,
-	WidgetResolverProvider,
-} from './react/context.js';
-// 3D geometry card widget helper
-export type {
-	CreateGeometryCardWidgetOptions,
-	GeometryCardBackground,
-	GeometryCardRenderProps,
-} from './react/geometry-card.js';
-export { createGeometryCardWidget } from './react/geometry-card.js';
-// ECS subscription hooks
-export {
-	useAllEntities,
-	useCamera,
-	useComponent,
-	useEntityComponents,
-	useEntityTags,
-	useQuery,
-	useRegisteredComponents,
-	useRegisteredTags,
-	useResource,
-	useTag,
-	useTaggedEntities,
-} from './react/hooks.js';
-export type { InfiniteCanvasHandle } from './react/InfiniteCanvas.js';
-// React component
-export { InfiniteCanvas } from './react/InfiniteCanvas.js';
-// Widget registry & types
-export type {
-	DomWidget,
-	DomWidgetProps,
-	R3FWidget,
-	R3FWidgetProps,
-	Widget as WidgetDef,
-	WidgetRegistry,
-	WidgetSurface,
-} from './react/registry.js';
-export { createWidgetRegistry, isR3FWidget } from './react/registry.js';
-export { WidgetProvider } from './react/WidgetProvider.js';
-export type { GridConfig } from './react/webgl/GridRenderer.js';
+} from './profiler/Profiler.js';
 
-// Grid & selection config (commonly needed for InfiniteCanvas props)
-export { DEFAULT_GRID_CONFIG } from './react/webgl/GridRenderer.js';
-export type { SelectionBounds, SelectionConfig } from './react/webgl/SelectionRenderer.js';
-export { DEFAULT_SELECTION_CONFIG } from './react/webgl/SelectionRenderer.js';
-// Widget hooks
-export {
-	useBreakpoint,
-	useChildren,
-	useIsSelected,
-	useUpdateWidget,
-	useWidgetData,
-} from './react/widget-hooks.js';
-export type { Breakpoint, CursorResourceData, NavigationFrame } from './resources.js';
-// Resources
+// === Resources ===
+
+export type { Breakpoint, CursorResourceData, NavigationFrame } from './ecs/resources.js';
 export {
 	BreakpointConfigResource,
 	CameraResource,
@@ -151,8 +102,82 @@ export {
 	NavigationStackResource,
 	ViewportResource,
 	ZoomConfigResource,
-} from './resources.js';
-// Standard Schema v1 (for widget data validation — bring your own validator)
-export type { StandardSchemaV1 } from './schema.js';
-// Snap types (for reading snap guide state)
-export type { EntityBounds, EqualSpacingIndicator, SnapGuide, SnapResult } from './snap.js';
+} from './ecs/resources.js';
+
+// === Standard Schema v1 (for widget data validation) ===
+
+export type { StandardSchemaV1 } from './ecs/schema.js';
+
+// === Snap ===
+
+export type {
+	EntityBounds,
+	EqualSpacingIndicator,
+	SnapGuide,
+	SnapResult,
+} from './ecs/spatial/snap.js';
+
+// === React components and hooks ===
+
+export type { ResolvedWidget } from './react/context/index.js';
+export {
+	useContainerRef,
+	useLayoutEngine,
+	useWidgetResolver,
+	WidgetResolverProvider,
+} from './react/context/index.js';
+export {
+	useAllEntities,
+	useBreakpoint,
+	useCamera,
+	useChildren,
+	useComponent,
+	useEntityComponents,
+	useEntityTags,
+	useIsSelected,
+	useQuery,
+	useRegisteredComponents,
+	useRegisteredTags,
+	useResource,
+	useTag,
+	useTaggedEntities,
+	useUpdateWidget,
+	useWidgetData,
+} from './react/hooks/index.js';
+export type { InfiniteCanvasHandle } from './react/InfiniteCanvas.js';
+export { InfiniteCanvas } from './react/InfiniteCanvas.js';
+export type {
+	DomWidget,
+	DomWidgetProps,
+	R3FWidget,
+	R3FWidgetProps,
+	Widget as WidgetDef,
+	WidgetRegistry,
+	WidgetSurface,
+} from './react/widgets/registry.js';
+export { createWidgetRegistry, isR3FWidget } from './react/widgets/registry.js';
+export { WidgetProvider } from './react/widgets/WidgetProvider.js';
+
+// === DOM card widget helper ===
+
+export type { CardFrameProps, CreateCardWidgetOptions } from './react/widgets/card.js';
+export { CardFrame, createCardWidget } from './react/widgets/card.js';
+
+// === R3F geometry card widget helper ===
+
+export type {
+	CreateGeometryCardWidgetOptions,
+	GeometryCardBackground,
+	GeometryCardRenderProps,
+} from './r3f/widgets/geometry-card.js';
+export { createGeometryCardWidget } from './r3f/widgets/geometry-card.js';
+
+// === Grid + selection config (needed for InfiniteCanvas props) ===
+
+export type { GridConfig } from './webgl/renderers/GridRenderer.js';
+export { DEFAULT_GRID_CONFIG } from './webgl/renderers/GridRenderer.js';
+export type {
+	SelectionBounds,
+	SelectionConfig,
+} from './webgl/renderers/SelectionRenderer.js';
+export { DEFAULT_SELECTION_CONFIG } from './webgl/renderers/SelectionRenderer.js';

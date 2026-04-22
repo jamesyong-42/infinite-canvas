@@ -1,9 +1,16 @@
-// WebGL renderers
-// Note: DEFAULT_GRID_CONFIG, GridConfig, DEFAULT_SELECTION_CONFIG, SelectionConfig,
-// and SelectionBounds are exported from the main entry point (index.ts) since they
-// are needed for InfiniteCanvas prop typing.
+// Advanced composition surface. Stable but lower-level than the main entry.
+// Use these when you need to drop below <InfiniteCanvas> and compose the
+// layers yourself — e.g. to replace the WebGL manager, insert custom R3F
+// content, or ship the devtools separately.
 
-export { SpatialIndexResource } from './engine.js';
+// === ECS internals ===
+
+export { SpatialIndexResource } from './ecs/resources.js';
+export { SpatialIndex } from './ecs/spatial/SpatialIndex.js';
+export { computeSnapGuides } from './ecs/spatial/snap.js';
+
+// === Profiler ===
+
 export type {
 	EcsStats,
 	FrameTimeStats,
@@ -13,22 +20,30 @@ export type {
 	TickSample,
 	WebGLPass,
 	WebGLStats,
-} from './profiler.js';
-// Profiler
-export { Profiler } from './profiler.js';
-// Context providers (for custom composition)
-export { ContainerRefProvider, EngineProvider } from './react/context.js';
-export { SelectionOverlaySlot } from './react/SelectionOverlaySlot.js';
-// Sub-components (for advanced composition)
-export { WidgetSlot } from './react/WidgetSlot.js';
-export { GridRenderer } from './react/webgl/GridRenderer.js';
-export { SelectionRenderer } from './react/webgl/SelectionRenderer.js';
-export { WebGLWidgetLayer } from './react/webgl/WebGLWidgetLayer.js';
-export { WebGLWidgetSlot } from './react/webgl/WebGLWidgetSlot.js';
-export type { CanvasDocument, SerializedEntity } from './serialization.js';
-// Serialization
-export { deserializeWorld, serializeEntities, serializeWorld } from './serialization.js';
-// Snap guide computation
-export { computeSnapGuides } from './snap.js';
-// Spatial index
-export { SpatialIndex } from './spatial.js';
+} from './profiler/Profiler.js';
+export { Profiler } from './profiler/Profiler.js';
+
+// === Serialization ===
+
+export type { CanvasDocument, SerializedEntity } from './ecs/serialization.js';
+export { deserializeWorld, serializeEntities, serializeWorld } from './ecs/serialization.js';
+
+// === React composition ===
+
+export { ContainerRefProvider, EngineProvider } from './react/context/index.js';
+export { SelectionOverlaySlot } from './react/overlays/SelectionOverlaySlot.js';
+export { WidgetSlot } from './react/widgets/WidgetSlot.js';
+
+// === WebGL layer (vanilla Three.js) ===
+
+export { GridRenderer } from './webgl/renderers/GridRenderer.js';
+export { SelectionRenderer } from './webgl/renderers/SelectionRenderer.js';
+export type { WebGLFrameInput, WebGLManagerOptions } from './webgl/WebGLManager.js';
+export { WebGLManager } from './webgl/WebGLManager.js';
+
+// === R3F layer (React Three Fiber) ===
+
+export { CameraSync } from './r3f/CameraSync.js';
+export { ProfilerProbe } from './r3f/ProfilerProbe.js';
+export { R3FManager } from './r3f/R3FManager.js';
+export { R3FWidgetSlot } from './r3f/R3FWidgetSlot.js';

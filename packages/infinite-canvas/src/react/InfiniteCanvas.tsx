@@ -8,60 +8,45 @@ import React, {
 	useRef,
 	useState,
 } from 'react';
-import { Vector2 } from 'three';
-import { SelectionFrame, Widget, WorldBounds } from '../components.js';
-import type { LayoutEngine } from '../engine.js';
-import { DEAD_ZONE_TOUCH_PX } from '../interaction-constants.js';
-import { CursorResource, NavigationStackResource } from '../resources.js';
-import { ContainerRefProvider, EngineProvider, useWidgetResolver } from './context.js';
-import { SelectionOverlaySlot } from './SelectionOverlaySlot.js';
-import { WidgetProvider } from './WidgetProvider.js';
-import { WidgetSlot } from './WidgetSlot.js';
-import type { GridConfig } from './webgl/GridRenderer.js';
-import { GridRenderer } from './webgl/GridRenderer.js';
-import type { SelectionBounds, SelectionConfig } from './webgl/SelectionRenderer.js';
-import { SelectionRenderer } from './webgl/SelectionRenderer.js';
-import { WebGLWidgetLayer } from './webgl/WebGLWidgetLayer.js';
+import { SelectionFrame, Widget, WorldBounds } from '../ecs/components.js';
+import type { LayoutEngine } from '../ecs/engine/index.js';
+import { DEAD_ZONE_TOUCH_PX } from '../ecs/interaction-constants.js';
+import { CursorResource, NavigationStackResource } from '../ecs/resources.js';
+import { R3FManager } from '../r3f/R3FManager.js';
+import type { GridConfig } from '../webgl/renderers/GridRenderer.js';
+import type { SelectionBounds, SelectionConfig } from '../webgl/renderers/SelectionRenderer.js';
+import { WebGLManager } from '../webgl/WebGLManager.js';
+import { ContainerRefProvider } from './context/container-ref-context.js';
+import { EngineProvider } from './context/engine-context.js';
+import { useWidgetResolver } from './context/widget-resolver-context.js';
+import { SelectionOverlaySlot } from './overlays/SelectionOverlaySlot.js';
+import { WidgetProvider } from './widgets/WidgetProvider.js';
+import { WidgetSlot } from './widgets/WidgetSlot.js';
 
 /** Imperative handle exposed via `ref` on InfiniteCanvas for programmatic control. */
 export interface InfiniteCanvasHandle {
-	/** Moves the camera to the specified world coordinates. */
 	panTo(worldX: number, worldY: number): void;
-	/** Sets the zoom level directly. */
 	zoomTo(zoom: number): void;
-	/** Adjusts camera to fit all entities in the viewport. */
 	zoomToFit(padding?: number): void;
-	/** Undoes the last command or command group. */
 	undo(): void;
-	/** Redoes the last undone command. */
 	redo(): void;
-	/** Returns the underlying LayoutEngine instance. */
 	getEngine(): LayoutEngine;
 }
 
-/** Props for the InfiniteCanvas component. */
 interface InfiniteCanvasProps {
 	/**
 	 * The LayoutEngine instance powering this canvas. Create with `createLayoutEngine()`.
-	 * Widgets and archetypes must be registered on the engine — via config or
-	 * `engine.registerWidget` / `engine.registerArchetype`.
 	 */
 	engine: LayoutEngine;
 	/** Grid configuration. Pass `false` to disable the grid entirely. */
 	grid?: Partial<GridConfig> | false;
 	/** Selection highlight style configuration. */
 	selection?: Partial<SelectionConfig>;
-	/** Called when the set of selected entities changes. */
 	onSelectionChange?: (entityIds: EntityId[]) => void;
-	/** Called when the camera (pan/zoom) changes. */
 	onCameraChange?: (camera: { x: number; y: number; zoom: number }) => void;
-	/** Called when navigation depth changes (entering/exiting containers). */
 	onNavigationChange?: (depth: number, containerId: EntityId | null) => void;
-	/** CSS class name applied to the root container div. */
 	className?: string;
-	/** Inline styles applied to the root container div. */
 	style?: React.CSSProperties;
-	/** Overlay children (toolbars, panels) rendered on top of the canvas. */
 	children?: React.ReactNode;
 }
 
@@ -96,7 +81,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			onNavigationChangeRef.current = onNavigationChange;
 		}, [onNavigationChange]);
 
-		// Imperative handle
 		useImperativeHandle(
 			ref,
 			() => ({
@@ -126,8 +110,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 		);
 
 		const webglCanvasRef = useRef<HTMLCanvasElement>(null);
-		const gridRendererRef = useRef<GridRenderer | null>(null);
-		const selectionRendererRef = useRef<SelectionRenderer | null>(null);
+		const webglManagerRef = useRef<WebGLManager | null>(null);
 		const cameraLayerRef = useRef<HTMLDivElement>(null);
 		const slotRefs = useRef(new Map<EntityId, HTMLDivElement>());
 		const [visibleEntities, setVisibleEntities] = useState<EntityId[]>([]);
@@ -141,22 +124,14 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			}
 		}, []);
 
-		// Initialize GridRenderer + set viewport size on mount/resize
+		// Initialise WebGLManager + viewport on mount/resize.
 		useLayoutEffect(() => {
 			const container = containerRef.current;
 			const canvas = webglCanvasRef.current;
 			if (!container || !canvas) return;
 
-			const gridEnabled = grid !== false;
-			let gridInst: GridRenderer | null = null;
-			if (gridEnabled) {
-				gridInst = new GridRenderer(canvas);
-				gridRendererRef.current = gridInst;
-			}
-
-			// SelectionRenderer shares the WebGLRenderer from GridRenderer
-			const selInst = new SelectionRenderer();
-			selectionRendererRef.current = selInst;
+			const manager = new WebGLManager(canvas, { grid });
+			webglManagerRef.current = manager;
 
 			const updateSize = () => {
 				const rect = container.getBoundingClientRect();
@@ -164,10 +139,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				engine.setViewport(rect.width, rect.height, dpr);
 				canvas.style.width = `${rect.width}px`;
 				canvas.style.height = `${rect.height}px`;
-				if (gridInst) {
-					gridInst.setSize(rect.width, rect.height, dpr);
-				}
-				selInst.setSize(new Vector2(rect.width * dpr, rect.height * dpr), dpr);
+				manager.setSize(rect.width, rect.height, dpr);
 			};
 
 			updateSize();
@@ -175,34 +147,30 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			observer.observe(container);
 			return () => {
 				observer.disconnect();
-				if (gridInst) {
-					gridInst.dispose();
-					gridRendererRef.current = null;
-				}
-				selInst.dispose();
-				selectionRendererRef.current = null;
+				manager.dispose();
+				webglManagerRef.current = null;
 			};
 		}, [engine, grid]);
 
 		// Apply grid + selection config on every render
 		useEffect(() => {
-			const gridR = gridRendererRef.current;
-			if (gridR && grid !== false) {
+			const manager = webglManagerRef.current;
+			if (!manager) return;
+			if (grid !== false) {
 				const isDark = document.documentElement.classList.contains('dark');
-				gridR.setConfig({
+				manager.setGridConfig({
 					dotColor: isDark ? [1, 1, 1] : [0, 0, 0],
 					dotAlpha: isDark ? 0.12 : 0.18,
 					...grid,
 				});
 			}
-			const selR = selectionRendererRef.current;
-			if (selR && selection) {
-				selR.setConfig(selection);
+			if (selection) {
+				manager.setSelectionConfig(selection);
 			}
 			engine.markDirty();
 		}, [engine, grid, selection]);
 
-		// Wheel handler — pan/zoom (gesture channel, always active)
+		// Wheel handler — pan/zoom (always active)
 		useEffect(() => {
 			const container = containerRef.current;
 			if (!container) return;
@@ -210,11 +178,9 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			const onWheel = (e: WheelEvent) => {
 				e.preventDefault();
 				if (e.ctrlKey || e.metaKey) {
-					// Pinch zoom or ctrl+scroll
 					const rect = container.getBoundingClientRect();
 					engine.zoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, -e.deltaY * 0.01);
 				} else {
-					// Two-finger scroll pan
 					engine.panBy(-e.deltaX, -e.deltaY);
 				}
 			};
@@ -224,8 +190,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 		}, [engine]);
 
 		// Touch gesture handler — iOS Freeform-style interactions
-		// 1 finger on background → pan; 1 finger on entity → select/drag;
-		// 2 fingers → pinch-to-zoom + pan; double-tap → zoom step / enter container
 		useEffect(() => {
 			const container = containerRef.current;
 			if (!container) return;
@@ -297,7 +261,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				const rect = getRect();
 				const touches = e.touches;
 
-				// --- 2+ fingers → pinch (override everything) ---
 				if (touches.length >= 2) {
 					e.preventDefault();
 					cancelEngineGesture();
@@ -307,17 +270,14 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					return;
 				}
 
-				// --- 1 finger ---
 				const touch = touches[0];
 				const x = touch.clientX - rect.left;
 				const y = touch.clientY - rect.top;
 
-				// Let interactive elements (buttons, inputs) handle their own touch
 				if (isInteractive(e.target)) return;
 
 				e.preventDefault();
 
-				// Double-tap detection
 				const now = Date.now();
 				if (
 					now - lastTapTime < DOUBLE_TAP_MS &&
@@ -325,17 +285,14 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					Math.abs(y - lastTapY) < DOUBLE_TAP_DIST
 				) {
 					lastTapTime = 0;
-					// Hit test to check for entity
 					const directive = engine.handlePointerDown(x, y, 0, noMods);
 					try {
 						if (directive.action === 'passthrough-track-drag') {
-							// Double-tap on entity → enter container
 							const selected = engine.getSelectedEntities();
 							if (selected.length === 1) {
 								engine.enterContainer(selected[0]);
 							}
 						} else {
-							// Double-tap on empty → zoom step
 							const camera = engine.getCamera();
 							const target = camera.zoom < 0.9 ? 1 : camera.zoom < 1.8 ? 2 : 1;
 							engine.zoomAtPoint(x, y, (target - camera.zoom) / camera.zoom);
@@ -349,11 +306,9 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				}
 
 				if (isOnWidget(e.target)) {
-					// Touch on entity → delegate to engine
 					engine.handlePointerDown(x, y, 0, noMods);
 					gesture = { type: 'pending-entity', x, y, time: now };
 				} else {
-					// Touch on empty space → prepare to pan (don't tell engine yet)
 					gesture = { type: 'pending-pan', x, y, time: now };
 				}
 			}
@@ -363,7 +318,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				const rect = getRect();
 				const touches = e.touches;
 
-				// --- Pinch ---
 				if (gesture.type === 'pinching' && touches.length >= 2) {
 					const dist = touchDist(touches[0], touches[1]);
 					const center = touchCenter(touches[0], touches[1], rect);
@@ -376,7 +330,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					return;
 				}
 
-				// Transition to pinch if second finger added
 				if (touches.length >= 2) {
 					cancelEngineGesture();
 					const dist = touchDist(touches[0], touches[1]);
@@ -390,7 +343,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				const x = touch.clientX - rect.left;
 				const y = touch.clientY - rect.top;
 
-				// Pending pan → check dead zone
 				if (gesture.type === 'pending-pan') {
 					if (
 						Math.abs(x - gesture.x) > DEAD_ZONE_TOUCH_PX ||
@@ -401,7 +353,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					return;
 				}
 
-				// Active panning
 				if (gesture.type === 'panning') {
 					engine.panBy(x - gesture.lastX, y - gesture.lastY);
 					gesture.lastX = x;
@@ -409,7 +360,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					return;
 				}
 
-				// Entity drag → delegate to engine
 				if (gesture.type === 'pending-entity' || gesture.type === 'entity-dragging') {
 					engine.handlePointerMove(x, y, noMods);
 					if (gesture.type === 'pending-entity') {
@@ -428,7 +378,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				const remaining = e.touches.length;
 				const rect = getRect();
 
-				// Pinch → transition based on remaining fingers
 				if (gesture.type === 'pinching') {
 					if (remaining === 1) {
 						const t = e.touches[0];
@@ -445,7 +394,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 
 				if (remaining > 0) return;
 
-				// Tap on empty space → deselect
 				if (gesture.type === 'pending-pan') {
 					engine.handlePointerDown(gesture.x, gesture.y, 0, noMods);
 					engine.handlePointerUp();
@@ -455,7 +403,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					lastTapY = gesture.y;
 				}
 
-				// Tap on entity (no drag) → selection already happened
 				if (gesture.type === 'pending-entity') {
 					engine.handlePointerUp();
 					engine.markDirty();
@@ -464,7 +411,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					lastTapY = gesture.y;
 				}
 
-				// Entity drag end
 				if (gesture.type === 'entity-dragging') {
 					engine.handlePointerUp();
 					engine.markDirty();
@@ -474,8 +420,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			}
 
 			function onTouchCancel(_e: TouchEvent) {
-				// Reset gesture state unconditionally — the browser cancelled the touch.
-				// Unlike onTouchEnd we don't inspect e.touches (which may be empty).
 				gesture = { type: 'idle' };
 				engine.handlePointerCancel();
 			}
@@ -493,15 +437,10 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			};
 		}, [engine]);
 
-		// Canvas-level pointer handlers — attached to the root container div so
-		// pointer events in the "outside handle strip" (handle hit zone that
-		// extends beyond a widget slot's DOM bounds) reach the engine. Widget
-		// slots still have their own handlers and stopPropagation, so events
-		// inside widgets never reach these fallbacks.
+		// Canvas-level pointer handlers for the "outside handle strip".
 		const onCanvasPointerDown = useCallback(
 			(e: React.PointerEvent) => {
 				const target = e.target as HTMLElement | null;
-				// Respect interactive form elements inside widget children.
 				if (target?.closest('button, input, textarea, select, [contenteditable]')) return;
 				const rect = containerRef.current?.getBoundingClientRect();
 				if (!rect) return;
@@ -516,10 +455,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 						meta: e.metaKey,
 					},
 				);
-				// Capture on the container so subsequent moves route here even when
-				// the pointer leaves the viewport. Widget slot already captures for
-				// events that reach it first; this is for empty-space / outside-strip
-				// events that bypass widget slots.
 				if (
 					directive.action === 'capture-resize' ||
 					directive.action === 'passthrough-track-drag'
@@ -533,8 +468,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 
 		const onCanvasPointerMove = useCallback(
 			(e: React.PointerEvent) => {
-				// Skip if a widget slot is handling this pointer — avoids double
-				// handlePointerMove when the event bubbles from a captured widget.
 				const target = e.target as HTMLElement;
 				if (target.closest?.('[data-widget-slot]') && target !== containerRef.current) {
 					return;
@@ -562,7 +495,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 		);
 
 		// rAF tick loop — flushes the engine when dirty, then applies updates.
-		// This is THE render loop. Input handlers set engine dirty; this loop ticks.
 		useEffect(() => {
 			let rafId: number;
 			let running = true;
@@ -581,35 +513,17 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					}
 
 					// RFC-001 Phase 7: apply derived cursor to root container.
-					// Equality guard avoids redundant DOM writes in devtools diffs.
 					const cursor = engine.world.getResource(CursorResource).cursor;
 					if (containerRef.current && containerRef.current.style.cursor !== cursor) {
 						containerRef.current.style.cursor = cursor;
 					}
 
-					// 1b. Render WebGL dot grid + selection, with profiler probes.
-					const profiler = engine.profiler;
-					const profilerOn = profiler.isEnabled();
-					let selectionFramesDrawn = 0;
-					let snapGuidesDrawn = 0;
-					let spacingIndicatorsDrawn = 0;
-
-					// Zero the engine renderer.info counters at the top of the
-					// tick. `autoReset` is set to false in GridRenderer so that
-					// grid + selection calls accumulate into one tick total.
-					if (gridRendererRef.current) {
-						gridRendererRef.current.getWebGLRenderer().info.reset();
-					}
-
-					if (gridRendererRef.current) {
-						profiler.beginWebGL('grid');
-						gridRendererRef.current.render(camera.x, camera.y, camera.zoom);
-						profiler.endWebGL('grid');
-					}
-					if (selectionRendererRef.current && gridRendererRef.current) {
-						const selected = engine.getSelectedEntities();
+					// 1b. Drive WebGL layer via the manager — grid + selection + profiler.
+					const manager = webglManagerRef.current;
+					if (manager) {
+						const selectedIds = engine.getSelectedEntities();
 						const selBounds: SelectionBounds[] = [];
-						for (const id of selected) {
+						for (const id of selectedIds) {
 							// Widgets that render their own chrome (e.g. cards) opt out
 							// of the engine-drawn frame by lacking the SelectionFrame tag.
 							if (!engine.has(id, SelectionFrame)) continue;
@@ -634,38 +548,16 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 									height: wb.worldHeight,
 								};
 						}
-						const snapGuides = engine.getSnapGuides();
-						const equalSpacing = engine.getEqualSpacing();
-						selectionFramesDrawn = selBounds.length + (hovBounds ? 1 : 0);
-						snapGuidesDrawn = snapGuides.length;
-						spacingIndicatorsDrawn = equalSpacing.length;
 
-						profiler.beginWebGL('selection');
-						selectionRendererRef.current.render(
-							gridRendererRef.current.getWebGLRenderer(),
-							camera.x,
-							camera.y,
-							camera.zoom,
-							selBounds,
-							hovBounds,
-							snapGuides,
-							equalSpacing,
-						);
-						profiler.endWebGL('selection');
-					}
-
-					// 1c. Capture renderer.info + counts from the engine WebGL
-					// renderer. Because GridRenderer sets autoReset=false and we
-					// reset at the top of this block, info.render now holds the
-					// accumulated total across grid + selection passes.
-					if (profilerOn && gridRendererRef.current) {
-						const info = gridRendererRef.current.getWebGLRenderer().info;
-						profiler.recordWebGLStats({
-							drawCalls: info.render.calls,
-							triangles: info.render.triangles,
-							selectionFrames: selectionFramesDrawn,
-							snapGuides: snapGuidesDrawn,
-							spacingIndicators: spacingIndicatorsDrawn,
+						manager.render({
+							camera: { x: camera.x, y: camera.y, zoom: camera.zoom },
+							selection: {
+								bounds: selBounds,
+								hovered: hovBounds,
+								guides: engine.getSnapGuides(),
+								spacings: engine.getEqualSpacing(),
+							},
+							profiler: engine.profiler,
 							domPositionsUpdated: changes.positionsChanged.length,
 						});
 					}
@@ -710,14 +602,18 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			const visible = engine.getVisibleEntities();
 			setVisibleEntities(visible.map((v) => v.entityId));
 
-			// Set initial camera transform + grid
+			// Set initial camera transform
 			const camera = engine.getCamera();
 			if (cameraLayerRef.current) {
 				cameraLayerRef.current.style.transform = `scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`;
 			}
-			// Initial WebGL grid render
-			if (gridRendererRef.current) {
-				gridRendererRef.current.render(camera.x, camera.y, camera.zoom);
+			// Initial WebGL render
+			const manager = webglManagerRef.current;
+			if (manager) {
+				manager.render({
+					camera: { x: camera.x, y: camera.y, zoom: camera.zoom },
+					selection: { bounds: [], hovered: null, guides: [], spacings: [] },
+				});
 			}
 
 			// Set initial slot positions
@@ -729,7 +625,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				el.style.height = `${v.worldHeight}px`;
 			}
 
-			// Start the loop
 			rafId = requestAnimationFrame(loop);
 
 			return () => {
@@ -739,7 +634,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 		}, [engine]);
 
 		// Fix #4: useLayoutEffect to set initial positions BEFORE browser paint
-		// Prevents one-frame flash at (0,0) when new widgets enter the viewport
 		useLayoutEffect(() => {
 			for (const entityId of visibleEntities) {
 				const el = slotRefs.current.get(entityId);
@@ -780,18 +674,16 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				onPointerMove={onCanvasPointerMove}
 				onPointerUp={onCanvasPointerUp}
 			>
-				{/* WebGL layer — dot grid, selection overlays, connections */}
+				{/* Vanilla WebGL layer — dot grid + selection overlays (driven by WebGLManager) */}
 				<canvas ref={webglCanvasRef} className="absolute inset-0 pointer-events-none" />
 
-				{/* R3F layer — WebGL widgets (lazy, only when webgl entities exist) */}
-				{webglEntities.length > 0 && <WebGLWidgetBridge engine={engine} entities={webglEntities} />}
+				{/* R3F layer — 3D widgets (lazy, only when webgl entities exist) */}
+				{webglEntities.length > 0 && <R3FBridge engine={engine} entities={webglEntities} />}
 
-				{/* Background — purely visual; pointer handlers live on the container.
-			    Kept as a div so the paint order (canvas, background, camera layer)
-			    is stable and future background visuals have a dedicated layer. */}
+				{/* Background — purely visual; pointer handlers live on the container. */}
 				<div className="absolute inset-0 pointer-events-none" />
 
-				{/* Camera transform layer — DOM widgets + selection overlays for WebGL widgets */}
+				{/* Camera transform layer — DOM widgets + selection overlays for R3F widgets */}
 				<div
 					ref={cameraLayerRef}
 					className="absolute left-0 top-0 origin-top-left will-change-transform"
@@ -819,8 +711,8 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 	},
 );
 
-/** Bridge component — reads widget resolver from context and passes to WebGLWidgetLayer */
-function WebGLWidgetBridge({ engine, entities }: { engine: LayoutEngine; entities: EntityId[] }) {
+/** Bridge component — reads widget resolver from context and passes to R3FManager. */
+function R3FBridge({ engine, entities }: { engine: LayoutEngine; entities: EntityId[] }) {
 	const resolver = useWidgetResolver();
 	const resolve = useCallback(
 		(entityId: EntityId) => {
@@ -833,5 +725,5 @@ function WebGLWidgetBridge({ engine, entities }: { engine: LayoutEngine; entitie
 
 	if (!resolver) return null;
 
-	return <WebGLWidgetLayer engine={engine} entities={entities} resolve={resolve} />;
+	return <R3FManager engine={engine} entities={entities} resolve={resolve} />;
 }

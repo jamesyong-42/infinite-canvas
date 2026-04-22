@@ -8,7 +8,7 @@ import {
 	SelectionFrame,
 	Transform2D,
 } from '../index.js';
-import { createCardWidget } from '../react/card.js';
+import { createCardWidget } from '../react/widgets/card.js';
 
 // Minimal Standard Schema v1 stub — we only need the `~standard` marker
 // present; createCardWidget does not validate data itself.
