@@ -51,6 +51,20 @@ export const WidgetBreakpoint = defineComponent('WidgetBreakpoint', {
 	screenHeight: 0,
 });
 
+// === Card ===
+
+/** iOS-style card size presets. Actual dimensions live in CardPresetsResource. */
+export type CardPreset = 'small' | 'medium' | 'large' | 'xl';
+
+/**
+ * Marks an entity as an iOS-style card with a fixed preset size.
+ * The `cardSystem` reconciles `Transform2D.width/height` from the preset
+ * each tick, so cards cannot be resized freely — change `preset` instead.
+ */
+export const Card = defineComponent('Card', {
+	preset: 'small' as CardPreset,
+});
+
 // === Container ===
 
 /** Marks an entity as an enterable container (double-click/double-tap to enter). */
@@ -152,6 +166,19 @@ export const Resizable = defineTag('Resizable');
 export const Locked = defineTag('Locked');
 /** Indicates the entity is currently selected. */
 export const Selected = defineTag('Selected');
+/**
+ * Indicates the entity is currently being dragged by the user.
+ * Added after the drag dead-zone is crossed; removed on pointer up/cancel.
+ * Renderers read this to apply transient drag affordances (e.g. scale/shadow lift).
+ */
+export const Dragging = defineTag('Dragging');
+/**
+ * Entities with this tag get the engine-drawn selection + hover outline frame.
+ * Granted automatically to Selectable entities unless explicitly disabled via
+ * `Archetype.interactive.selectionFrame: false`. Widgets that render their own
+ * selected/hover chrome (e.g. iOS-style cards) opt out.
+ */
+export const SelectionFrame = defineTag('SelectionFrame');
 /** Indicates the entity is currently being interacted with (drag, resize). */
 export const Active = defineTag('Active');
 /** Indicates the entity is within the visible viewport. Set by the cull system. */

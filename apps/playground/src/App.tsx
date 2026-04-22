@@ -1,6 +1,5 @@
 import type { GridConfig } from '@jamesyong42/infinite-canvas';
 import {
-	Children,
 	createLayoutEngine,
 	DEFAULT_GRID_CONFIG,
 	InfiniteCanvas,
@@ -10,106 +9,85 @@ import { useEffect, useMemo, useState } from 'react';
 import { InspectorPanel } from './panels/InspectorPanel.js';
 import { NavigationBreadcrumbs } from './panels/NavigationBreadcrumbs.js';
 import { SettingsPanel } from './panels/SettingsPanel.js';
-import { Debug3D } from './widgets/Debug3D.js';
-import { DebugCard } from './widgets/DebugCard.js';
-import { DebugContainer, DebugContainerArchetype } from './widgets/DebugContainer.js';
-import { DebugInteractive } from './widgets/DebugInteractive.js';
+import { BatteryCard } from './widgets/BatteryCard.js';
+import { CalendarCard } from './widgets/CalendarCard.js';
+import { ClockCard } from './widgets/ClockCard.js';
+import { CrystalWidget } from './widgets/CrystalWidget.js';
+import { FitnessCard } from './widgets/FitnessCard.js';
+import { FloatingCubeWidget } from './widgets/FloatingCubeWidget.js';
+import { GoldKnotCard } from './widgets/GoldKnotCard.js';
+import { MatteSphereCard } from './widgets/MatteSphereCard.js';
+import { PhotosCard } from './widgets/PhotosCard.js';
+import { StocksCard } from './widgets/StocksCard.js';
+import { TorusKnotCard } from './widgets/TorusKnotCard.js';
+import { WeatherCard } from './widgets/WeatherCard.js';
 
 function createDemoScene() {
+	const domCards = [
+		ClockCard,
+		BatteryCard,
+		CalendarCard,
+		WeatherCard,
+		StocksCard,
+		FitnessCard,
+		PhotosCard,
+	];
+	const geomCards = [
+		MatteSphereCard,
+		CrystalWidget,
+		TorusKnotCard,
+		FloatingCubeWidget,
+		GoldKnotCard,
+	];
 	const engine = createLayoutEngine({
 		zoom: { min: 0.05, max: 8 },
-		widgets: [DebugCard, DebugInteractive, DebugContainer, Debug3D],
-		archetypes: [DebugContainerArchetype],
+		widgets: [...domCards.map((c) => c.widget), ...geomCards.map((c) => c.widget)],
+		archetypes: [...domCards.map((c) => c.archetype), ...geomCards.map((c) => c.archetype)],
 	});
 
-	engine.spawn('debug-card', {
-		at: { x: 50, y: 50 },
+	// iOS-style cards — fixed preset sizes, non-resizable, lift-on-drag.
+	// Grid pitch is 155px + 19px gap = 174px; aligned to the iOS widget grid.
+	const GX = 50; // origin x
+	const GY = 50; // origin y
+	const PITCH = 174;
+
+	// Left column (2 small-wide slots = 329px):
+	engine.spawn('clock-card', { at: { x: GX, y: GY }, zIndex: 11 });
+	engine.spawn('battery-card', { at: { x: GX + PITCH, y: GY }, zIndex: 12 });
+	engine.spawn('calendar-card', {
+		at: { x: GX, y: GY + PITCH },
 		data: {
-			title: 'Hello World',
-			color: '#3b82f6',
-			description: 'A simple card widget demonstrating breakpoints.',
+			dateIso: null,
+			nextEvent: 'Design review',
+			nextEventTime: '3:30 PM',
 		},
-		zIndex: 1,
+		zIndex: 13,
 	});
-	engine.spawn('debug-card', {
-		at: { x: 350, y: 50 },
-		size: { width: 200, height: 150 },
-		data: { title: 'Another Card', color: '#ef4444' },
-		zIndex: 2,
+	engine.spawn('weather-card', {
+		at: { x: GX, y: GY + PITCH * 2 },
+		data: { location: 'Cupertino', temp: 72, high: 78, low: 60, condition: 'sunny' },
+		zIndex: 14,
 	});
-	engine.spawn('debug-card', {
-		at: { x: 600, y: 50 },
-		size: { width: 300, height: 200 },
-		data: {
-			title: 'Wide Card',
-			color: '#f59e0b',
-			description: 'This one is wider to show expanded breakpoint.',
-		},
-		zIndex: 3,
-	});
-	engine.spawn('debug-interactive', {
-		at: { x: 50, y: 280 },
-		data: { title: 'Click Counter' },
-		zIndex: 4,
-	});
-	engine.spawn('debug-interactive', {
-		at: { x: 380, y: 280 },
-		size: { width: 250, height: 180 },
-		data: { title: 'Text Input' },
-		zIndex: 5,
+	engine.spawn('stocks-card', { at: { x: GX, y: GY + PITCH * 3 }, zIndex: 15 });
+	engine.spawn('fitness-card', { at: { x: GX, y: GY + PITCH * 4 }, zIndex: 16 });
+
+	// Middle column (one xl photo card):
+	engine.spawn('photos-card', {
+		at: { x: GX + PITCH * 2 + 19, y: GY },
+		zIndex: 17,
 	});
 
-	// Enterable container — archetype bundles Container + Children.
-	const container = engine.spawn('debug-container', {
-		at: { x: 50, y: 530 },
-		size: { width: 500, height: 350 },
-		data: { title: 'My Container' },
-		zIndex: 6,
+	// Right column — 3D / PBR cards. Two small side-by-side, two medium
+	// stacked, one large at the bottom.
+	const G3X = GX + PITCH * 2 + 19 + 329 + 19; // past the Photos column
+	engine.spawn('matte-sphere-card', { at: { x: G3X, y: GY }, zIndex: 20 });
+	engine.spawn('crystal-widget', { at: { x: G3X + PITCH, y: GY }, zIndex: 21 });
+	engine.spawn('torus-knot-card', { at: { x: G3X, y: GY + PITCH }, zIndex: 22 });
+	engine.spawn('floating-cube-widget', {
+		at: { x: G3X, y: GY + PITCH * 2 },
+		zIndex: 23,
 	});
-
-	const child1 = engine.spawn('debug-card', {
-		at: { x: 30, y: 30 },
-		size: { width: 200, height: 140 },
-		data: { title: 'Child A', color: '#8b5cf6' },
-		zIndex: 1,
-		parent: container,
-	});
-	const child2 = engine.spawn('debug-interactive', {
-		at: { x: 260, y: 30 },
-		size: { width: 200, height: 140 },
-		data: { title: 'Child B' },
-		zIndex: 2,
-		parent: container,
-	});
-	engine.set(container, Children, { ids: [child1, child2] });
-
-	engine.spawn('debug-card', {
-		at: { x: 700, y: 300 },
-		size: { width: 220, height: 160 },
-		data: { title: 'Far Away', color: '#06b6d4', description: 'Pan to find me!' },
-		zIndex: 7,
-	});
-	engine.spawn('debug-card', {
-		at: { x: -300, y: -200 },
-		data: {
-			title: 'Negative Space',
-			color: '#84cc16',
-			description: 'I live in negative coordinates.',
-		},
-		zIndex: 8,
-	});
-
-	engine.spawn('debug-3d', {
-		at: { x: 700, y: 530 },
-		data: { title: '3D Cube', color: '#ec4899' },
-		zIndex: 9,
-	});
-	engine.spawn('debug-3d', {
-		at: { x: 1000, y: 530 },
-		size: { width: 200, height: 200 },
-		data: { title: '3D Blue', color: '#3b82f6' },
-		zIndex: 10,
-	});
+	engine.spawn('gold-knot-card', { at: { x: G3X, y: GY + PITCH * 3 }, zIndex: 24 });
 
 	return engine;
 }

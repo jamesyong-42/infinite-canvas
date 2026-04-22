@@ -118,6 +118,11 @@ export class GridRenderer {
 			premultipliedAlpha: false,
 		});
 		this.renderer.setClearColor(0x000000, 0);
+		// Accumulate `renderer.info.render.calls/triangles` across multiple
+		// render() calls per tick (grid + selection share this renderer). The
+		// InfiniteCanvas rAF loop calls `renderer.info.reset()` once per tick
+		// before the first pass.
+		this.renderer.info.autoReset = false;
 
 		this.scene = new THREE.Scene();
 		this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);

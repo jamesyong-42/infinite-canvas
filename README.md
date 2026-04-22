@@ -17,6 +17,7 @@ Build Figma-style infinite canvases in React -- drag, resize, snap, zoom, nested
 - **Undo / redo** -- Command buffer with grouped operations (an entire drag is one undo step)
 - **Hierarchical navigation** -- Enter and exit nested containers with camera state preservation
 - **ECS architecture** -- Extensible via custom components, tags, and systems with topologically-sorted scheduling
+- **Card widgets** -- iOS-style preset-sized tiles (small / medium / large / xl) with rounded corners, soft shadows, and lift-on-drag animation; DOM or R3F/PBR flavors via `createCardWidget` / `createGeometryCardWidget`
 - **Performance** -- SDF shaders for grid and selection chrome, RBush spatial indexing, viewport culling, per-system profiling
 - **Live ECS editor** -- Drop-in `<EcsDevtools>` panel for spawning, inspecting, and editing components and tags at runtime
 - **Dark mode** -- Full dark mode support across canvas, widgets, and UI chrome
@@ -214,6 +215,97 @@ Spawning is uniform: `engine.spawn(id, options)`. If `id` matches an archetype, 
 | `zIndex` | Rendering + hit-test order. |
 | `parent` | Parent entity id for nesting. |
 | `rotation` | Initial rotation in radians. |
+
+The `interactive` field on `Archetype` accepts a boolean or an object. Pass `{ selectable, draggable, resizable, selectionFrame }` (any subset) when you want finer control. Cards that move, select, but never resize and render their own chrome: `{ selectable: true, draggable: true, resizable: false, selectionFrame: false }`. Omitted keys default to `false`, except `selectionFrame` which follows `selectable` (an entity you can select gets a frame unless you opt out).
+
+## Card Widgets
+
+**Card widgets** are fixed-size, non-resizable widgets that sit on an iOS-style preset grid. They ship with rounded corners, a soft drop shadow, a hairline ring, and a subtle lift animation while dragging. Use them when you want dashboard-style tiles rather than free-form resizable surfaces.
+
+```tsx
+import { createCardWidget } from '@jamesyong42/infinite-canvas';
+import { z } from 'zod';
+
+const schema = z.object({ label: z.string().default('Hi') });
+
+export const Greeting = createCardWidget<{ label: string }>({
+  type: 'greeting-card',
+  size: 'small',                 // 'small' | 'medium' | 'large' | 'xl'
+  schema,
+  defaultData: { label: 'Hi' },
+  render: ({ data }) => (
+    <div className="flex h-full w-full items-center justify-center bg-white">
+      {data.label}
+    </div>
+  ),
+});
+
+// Register both the widget and the matching archetype.
+const engine = createLayoutEngine({
+  widgets: [Greeting.widget],
+  archetypes: [Greeting.archetype],
+});
+engine.spawn('greeting-card', { at: { x: 50, y: 50 } });
+```
+
+Preset sizes (default, matching iOS widget conventions on a 19 px grid):
+
+| Preset | Width × Height |
+|--------|----------------|
+| `small`  | 155 × 155 |
+| `medium` | 329 × 155 |
+| `large`  | 329 × 345 |
+| `xl`     | 329 × 535 |
+
+Override per-engine via `createLayoutEngine({ cardPresets: { presets: { small: { width: 200, height: 200 } }, gap: 24 } })`. Omitted presets keep their defaults.
+
+Under the hood: the returned widget wraps your `render` in `<CardFrame>` (exported for manual composition), the archetype is non-resizable, and it bundles a `Card` component. A built-in `cardSystem` stamps `Transform2D.width/height` from `Card.preset` each tick — to change a card's size at runtime, update the preset: `engine.set(id, Card, { preset: 'large' })`. Reading the `Dragging` tag from the frame drives the lift affordance; you can read it elsewhere too via `useTag(entityId, Dragging)`.
+
+Cards also opt out of the engine-drawn selection + hover outline (`selectionFrame: false` in their archetype) — the iOS rounded chrome in `<CardFrame>` is the card's visual contract, so the standard blue frame would fight it. If you need a selected/hover affordance inside a card, read `useIsSelected(entityId)` / `useTag(entityId, /* Hovered tag */)` from within `render` and style accordingly.
+
+### 3D Card Widgets
+
+`createGeometryCardWidget` is the R3F counterpart — same preset sizes, non-resizable archetype, and drag-lift behavior, but the widget body is a three.js scene instead of DOM content. The helper pairs cleanly with PBR materials.
+
+```tsx
+import { createGeometryCardWidget } from '@jamesyong42/infinite-canvas';
+import { useFrame } from '@react-three/fiber';
+import { useRef } from 'react';
+import type { Mesh } from 'three';
+import { z } from 'zod';
+
+const schema = z.object({ color: z.string().default('#F5B8D0') });
+
+export const Sphere = createGeometryCardWidget<{ color: string }>({
+  type: 'sphere',
+  size: 'small',
+  schema,
+  defaultData: { color: '#F5B8D0' },
+  background: 'card',                 // or 'transparent' — the geometry floats over the canvas
+  geometry: ({ data, width }) => {
+    const ref = useRef<Mesh>(null);
+    useFrame((_, dt) => { if (ref.current) ref.current.rotation.y += dt * 0.3; });
+    return (
+      <group>
+        <pointLight position={[80, 80, 120]} intensity={160} distance={300} decay={1.4} />
+        <ambientLight intensity={0.3} />
+        <mesh ref={ref}>
+          <sphereGeometry args={[width * 0.32, 48, 48]} />
+          <meshStandardMaterial color={data.color} roughness={0.35} />
+        </mesh>
+      </group>
+    );
+  },
+});
+```
+
+`background` options:
+
+- `'card'` (default) — a rounded iOS-style card mesh sits behind the geometry in the same widget group.
+- `'transparent'` — no back plane; the geometry floats over whatever's behind the widget.
+- `{ color, roughness?, metalness? }` — card back with custom PBR parameters for tinted or glossy variants.
+
+**Lighting caveat.** All R3F widgets share a single `<Canvas>`, so lights and `envMap`s you declare inside one widget's render function affect every other 3D widget. Keep per-widget lights `pointLight`s with `distance` scoped to the widget's size, or add one shared `<Environment>` at the app level (if you control the R3F canvas). The helper itself adds no lights — declare what you need inside your `geometry` component.
 
 ## WebGL Widgets (R3F)
 
@@ -525,20 +617,25 @@ z:3  UI chrome
 | `InteractionRole` | Interaction behavior (drag, select, resize, etc.) |
 | `HandleSet` | Child handle entity references |
 | `CursorHint` | Cursor style on hover/active |
+| `Card` | Marks an iOS-style card; carries the preset (`small`/`medium`/`large`/`xl`) |
 
 ### ECS Tags
 
-`Selectable` `Draggable` `Resizable` `Locked` `Selected` `Active` `Visible`
+`Selectable` `Draggable` `Resizable` `SelectionFrame` `Locked` `Selected` `Dragging` `Active` `Visible`
+
+- `Dragging` — transient state tag (parallels `Selected`): added when the drag dead zone is crossed, removed on pointer up or cancel. Read via `useTag(entityId, Dragging)` to drive drag-time affordances.
+- `SelectionFrame` — opts an entity into the engine-drawn selection + hover outline. Granted automatically to Selectable entities via the archetype's `interactive` caps; widgets that render their own chrome (e.g. cards) opt out.
 
 ### Systems (execution order)
 
-1. `transformPropagate` -- Propagate transforms down hierarchy, compute WorldBounds
-2. `handleSync` -- Synchronize resize handle entities with parent widgets
-3. `hitboxWorldBounds` -- Compute world-space hitbox bounds
-4. `navigationFilter` -- Filter entities to active navigation layer
-5. `cull` -- Mark viewport-visible entities
-6. `breakpoint` -- Compute responsive breakpoints
-7. `sort` -- Z-index ordering
+1. `card` -- Stamp Transform2D size from Card preset
+2. `transformPropagate` -- Propagate transforms down hierarchy, compute WorldBounds
+3. `handleSync` -- Synchronize resize handle entities with parent widgets
+4. `hitboxWorldBounds` -- Compute world-space hitbox bounds
+5. `navigationFilter` -- Filter entities to active navigation layer
+6. `cull` -- Mark viewport-visible entities
+7. `breakpoint` -- Compute responsive breakpoints
+8. `sort` -- Z-index ordering
 
 ## Performance Profiling
 

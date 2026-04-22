@@ -16,6 +16,7 @@ export type { Command } from './commands.js';
 // Commands
 export { CommandBuffer, MoveCommand, ResizeCommand, SetComponentCommand } from './commands.js';
 export type {
+	CardPreset,
 	CSSCursor,
 	CursorHintData,
 	HandleSetData,
@@ -25,10 +26,12 @@ export type {
 // Built-in components & tags
 export {
 	Active,
+	Card,
 	Children,
 	Container,
 	CursorHint,
 	Draggable,
+	Dragging,
 	HandleSet,
 	Hitbox,
 	InteractionRole,
@@ -37,6 +40,7 @@ export {
 	Resizable,
 	Selectable,
 	Selected,
+	SelectionFrame,
 	Transform2D,
 	Visible,
 	Widget,
@@ -66,7 +70,19 @@ export {
 	worldToScreen,
 } from './math.js';
 // Profiler types (commonly needed)
-export type { FrameSample, ProfilerStats } from './profiler.js';
+export type {
+	EcsStats,
+	FrameTimeStats,
+	ProfilerStats,
+	R3FSample,
+	R3FStats,
+	TickSample,
+	WebGLPass,
+	WebGLStats,
+} from './profiler.js';
+// Card widget helpers
+export type { CardFrameProps, CreateCardWidgetOptions } from './react/card.js';
+export { CardFrame, createCardWidget } from './react/card.js';
 export type { ResolvedWidget } from './react/context.js';
 // Context hooks
 export {
@@ -75,6 +91,13 @@ export {
 	useWidgetResolver,
 	WidgetResolverProvider,
 } from './react/context.js';
+// 3D geometry card widget helper
+export type {
+	CreateGeometryCardWidgetOptions,
+	GeometryCardBackground,
+	GeometryCardRenderProps,
+} from './react/geometry-card.js';
+export { createGeometryCardWidget } from './react/geometry-card.js';
 // ECS subscription hooks
 export {
 	useAllEntities,
@@ -123,6 +146,7 @@ export type { Breakpoint, CursorResourceData, NavigationFrame } from './resource
 export {
 	BreakpointConfigResource,
 	CameraResource,
+	CardPresetsResource,
 	CursorResource,
 	NavigationStackResource,
 	ViewportResource,

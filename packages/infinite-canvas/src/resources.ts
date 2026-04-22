@@ -1,6 +1,6 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { defineResource } from '@jamesyong42/reactive-ecs';
-import type { CSSCursor } from './components.js';
+import type { CardPreset, CSSCursor } from './components.js';
 
 /** A single frame in the navigation stack, capturing the container and camera state. */
 export interface NavigationFrame {
@@ -57,3 +57,22 @@ export const NavigationStackResource = defineResource('NavigationStack', {
 
 /** Responsive breakpoint name derived from a widget's screen-space size. */
 export type Breakpoint = 'micro' | 'compact' | 'normal' | 'expanded' | 'detailed';
+
+/**
+ * iOS-style card preset size map. Lookup happens by `Card.preset`; the
+ * `cardSystem` stamps `Transform2D.width/height` from the resolved size.
+ *
+ * Defaults mirror iOS widget conventions — 155×155 tile + 19px gap.
+ * Override at `createLayoutEngine({ cardPresets })` for tablet-scale or
+ * custom design systems.
+ */
+export const CardPresetsResource = defineResource('CardPresets', {
+	presets: {
+		small: { width: 155, height: 155 },
+		medium: { width: 329, height: 155 },
+		large: { width: 329, height: 345 },
+		xl: { width: 329, height: 535 },
+	} as Record<CardPreset, { width: number; height: number }>,
+	/** Gap between adjacent tiles (future tile-snap system reads this). */
+	gap: 19,
+});

@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
 	Active,
+	Card,
+	CardPresetsResource,
 	Children,
 	Container,
 	CursorHint,
 	CursorResource,
 	createLayoutEngine,
 	Draggable,
+	Dragging,
 	HandleSet,
 	Hitbox,
 	InteractionRole,
@@ -14,6 +17,7 @@ import {
 	Resizable,
 	Selectable,
 	Selected,
+	SelectionFrame,
 	Transform2D,
 	Visible,
 	Widget,
@@ -215,6 +219,78 @@ describe('CanvasEngine', () => {
 			if (!t) throw new Error('Transform2D component missing');
 			expect(t.x).toBeGreaterThan(100); // moved
 			expect(t.y).toBeGreaterThan(100);
+		});
+
+		describe('Dragging state tag', () => {
+			const mods = { shift: false, ctrl: false, alt: false, meta: false };
+
+			it('is absent before drag start', () => {
+				const engine = createTestEngine();
+				const e = createWidget(engine, 100, 100, 200, 150);
+				engine.tick();
+				expect(engine.has(e, Dragging)).toBe(false);
+
+				// Pointer down + dead-zone-only move should NOT set the tag.
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerMove(152, 151, mods);
+				expect(engine.has(e, Dragging)).toBe(false);
+			});
+
+			it('is added once the drag dead zone is crossed', () => {
+				const engine = createTestEngine();
+				const e = createWidget(engine, 100, 100, 200, 150);
+				engine.tick();
+
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerMove(160, 160, mods); // past dead zone
+				expect(engine.has(e, Dragging)).toBe(true);
+			});
+
+			it('is removed on pointer up', () => {
+				const engine = createTestEngine();
+				const e = createWidget(engine, 100, 100, 200, 150);
+				engine.tick();
+
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerMove(160, 160, mods);
+				expect(engine.has(e, Dragging)).toBe(true);
+
+				engine.handlePointerUp();
+				expect(engine.has(e, Dragging)).toBe(false);
+			});
+
+			it('is removed on pointer cancel', () => {
+				const engine = createTestEngine();
+				const e = createWidget(engine, 100, 100, 200, 150);
+				engine.tick();
+
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerMove(160, 160, mods);
+				expect(engine.has(e, Dragging)).toBe(true);
+
+				engine.handlePointerCancel();
+				expect(engine.has(e, Dragging)).toBe(false);
+			});
+
+			it('covers every selected entity in a multi-drag', () => {
+				const engine = createTestEngine();
+				const a = createWidget(engine, 100, 100, 200, 150);
+				const b = createWidget(engine, 400, 100, 200, 150);
+				engine.tick();
+
+				// Select both (shift-click second).
+				engine.handlePointerDown(150, 150, 0, mods);
+				engine.handlePointerUp();
+				engine.handlePointerDown(450, 150, 0, { ...mods, shift: true });
+				engine.handlePointerMove(460, 160, { ...mods, shift: true }); // drag starts
+
+				expect(engine.has(a, Dragging)).toBe(true);
+				expect(engine.has(b, Dragging)).toBe(true);
+
+				engine.handlePointerUp();
+				expect(engine.has(a, Dragging)).toBe(false);
+				expect(engine.has(b, Dragging)).toBe(false);
+			});
 		});
 	});
 
@@ -889,6 +965,179 @@ describe('CanvasEngine', () => {
 			const afterRole = engine.get(seHandle, InteractionRole);
 			expect(afterRole?.role.type).toBe('resize');
 			expect(afterRole?.layer).toBe(beforeRole?.layer);
+		});
+	});
+
+	describe('archetype.interactive shape', () => {
+		it('defaults (undefined) grant Selectable + Draggable + Resizable + SelectionFrame', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({ id: 'arch-default' });
+			const e = engine.spawn('arch-default');
+			expect(engine.has(e, Selectable)).toBe(true);
+			expect(engine.has(e, Draggable)).toBe(true);
+			expect(engine.has(e, Resizable)).toBe(true);
+			expect(engine.has(e, SelectionFrame)).toBe(true);
+		});
+
+		it('`true` grants all four (same as undefined)', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({ id: 'arch-true', interactive: true });
+			const e = engine.spawn('arch-true');
+			expect(engine.has(e, Selectable)).toBe(true);
+			expect(engine.has(e, Draggable)).toBe(true);
+			expect(engine.has(e, Resizable)).toBe(true);
+			expect(engine.has(e, SelectionFrame)).toBe(true);
+		});
+
+		it('`false` grants none', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({ id: 'arch-false', interactive: false });
+			const e = engine.spawn('arch-false');
+			expect(engine.has(e, Selectable)).toBe(false);
+			expect(engine.has(e, Draggable)).toBe(false);
+			expect(engine.has(e, Resizable)).toBe(false);
+			expect(engine.has(e, SelectionFrame)).toBe(false);
+		});
+
+		it('object form picks specific capabilities (iOS card shape)', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({
+				id: 'arch-card',
+				interactive: {
+					selectable: true,
+					draggable: true,
+					resizable: false,
+					selectionFrame: false,
+				},
+			});
+			const e = engine.spawn('arch-card');
+			expect(engine.has(e, Selectable)).toBe(true);
+			expect(engine.has(e, Draggable)).toBe(true);
+			expect(engine.has(e, Resizable)).toBe(false);
+			expect(engine.has(e, SelectionFrame)).toBe(false);
+		});
+
+		it('object form: selectionFrame defaults to selectable when omitted', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({
+				id: 'arch-follows',
+				interactive: { selectable: true, draggable: true },
+			});
+			const e = engine.spawn('arch-follows');
+			// selectable: true → selectionFrame follows → true
+			expect(engine.has(e, SelectionFrame)).toBe(true);
+		});
+
+		it('object form: selectionFrame is false when entity is not selectable', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({
+				id: 'arch-noselect',
+				interactive: { draggable: true },
+			});
+			const e = engine.spawn('arch-noselect');
+			expect(engine.has(e, Selectable)).toBe(false);
+			expect(engine.has(e, SelectionFrame)).toBe(false);
+		});
+
+		it('object form omitted keys default to false', () => {
+			const engine = createTestEngine();
+			engine.registerArchetype({
+				id: 'arch-sparse',
+				interactive: { resizable: true },
+			});
+			const e = engine.spawn('arch-sparse');
+			expect(engine.has(e, Selectable)).toBe(false);
+			expect(engine.has(e, Draggable)).toBe(false);
+			expect(engine.has(e, Resizable)).toBe(true);
+			expect(engine.has(e, SelectionFrame)).toBe(false);
+		});
+	});
+
+	describe('card system', () => {
+		it('stamps Transform2D size from Card preset', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 50, y: 50, width: 999, height: 999, rotation: 0 }],
+				[Card, { preset: 'small' }],
+			]);
+			engine.tick();
+
+			const t = engine.get(e, Transform2D);
+			// iOS small preset defaults to 155x155.
+			expect(t?.width).toBe(155);
+			expect(t?.height).toBe(155);
+			// Position is untouched.
+			expect(t?.x).toBe(50);
+			expect(t?.y).toBe(50);
+		});
+
+		it('re-stamps when preset changes', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 0, height: 0, rotation: 0 }],
+				[Card, { preset: 'small' }],
+			]);
+			engine.tick();
+			expect(engine.get(e, Transform2D)?.width).toBe(155);
+
+			engine.set(e, Card, { preset: 'large' });
+			engine.tick();
+
+			const t = engine.get(e, Transform2D);
+			expect(t?.width).toBe(329);
+			expect(t?.height).toBe(345);
+		});
+
+		it('overwrites manual width/height changes (preset is authoritative)', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 0, height: 0, rotation: 0 }],
+				[Card, { preset: 'medium' }],
+			]);
+			engine.tick();
+			expect(engine.get(e, Transform2D)?.width).toBe(329);
+
+			// Try to force a different size — system must reconcile next tick.
+			engine.set(e, Transform2D, { width: 50, height: 50 });
+			engine.tick();
+
+			const t = engine.get(e, Transform2D);
+			expect(t?.width).toBe(329);
+			expect(t?.height).toBe(155);
+		});
+
+		it('leaves non-Card entities untouched', () => {
+			const engine = createTestEngine();
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 42, height: 42, rotation: 0 }],
+			]);
+			engine.tick();
+			const t = engine.get(e, Transform2D);
+			expect(t?.width).toBe(42);
+			expect(t?.height).toBe(42);
+		});
+
+		it('honours cardPresets config override', () => {
+			const engine = createLayoutEngine({
+				cardPresets: {
+					presets: { small: { width: 200, height: 200 } },
+				},
+			});
+			engine.setViewport(1000, 800);
+			const e = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 0, height: 0, rotation: 0 }],
+				[Card, { preset: 'small' }],
+			]);
+			engine.tick();
+
+			const t = engine.get(e, Transform2D);
+			expect(t?.width).toBe(200);
+			expect(t?.height).toBe(200);
+			// Unspecified presets keep defaults.
+			expect(engine.world.getResource(CardPresetsResource).presets.medium).toEqual({
+				width: 329,
+				height: 155,
+			});
 		});
 	});
 });

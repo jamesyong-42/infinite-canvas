@@ -4,7 +4,16 @@
 // are needed for InfiniteCanvas prop typing.
 
 export { SpatialIndexResource } from './engine.js';
-export type { FrameSample, ProfilerStats } from './profiler.js';
+export type {
+	EcsStats,
+	FrameTimeStats,
+	ProfilerStats,
+	R3FSample,
+	R3FStats,
+	TickSample,
+	WebGLPass,
+	WebGLStats,
+} from './profiler.js';
 // Profiler
 export { Profiler } from './profiler.js';
 // Context providers (for custom composition)

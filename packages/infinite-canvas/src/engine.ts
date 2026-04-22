@@ -13,6 +13,7 @@ import { createArchetypeRegistry } from './archetype.js';
 import type { Command } from './commands.js';
 import { CommandBuffer, MoveCommand, ResizeCommand } from './commands.js';
 import type {
+	CardPreset,
 	CSSCursor,
 	InteractionRoleData,
 	InteractionRoleType,
@@ -24,6 +25,7 @@ import {
 	Container,
 	CursorHint,
 	Draggable,
+	Dragging,
 	HandleSet,
 	Hitbox,
 	InteractionRole,
@@ -31,6 +33,7 @@ import {
 	Resizable,
 	Selectable,
 	Selected,
+	SelectionFrame,
 	Transform2D,
 	Visible,
 	Widget,
@@ -48,6 +51,7 @@ import type { Breakpoint } from './resources.js';
 import {
 	BreakpointConfigResource,
 	CameraResource,
+	CardPresetsResource,
 	CursorResource,
 	NavigationStackResource,
 	ViewportResource,
@@ -59,6 +63,7 @@ import { computeSnapGuides } from './snap.js';
 import { SpatialIndex } from './spatial.js';
 import {
 	breakpointSystem,
+	cardSystem,
 	cullSystem,
 	handleSyncSystem,
 	hitboxWorldBoundsSystem,
@@ -176,6 +181,14 @@ export interface LayoutEngineConfig {
 	widgets?: WidgetDef[];
 	/** Archetype definitions available to `spawn()`. */
 	archetypes?: Archetype[];
+	/**
+	 * Override the default iOS-style card preset sizes (small/medium/large/xl).
+	 * Partial — unspecified presets keep their built-in defaults.
+	 */
+	cardPresets?: {
+		presets?: Partial<Record<CardPreset, { width: number; height: number }>>;
+		gap?: number;
+	};
 }
 
 // === Engine ===
@@ -390,6 +403,13 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	if (config?.breakpoints) {
 		world.setResource(BreakpointConfigResource, config.breakpoints);
 	}
+	if (config?.cardPresets) {
+		const current = world.getResource(CardPresetsResource);
+		world.setResource(CardPresetsResource, {
+			presets: { ...current.presets, ...config.cardPresets.presets },
+			gap: config.cardPresets.gap ?? current.gap,
+		});
+	}
 
 	// Apply snap config
 	let snapEnabledInit = true;
@@ -397,7 +417,9 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 	if (config?.snap?.enabled !== undefined) snapEnabledInit = config.snap.enabled;
 	if (config?.snap?.threshold !== undefined) snapThresholdInit = config.snap.threshold;
 
-	// Register built-in systems
+	// Register built-in systems. cardSystem runs first via its `before`
+	// declaration so Transform2D reflects card presets before propagation.
+	scheduler.register(cardSystem);
 	scheduler.register(transformPropagateSystem);
 	scheduler.register(handleSyncSystem);
 	scheduler.register(hitboxWorldBoundsSystem);
@@ -669,13 +691,41 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 				inits.push([Parent, { id: opts.parent }]);
 			}
 
-			// Interactive defaults (Selectable/Draggable/Resizable) trigger the
-			// reactive observer that auto-attaches InteractionRole + CursorHint.
-			if (archetype?.interactive !== false) {
-				inits.push([Selectable]);
-				inits.push([Draggable]);
-				inits.push([Resizable]);
-			}
+			// Interactive defaults (Selectable/Draggable/Resizable/SelectionFrame)
+			// trigger the reactive observer that auto-attaches InteractionRole +
+			// CursorHint for the interaction tags. Accepts boolean (all-or-none)
+			// or an object picking specific caps. `selectionFrame` controls the
+			// engine-drawn outline and defaults to `selectable` so Selectable
+			// entities are framed unless they explicitly opt out (iOS cards).
+			const interactiveConfig = archetype?.interactive;
+			const caps =
+				interactiveConfig === false
+					? {
+							selectable: false,
+							draggable: false,
+							resizable: false,
+							selectionFrame: false,
+						}
+					: interactiveConfig === undefined || interactiveConfig === true
+						? {
+								selectable: true,
+								draggable: true,
+								resizable: true,
+								selectionFrame: true,
+							}
+						: (() => {
+								const selectable = interactiveConfig.selectable ?? false;
+								return {
+									selectable,
+									draggable: interactiveConfig.draggable ?? false,
+									resizable: interactiveConfig.resizable ?? false,
+									selectionFrame: interactiveConfig.selectionFrame ?? selectable,
+								};
+							})();
+			if (caps.selectable) inits.push([Selectable]);
+			if (caps.draggable) inits.push([Draggable]);
+			if (caps.resizable) inits.push([Resizable]);
+			if (caps.selectionFrame) inits.push([SelectionFrame]);
 
 			if (archetype?.tags) {
 				for (const tag of archetype.tags) inits.push([tag]);
@@ -999,6 +1049,12 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 						if (t) startPositions.set(e, { x: t.x, y: t.y });
 					}
 
+					// Mark each participating entity as Dragging (transient state tag).
+					// Renderers read this via useTag to apply lift/shadow affordances.
+					for (const e of startPositions.keys()) {
+						world.addTag(e, Dragging);
+					}
+
 					// Start undo group for the entire drag operation
 					commandBuffer.beginGroup();
 
@@ -1142,6 +1198,10 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			const prevState = inputState;
 
 			if (prevState.mode === 'dragging') {
+				// Clear Dragging state tag from every participating entity.
+				for (const e of prevState.startPositions.keys()) {
+					if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
+				}
 				// Fix #5: Restore original z-indices on drag end
 				for (const [entity, originalZ] of prevState.originalZIndices) {
 					world.setComponent(entity, ZIndex, { value: originalZ });
@@ -1202,6 +1262,12 @@ export function createLayoutEngine(config?: LayoutEngineConfig): LayoutEngine {
 			// End any open undo group to prevent leaked groups
 			if (inputState.mode === 'dragging' || inputState.mode === 'resizing') {
 				commandBuffer.endGroup();
+			}
+			// Clear Dragging tag from every participating entity.
+			if (inputState.mode === 'dragging') {
+				for (const e of inputState.startPositions.keys()) {
+					if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
+				}
 			}
 			// Clear snap state
 			currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };

@@ -9,7 +9,7 @@ import React, {
 	useState,
 } from 'react';
 import { Vector2 } from 'three';
-import { Widget, WorldBounds } from '../components.js';
+import { SelectionFrame, Widget, WorldBounds } from '../components.js';
 import type { LayoutEngine } from '../engine.js';
 import { DEAD_ZONE_TOUCH_PX } from '../interaction-constants.js';
 import { CursorResource, NavigationStackResource } from '../resources.js';
@@ -587,14 +587,32 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 						containerRef.current.style.cursor = cursor;
 					}
 
-					// 1b. Render WebGL dot grid + selection
+					// 1b. Render WebGL dot grid + selection, with profiler probes.
+					const profiler = engine.profiler;
+					const profilerOn = profiler.isEnabled();
+					let selectionFramesDrawn = 0;
+					let snapGuidesDrawn = 0;
+					let spacingIndicatorsDrawn = 0;
+
+					// Zero the engine renderer.info counters at the top of the
+					// tick. `autoReset` is set to false in GridRenderer so that
+					// grid + selection calls accumulate into one tick total.
 					if (gridRendererRef.current) {
+						gridRendererRef.current.getWebGLRenderer().info.reset();
+					}
+
+					if (gridRendererRef.current) {
+						profiler.beginWebGL('grid');
 						gridRendererRef.current.render(camera.x, camera.y, camera.zoom);
+						profiler.endWebGL('grid');
 					}
 					if (selectionRendererRef.current && gridRendererRef.current) {
 						const selected = engine.getSelectedEntities();
 						const selBounds: SelectionBounds[] = [];
 						for (const id of selected) {
+							// Widgets that render their own chrome (e.g. cards) opt out
+							// of the engine-drawn frame by lacking the SelectionFrame tag.
+							if (!engine.has(id, SelectionFrame)) continue;
 							const wb = engine.get(id, WorldBounds);
 							if (wb)
 								selBounds.push({
@@ -606,7 +624,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 						}
 						const hovId = engine.getHoveredEntity();
 						let hovBounds: SelectionBounds | null = null;
-						if (hovId !== null) {
+						if (hovId !== null && engine.has(hovId, SelectionFrame)) {
 							const wb = engine.get(hovId, WorldBounds);
 							if (wb)
 								hovBounds = {
@@ -616,6 +634,13 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 									height: wb.worldHeight,
 								};
 						}
+						const snapGuides = engine.getSnapGuides();
+						const equalSpacing = engine.getEqualSpacing();
+						selectionFramesDrawn = selBounds.length + (hovBounds ? 1 : 0);
+						snapGuidesDrawn = snapGuides.length;
+						spacingIndicatorsDrawn = equalSpacing.length;
+
+						profiler.beginWebGL('selection');
 						selectionRendererRef.current.render(
 							gridRendererRef.current.getWebGLRenderer(),
 							camera.x,
@@ -623,9 +648,26 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 							camera.zoom,
 							selBounds,
 							hovBounds,
-							engine.getSnapGuides(),
-							engine.getEqualSpacing(),
+							snapGuides,
+							equalSpacing,
 						);
+						profiler.endWebGL('selection');
+					}
+
+					// 1c. Capture renderer.info + counts from the engine WebGL
+					// renderer. Because GridRenderer sets autoReset=false and we
+					// reset at the top of this block, info.render now holds the
+					// accumulated total across grid + selection passes.
+					if (profilerOn && gridRendererRef.current) {
+						const info = gridRendererRef.current.getWebGLRenderer().info;
+						profiler.recordWebGLStats({
+							drawCalls: info.render.calls,
+							triangles: info.render.triangles,
+							selectionFrames: selectionFramesDrawn,
+							snapGuides: snapGuidesDrawn,
+							spacingIndicators: spacingIndicatorsDrawn,
+							domPositionsUpdated: changes.positionsChanged.length,
+						});
 					}
 
 					// 2. Fix #1: Use WorldBounds (world-space) not Transform2D (local/parent-relative)
