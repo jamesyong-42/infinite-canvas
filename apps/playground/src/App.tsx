@@ -13,17 +13,22 @@ import { SettingsPanel } from './panels/SettingsPanel.js';
 import { BatteryCard } from './widgets/BatteryCard.js';
 import { CalendarCard } from './widgets/CalendarCard.js';
 import { ClockCard } from './widgets/ClockCard.js';
+import { CrystalWidget } from './widgets/CrystalWidget.js';
 import { Debug3D } from './widgets/Debug3D.js';
 import { DebugCard } from './widgets/DebugCard.js';
 import { DebugContainer, DebugContainerArchetype } from './widgets/DebugContainer.js';
 import { DebugInteractive } from './widgets/DebugInteractive.js';
 import { FitnessCard } from './widgets/FitnessCard.js';
+import { FloatingCubeWidget } from './widgets/FloatingCubeWidget.js';
+import { GoldKnotCard } from './widgets/GoldKnotCard.js';
+import { MatteSphereCard } from './widgets/MatteSphereCard.js';
 import { PhotosCard } from './widgets/PhotosCard.js';
 import { StocksCard } from './widgets/StocksCard.js';
+import { TorusKnotCard } from './widgets/TorusKnotCard.js';
 import { WeatherCard } from './widgets/WeatherCard.js';
 
 function createDemoScene() {
-	const cards = [
+	const domCards = [
 		ClockCard,
 		BatteryCard,
 		CalendarCard,
@@ -32,10 +37,28 @@ function createDemoScene() {
 		FitnessCard,
 		PhotosCard,
 	];
+	const geomCards = [
+		MatteSphereCard,
+		CrystalWidget,
+		TorusKnotCard,
+		FloatingCubeWidget,
+		GoldKnotCard,
+	];
 	const engine = createLayoutEngine({
 		zoom: { min: 0.05, max: 8 },
-		widgets: [DebugCard, DebugInteractive, DebugContainer, Debug3D, ...cards.map((c) => c.widget)],
-		archetypes: [DebugContainerArchetype, ...cards.map((c) => c.archetype)],
+		widgets: [
+			DebugCard,
+			DebugInteractive,
+			DebugContainer,
+			Debug3D,
+			...domCards.map((c) => c.widget),
+			...geomCards.map((c) => c.widget),
+		],
+		archetypes: [
+			DebugContainerArchetype,
+			...domCards.map((c) => c.archetype),
+			...geomCards.map((c) => c.archetype),
+		],
 	});
 
 	engine.spawn('debug-card', {
@@ -153,11 +176,23 @@ function createDemoScene() {
 	engine.spawn('stocks-card', { at: { x: GX, y: GY + PITCH * 3 }, zIndex: 15 });
 	engine.spawn('fitness-card', { at: { x: GX, y: GY + PITCH * 4 }, zIndex: 16 });
 
-	// Right column (one xl photo card):
+	// Middle column (one xl photo card):
 	engine.spawn('photos-card', {
 		at: { x: GX + PITCH * 2 + 19, y: GY },
 		zIndex: 17,
 	});
+
+	// Right column — 3D / PBR cards. Two small side-by-side, two medium
+	// stacked, one large at the bottom.
+	const G3X = GX + PITCH * 2 + 19 + 329 + 19; // past the Photos column
+	engine.spawn('matte-sphere-card', { at: { x: G3X, y: GY }, zIndex: 20 });
+	engine.spawn('crystal-widget', { at: { x: G3X + PITCH, y: GY }, zIndex: 21 });
+	engine.spawn('torus-knot-card', { at: { x: G3X, y: GY + PITCH }, zIndex: 22 });
+	engine.spawn('floating-cube-widget', {
+		at: { x: G3X, y: GY + PITCH * 2 },
+		zIndex: 23,
+	});
+	engine.spawn('gold-knot-card', { at: { x: G3X, y: GY + PITCH * 3 }, zIndex: 24 });
 
 	return engine;
 }
