@@ -57,6 +57,7 @@ export {
 	R3FRenderState,
 	useWidgetAnimation,
 	useWidgetPhase,
+	WidgetRenderTargetPool,
 	WidgetStateMachine,
 } from './r3f/compositor/index.js';
 export { ProfilerProbe } from './r3f/ProfilerProbe.js';
