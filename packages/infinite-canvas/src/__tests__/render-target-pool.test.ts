@@ -86,4 +86,30 @@ describe('WidgetRenderTargetPool', () => {
 		pool.acquire(E(1), 0, 0, 1); // → clamped to 1×1.
 		expect(pool.bytesUsed()).toBe(8);
 	});
+
+	it('throws on acquire after dispose', () => {
+		const pool = new WidgetRenderTargetPool();
+		pool.dispose();
+		expect(() => pool.acquire(E(1), 100, 100, 1)).toThrow(/cannot acquire after dispose/);
+	});
+
+	it('release after dispose is a no-op and never takes bytes negative', () => {
+		const pool = new WidgetRenderTargetPool();
+		pool.acquire(E(1), 100, 100, 1);
+		pool.acquire(E(2), 100, 100, 1);
+		pool.dispose();
+		expect(pool.bytesUsed()).toBe(0);
+		// VirtualWidget cleanup might fire after Compositor unmount — the
+		// pool must not make bytes go negative or double-dispose.
+		expect(pool.release(E(1))).toBe(false);
+		expect(pool.release(E(2))).toBe(false);
+		expect(pool.bytesUsed()).toBe(0);
+	});
+
+	it('dispose is idempotent', () => {
+		const pool = new WidgetRenderTargetPool();
+		pool.acquire(E(1), 100, 100, 1);
+		pool.dispose();
+		expect(() => pool.dispose()).not.toThrow();
+	});
 });

@@ -113,9 +113,11 @@ export function Compositor({
 		const dpr = gl.getPixelRatio();
 		const world = engine.world;
 
-		// Per-widget paint pass.
+		// Per-widget paint pass. Each paint is wrapped in try/finally so a
+		// throwing widget can't leave the GL render target bound to its FBO
+		// — that would corrupt the subsequent composition pass into the
+		// canvas backbuffer.
 		let widgetsRepainted = 0;
-		const previousRenderTarget = gl.getRenderTarget();
 		for (const [entityId, entry] of widgetsRef.current) {
 			const wb = world.getComponent(entityId, WorldBounds);
 			if (!wb) continue;
@@ -130,9 +132,13 @@ export function Compositor({
 
 			const fbo = pool.acquire(entityId, wb.worldWidth, wb.worldHeight, dpr);
 			gl.setRenderTarget(fbo);
-			gl.setClearColor(0x000000, 0);
-			gl.clear(true, true, false);
-			gl.render(entry.scene, entry.camera);
+			try {
+				gl.setClearColor(0x000000, 0);
+				gl.clear(true, true, false);
+				gl.render(entry.scene, entry.camera);
+			} finally {
+				gl.setRenderTarget(null);
+			}
 
 			// Mark the widget as painted at this generation.
 			world.setComponent(entityId, R3FRenderState, {
@@ -147,13 +153,16 @@ export function Compositor({
 			});
 			widgetsRepainted++;
 		}
-		gl.setRenderTarget(previousRenderTarget);
 
-		// Update composition quads.
+		// Update composition quads. A quad is only made visible after its
+		// widget's FBO has been painted at least once — checked via
+		// fboGeneration >= 0 so a freshly-acquired (empty) target never gets
+		// sampled into the composition.
 		for (const [entityId, mesh] of quadsRef.current) {
 			const wb = world.getComponent(entityId, WorldBounds);
+			const state = world.getComponent(entityId, R3FRenderState);
 			const fbo = pool.get(entityId);
-			if (!wb || !fbo) {
+			if (!wb || !fbo || !state || state.fboGeneration < 0) {
 				mesh.visible = false;
 				continue;
 			}
@@ -163,7 +172,9 @@ export function Compositor({
 			(mesh.material as CompositionMaterial).setMap(fbo.texture);
 		}
 
-		// Composition pass to the canvas backbuffer.
+		// Composition pass to the canvas backbuffer. Explicit setRenderTarget
+		// guards against any future code path leaving an FBO bound.
+		gl.setRenderTarget(null);
 		gl.setClearColor(0x000000, 0);
 		gl.clear(true, true, false);
 		gl.render(defaultScene, compCamera);

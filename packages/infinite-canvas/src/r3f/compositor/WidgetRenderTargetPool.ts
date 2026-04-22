@@ -29,6 +29,7 @@ type PoolEntry = {
 export class WidgetRenderTargetPool {
 	private entries = new Map<EntityId, PoolEntry>();
 	private totalBytes = 0;
+	private disposed = false;
 
 	/**
 	 * Get or create an FBO for `entityId` at the requested logical size and
@@ -36,6 +37,9 @@ export class WidgetRenderTargetPool {
 	 * dimensions, returns it unchanged.
 	 */
 	acquire(entityId: EntityId, width: number, height: number, dpr: number): WebGLRenderTarget {
+		if (this.disposed) {
+			throw new Error('WidgetRenderTargetPool: cannot acquire after dispose');
+		}
 		const pixelWidth = Math.max(1, Math.round(width * dpr));
 		const pixelHeight = Math.max(1, Math.round(height * dpr));
 
@@ -61,12 +65,20 @@ export class WidgetRenderTargetPool {
 		return this.entries.get(entityId)?.rt ?? null;
 	}
 
-	/** Release `entityId`'s FBO. Returns true if something was released. */
+	/**
+	 * Release `entityId`'s FBO. Returns true if something was released.
+	 * Safe to call after dispose — returns false rather than corrupting the
+	 * byte counter or double-disposing the target.
+	 */
 	release(entityId: EntityId): boolean {
+		if (this.disposed) return false;
 		const entry = this.entries.get(entityId);
 		if (!entry) return false;
 		entry.rt.dispose();
-		this.totalBytes -= entry.bytes;
+		// Clamp at zero so out-of-order teardown never makes the counter
+		// negative — entries.delete + dispose() race during Compositor
+		// unmount could otherwise produce a misleading negative gauge.
+		this.totalBytes = Math.max(0, this.totalBytes - entry.bytes);
 		this.entries.delete(entityId);
 		return true;
 	}
@@ -86,10 +98,12 @@ export class WidgetRenderTargetPool {
 		for (const [id, entry] of this.entries) cb(id, entry.rt);
 	}
 
-	/** Dispose every FBO. */
+	/** Dispose every FBO. After this, acquire throws and release returns false. */
 	dispose(): void {
+		if (this.disposed) return;
 		for (const entry of this.entries.values()) entry.rt.dispose();
 		this.entries.clear();
 		this.totalBytes = 0;
+		this.disposed = true;
 	}
 }

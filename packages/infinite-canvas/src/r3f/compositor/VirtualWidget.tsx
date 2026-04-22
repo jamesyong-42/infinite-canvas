@@ -1,11 +1,13 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { createPortal, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo } from 'react';
 import { OrthographicCamera, Scene } from 'three';
 import { WorldBounds } from '../../ecs/components.js';
+import { useLayoutEngine } from '../../react/context/engine-context.js';
 import { useComponent } from '../../react/hooks/ecs.js';
 import type { R3FWidgetProps } from '../../react/widgets/registry.js';
 import { useCompositor } from './CompositorContext.js';
+import { R3FRenderState } from './state.js';
 
 /**
  * Mounts one R3F widget into its own Three.js scene + ortho camera so it
@@ -30,6 +32,7 @@ export function VirtualWidget({
 }) {
 	const { register } = useCompositor();
 	const invalidate = useThree((s) => s.invalidate);
+	const engine = useLayoutEngine();
 
 	// One scene + camera per widget, stable across re-renders.
 	const scene = useMemo(() => new Scene(), []);
@@ -42,26 +45,33 @@ export function VirtualWidget({
 	}, [camera]);
 
 	const wb = useComponent(entityId, WorldBounds);
+	const w = wb?.worldWidth ?? 0;
+	const h = wb?.worldHeight ?? 0;
 
-	// Track painted bounds so we can recompute the camera frustum if the
-	// widget resizes mid-life. The Compositor reads camera dims at paint
-	// time, so updating these here is enough.
-	const lastBoundsRef = useRef<{ w: number; h: number } | null>(null);
-	if (
-		wb &&
-		(!lastBoundsRef.current ||
-			lastBoundsRef.current.w !== wb.worldWidth ||
-			lastBoundsRef.current.h !== wb.worldHeight)
-	) {
-		camera.left = -wb.worldWidth / 2;
-		camera.right = wb.worldWidth / 2;
-		camera.top = wb.worldHeight / 2;
-		camera.bottom = -wb.worldHeight / 2;
+	// Recompute the camera frustum + signal a repaint when bounds change.
+	// useLayoutEffect (not render-time) so the mutation runs after commit
+	// — bumping paintGeneration through setComponent during render would
+	// trigger a re-entrant update.
+	useLayoutEffect(() => {
+		if (!w || !h) return;
+		camera.left = -w / 2;
+		camera.right = w / 2;
+		camera.top = h / 2;
+		camera.bottom = -h / 2;
 		camera.updateProjectionMatrix();
-		lastBoundsRef.current = { w: wb.worldWidth, h: wb.worldHeight };
-		// Resize → repaint.
+		// The widget's FBO needs to be re-painted at the new dimensions.
+		// Bump paintGeneration so the compositor's generationDirty check
+		// picks it up; without this, a Warm widget on resize would keep
+		// its old-sized FBO sampled into a new-sized quad (stretched).
+		const current = engine.world.getComponent(entityId, R3FRenderState);
+		if (current) {
+			engine.world.setComponent(entityId, R3FRenderState, {
+				...current,
+				paintGeneration: current.paintGeneration + 1,
+			});
+		}
 		invalidate();
-	}
+	}, [camera, w, h, engine, entityId, invalidate]);
 
 	// Register with the Compositor on mount, deregister on unmount.
 	useEffect(() => {
