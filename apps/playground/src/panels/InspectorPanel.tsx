@@ -66,6 +66,96 @@ function BudgetBar({ percent, label }: { percent: number; label: string }) {
 	);
 }
 
+/**
+ * Stacked frame-budget bar: three segments scaled to the 16.67ms budget.
+ * ECS and WebGL are direct work measurements; "R3F + idle" is the residual
+ * frame interval left after subtracting engine work — it lumps together R3F
+ * rendering, browser paint, and vsync idle, but gives an honest sense of
+ * where time in a 60fps frame is going.
+ */
+function StackedBudgetBar({
+	ecsMs,
+	webglMs,
+	r3fMs,
+}: {
+	ecsMs: number;
+	webglMs: number;
+	r3fMs: number;
+}) {
+	const BUDGET = 16.67;
+	// r3f.frameTime includes the full rAF interval at 60fps ≈ 16.67ms, so the
+	// residual (frame minus engine work) is the closest honest proxy for R3F
+	// rendering + browser paint + idle.
+	const r3fResidual = Math.max(0, r3fMs - ecsMs - webglMs);
+	const pct = (ms: number) => (ms / BUDGET) * 100;
+	const ecsPct = pct(ecsMs);
+	const webglPct = pct(webglMs);
+	const r3fPct = pct(r3fResidual);
+	const totalPct = ecsPct + webglPct + r3fPct;
+	const totalMs = ecsMs + webglMs + r3fResidual;
+	const over = totalPct > 100;
+	const rawEcs = Math.min(100, ecsPct);
+	const rawWebgl = Math.min(100, webglPct);
+	const rawR3f = Math.min(100, Math.max(0, 100 - rawEcs - rawWebgl));
+	const vUsed = over ? rawEcs + rawWebgl + Math.min(100 - rawEcs - rawWebgl, r3fPct) : null;
+
+	return (
+		<div>
+			<div className="flex items-baseline justify-between mb-1">
+				<span className="text-neutral-400 dark:text-neutral-500">total budget (16.67ms)</span>
+				<span
+					className={`font-medium ${
+						over
+							? 'text-red-600 dark:text-red-400'
+							: totalPct > 80
+								? 'text-amber-600 dark:text-amber-400'
+								: 'text-green-600 dark:text-green-400'
+					}`}
+				>
+					{ms(totalMs)} ms · {totalPct.toFixed(1)}%
+				</span>
+			</div>
+			<div className="flex h-2 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
+				<div
+					className="h-full bg-orange-500 transition-all"
+					style={{ width: `${rawEcs}%` }}
+					title={`ECS: ${ms(ecsMs)}ms`}
+				/>
+				<div
+					className="h-full bg-sky-500 transition-all"
+					style={{ width: `${rawWebgl}%` }}
+					title={`Engine WebGL: ${ms(webglMs)}ms`}
+				/>
+				<div
+					className="h-full bg-violet-500 transition-all"
+					style={{ width: `${over ? 0 : rawR3f}%` }}
+					title={`R3F + idle: ${ms(r3fResidual)}ms`}
+				/>
+			</div>
+			{/* Legend */}
+			<div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px]">
+				<LegendDot color="bg-orange-500" label="ECS" value={`${ms(ecsMs)}ms`} />
+				<LegendDot color="bg-sky-500" label="WebGL" value={`${ms(webglMs)}ms`} />
+				<LegendDot color="bg-violet-500" label="R3F+idle" value={`${ms(r3fResidual)}ms`} />
+			</div>
+			{over && vUsed !== null && (
+				<div className="mt-1 text-[9px] text-red-600 dark:text-red-400">
+					over budget — frame exceeds 16.67ms
+				</div>
+			)}
+		</div>
+	);
+}
+
+function LegendDot({ color, label, value }: { color: string; label: string; value: string }) {
+	return (
+		<span className="flex items-center gap-1 text-neutral-500 dark:text-neutral-400">
+			<span className={`inline-block h-1.5 w-1.5 rounded-full ${color}`} />
+			{label} <span className="tabular-nums">{value}</span>
+		</span>
+	);
+}
+
 export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 	const [metrics, setMetrics] = useState<Metrics>({
 		totalEntities: 0,
@@ -183,6 +273,25 @@ export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 				{/* Profiler stats */}
 				{stats && (
 					<>
+						{/* === Total (combined) === */}
+						{(stats.ecs.sampleCount > 0 || stats.r3f.sampleCount > 0) && (
+							<div className="border-t border-neutral-100 pt-2 dark:border-neutral-700">
+								<div className={`${sectionCls} text-neutral-700 dark:text-neutral-300`}>Total</div>
+								<Row label="fps (rAF)" value={stats.r3f.fps > 0 ? stats.r3f.fps : stats.ecs.fps} />
+								<Row
+									label="frame avg"
+									value={`${ms(stats.r3f.frameTime.avg || stats.ecs.frameTime.avg)} ms`}
+								/>
+								<div className="mt-1.5">
+									<StackedBudgetBar
+										ecsMs={stats.ecs.frameTime.avg}
+										webglMs={stats.webgl.frameTime.avg}
+										r3fMs={stats.r3f.frameTime.avg}
+									/>
+								</div>
+							</div>
+						)}
+
 						{/* === ECS tick layer === */}
 						{stats.ecs.sampleCount > 0 && (
 							<div className="border-t border-neutral-100 pt-2 dark:border-neutral-700">
@@ -232,7 +341,14 @@ export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 								<div className={`${sectionCls} text-neutral-600 dark:text-neutral-400`}>
 									Engine WebGL
 								</div>
-								<div className="mb-0.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-300 dark:text-neutral-600">
+								<BudgetBar percent={stats.webgl.budgetUsed} label="budget (16.67ms)" />
+								<div className="mt-1.5">
+									<Row label="fps" value={stats.webgl.fps} />
+									<Row label="avg" value={`${ms(stats.webgl.frameTime.avg)} ms`} />
+									<Row label="p95" value={`${ms(stats.webgl.frameTime.p95)} ms`} />
+									<Row label="max" value={`${ms(stats.webgl.frameTime.max)} ms`} />
+								</div>
+								<div className="mt-1.5 mb-0.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-300 dark:text-neutral-600">
 									pass time (avg · p95)
 								</div>
 								<Row

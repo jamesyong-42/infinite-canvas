@@ -37,9 +37,9 @@ export interface TickSample {
 		gridMs: number;
 		/** Selection + hover + snap-guide render pass duration (ms). */
 		selectionMs: number;
-		/** three.js `renderer.info.render.calls` delta this tick. */
+		/** Total `renderer.info.render.calls` across all passes this tick. */
 		drawCalls: number;
-		/** three.js `renderer.info.render.triangles` delta this tick. */
+		/** Total `renderer.info.render.triangles` across all passes this tick. */
 		triangles: number;
 		/** Selection frames drawn this tick. */
 		selectionFrames: number;
@@ -88,6 +88,12 @@ export interface EcsStats {
 }
 
 export interface WebGLStats {
+	/** Tick cadence — matches ECS since both fire together. */
+	fps: number;
+	/** Avg combined pass time (ms) and percentile breakdown. */
+	frameTime: FrameTimeStats;
+	/** Avg combined pass time as % of 16.67ms budget. */
+	budgetUsed: number;
 	gridAvg: number;
 	gridP95: number;
 	selectionAvg: number;
@@ -153,10 +159,6 @@ export class Profiler {
 	private webglSpacingIndicators = 0;
 	private webglDomPositionsUpdated = 0;
 	private currentTick = 0;
-
-	// Monotonic baseline for reading renderer.info.render deltas.
-	private webglPassDrawCallsBaseline = 0;
-	private webglPassTrianglesBaseline = 0;
 
 	/** Enable/disable profiling. When disabled, all methods are no-ops. */
 	setEnabled(on: boolean) {
@@ -257,45 +259,27 @@ export class Profiler {
 	}
 
 	/**
-	 * Record WebGL engine pass counters for the current tick.
-	 * `drawCallsDelta` / `trianglesDelta` should be the difference in
-	 * `renderer.info.render.calls` / `.triangles` across this tick's passes.
+	 * Record WebGL engine pass counters for the current tick. `drawCalls` and
+	 * `triangles` should be the totals from `renderer.info.render` accumulated
+	 * across all engine passes in this tick (grid + selection). Callers must
+	 * reset `renderer.info` at the start of the tick (with `autoReset=false`)
+	 * so these values cover both passes.
 	 */
 	recordWebGLStats(stats: {
-		drawCallsDelta: number;
-		trianglesDelta: number;
+		drawCalls: number;
+		triangles: number;
 		selectionFrames: number;
 		snapGuides: number;
 		spacingIndicators: number;
 		domPositionsUpdated: number;
 	}) {
 		if (!this.enabled) return;
-		this.webglDrawCalls = stats.drawCallsDelta;
-		this.webglTriangles = stats.trianglesDelta;
+		this.webglDrawCalls = stats.drawCalls;
+		this.webglTriangles = stats.triangles;
 		this.webglSelectionFrames = stats.selectionFrames;
 		this.webglSnapGuides = stats.snapGuides;
 		this.webglSpacingIndicators = stats.spacingIndicators;
 		this.webglDomPositionsUpdated = stats.domPositionsUpdated;
-	}
-
-	/**
-	 * Read a running baseline of `renderer.info.render.calls/triangles` so a
-	 * caller can compute per-tick deltas without leaking three.js types.
-	 * Returns the baseline snapshot taken BEFORE this call; callers should
-	 * snapshot before the WebGL pass and pass the delta to
-	 * `recordWebGLStats` after.
-	 */
-	readWebGLBaseline(info: { calls: number; triangles: number }): {
-		calls: number;
-		triangles: number;
-	} {
-		const prev = {
-			calls: this.webglPassDrawCallsBaseline,
-			triangles: this.webglPassTrianglesBaseline,
-		};
-		this.webglPassDrawCallsBaseline = info.calls;
-		this.webglPassTrianglesBaseline = info.triangles;
-		return prev;
 	}
 
 	/** Call at the end of engine.tick() — flushes a TickSample to the ring. */
@@ -439,6 +423,9 @@ export class Profiler {
 		const n = samples.length;
 		if (n === 0) {
 			return {
+				fps: 0,
+				frameTime: { avg: 0, p50: 0, p95: 0, p99: 0, max: 0 },
+				budgetUsed: 0,
 				gridAvg: 0,
 				gridP95: 0,
 				selectionAvg: 0,
@@ -453,7 +440,21 @@ export class Profiler {
 		}
 		const gridTimes = samples.map((s) => s.webgl.gridMs).sort((a, b) => a - b);
 		const selTimes = samples.map((s) => s.webgl.selectionMs).sort((a, b) => a - b);
+		const combinedTimes = samples
+			.map((s) => s.webgl.gridMs + s.webgl.selectionMs)
+			.sort((a, b) => a - b);
+		const combinedAvg = mean(combinedTimes);
+		const fps = ringFps(samples, this.tickWrite, this.tickFilled, TICK_RING_SIZE);
 		return {
+			fps,
+			frameTime: {
+				avg: combinedAvg,
+				p50: percentile(combinedTimes, 50),
+				p95: percentile(combinedTimes, 95),
+				p99: percentile(combinedTimes, 99),
+				max: combinedTimes[combinedTimes.length - 1],
+			},
+			budgetUsed: (combinedAvg / 16.67) * 100,
 			gridAvg: mean(gridTimes),
 			gridP95: percentile(gridTimes, 95),
 			selectionAvg: mean(selTimes),
@@ -507,7 +508,7 @@ export class Profiler {
 		};
 	}
 
-	/** Clear all collected data and baselines. */
+	/** Clear all collected data. */
 	clear() {
 		this.tickRing = [];
 		this.tickWrite = 0;
@@ -515,8 +516,6 @@ export class Profiler {
 		this.r3fRing = [];
 		this.r3fWrite = 0;
 		this.r3fFilled = false;
-		this.webglPassDrawCallsBaseline = 0;
-		this.webglPassTrianglesBaseline = 0;
 	}
 }
 

@@ -594,6 +594,13 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					let snapGuidesDrawn = 0;
 					let spacingIndicatorsDrawn = 0;
 
+					// Zero the engine renderer.info counters at the top of the
+					// tick. `autoReset` is set to false in GridRenderer so that
+					// grid + selection calls accumulate into one tick total.
+					if (gridRendererRef.current) {
+						gridRendererRef.current.getWebGLRenderer().info.reset();
+					}
+
 					if (gridRendererRef.current) {
 						profiler.beginWebGL('grid');
 						gridRendererRef.current.render(camera.x, camera.y, camera.zoom);
@@ -647,18 +654,15 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 						profiler.endWebGL('selection');
 					}
 
-					// 1c. Capture renderer.info deltas + counts from the engine
-					// WebGL renderer. Only when enabled — renderer.info stays warm
-					// regardless but reading + storing is wasted work otherwise.
+					// 1c. Capture renderer.info + counts from the engine WebGL
+					// renderer. Because GridRenderer sets autoReset=false and we
+					// reset at the top of this block, info.render now holds the
+					// accumulated total across grid + selection passes.
 					if (profilerOn && gridRendererRef.current) {
 						const info = gridRendererRef.current.getWebGLRenderer().info;
-						const prev = profiler.readWebGLBaseline({
-							calls: info.render.calls,
-							triangles: info.render.triangles,
-						});
 						profiler.recordWebGLStats({
-							drawCallsDelta: Math.max(0, info.render.calls - prev.calls),
-							trianglesDelta: Math.max(0, info.render.triangles - prev.triangles),
+							drawCalls: info.render.calls,
+							triangles: info.render.triangles,
 							selectionFrames: selectionFramesDrawn,
 							snapGuides: snapGuidesDrawn,
 							spacingIndicators: spacingIndicatorsDrawn,
