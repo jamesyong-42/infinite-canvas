@@ -9,9 +9,11 @@ import type { CardPreset } from '../../ecs/components.js';
 import { Card, Dragging } from '../../ecs/components.js';
 import { DEFAULT_CARD_PRESET_SIZES } from '../../ecs/resources.js';
 import type { StandardSchemaV1 } from '../../ecs/schema.js';
+import { useLayoutEngine } from '../../react/context/engine-context.js';
 import { useTag } from '../../react/hooks/ecs.js';
 import { useWidgetData } from '../../react/hooks/widget.js';
 import type { R3FWidget, R3FWidgetProps } from '../../react/widgets/registry.js';
+import { R3FAnimationSignal } from '../compositor/state.js';
 
 /**
  * Pure-three rounded-rect extrude geometry — avoids a drei dependency.
@@ -140,15 +142,22 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 		const dragging = useTag(entityId, Dragging);
 		const groupRef = useRef<Group>(null);
 		const invalidate = useThree((s) => s.invalidate);
+		const engine = useLayoutEngine();
+		const animatingRef = useRef(false);
 
-		// Kick the demand loop when drag state flips so the spring starts running.
+		// On drag flip, kick the spring: tag the widget so the state machine
+		// moves it to Hot, and invalidate so useFrame starts firing.
 		useEffect(() => {
+			animatingRef.current = true;
+			engine.world.addTag(entityId, R3FAnimationSignal);
 			invalidate();
-		}, [dragging, invalidate]);
+		}, [dragging, engine, entityId, invalidate]);
 
-		// Spring-lerp the group scale + z on drag for the iOS lift feel. Self-
-		// invalidates while not settled so the demand loop keeps firing.
+		// Spring-lerp the group scale + z on drag for the iOS lift feel.
+		// Early-exits when settled; clears the animation signal so the state
+		// machine returns the widget to Warm.
 		useFrame(() => {
+			if (!animatingRef.current) return;
 			const g = groupRef.current;
 			if (!g) return;
 			const targetScale = dragging ? 1.05 : 1;
@@ -161,6 +170,9 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 
 			if (Math.abs(targetScale - nextS) > 0.001 || Math.abs(targetZ - nextZ) > 0.01) {
 				invalidate();
+			} else {
+				animatingRef.current = false;
+				engine.world.removeTag(entityId, R3FAnimationSignal);
 			}
 		});
 

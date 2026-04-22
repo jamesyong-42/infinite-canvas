@@ -1,6 +1,8 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useRef } from 'react';
+import { Widget } from '../ecs/components.js';
 import type { LayoutEngine } from '../ecs/engine/index.js';
+import { R3FRenderState } from './compositor/state.js';
 
 /**
  * Reports one R3F frame sample per animation frame to the engine profiler.
@@ -52,6 +54,32 @@ export function ProfilerProbe({
 		prevPointsRef.current = points;
 		prevLinesRef.current = lines;
 
+		const phases = { hot: 0, warm: 0, cold: 0, waking: 0, dormant: 0 };
+		const world = engine.world;
+		for (const entity of world.query(Widget, R3FRenderState)) {
+			const widget = world.getComponent(entity, Widget);
+			if (!widget || widget.surface !== 'webgl') continue;
+			const state = world.getComponent(entity, R3FRenderState);
+			if (!state) continue;
+			switch (state.phase) {
+				case 'Hot':
+					phases.hot++;
+					break;
+				case 'Warm':
+					phases.warm++;
+					break;
+				case 'Cold':
+					phases.cold++;
+					break;
+				case 'Waking':
+					phases.waking++;
+					break;
+				case 'Dormant':
+					phases.dormant++;
+					break;
+			}
+		}
+
 		profiler.recordR3FFrame({
 			dtMs,
 			drawCalls: frameCalls,
@@ -62,11 +90,11 @@ export function ProfilerProbe({
 			geometries: info.memory.geometries,
 			textures: info.memory.textures,
 			activeWidgets: widgetCount,
-			// RFC-002 compositor fields — populated once Phase 4+ lands; zero
-			// until then so the profiler shape is stable across phases.
+			// RFC-002 compositor fields — Phase 3b fills the phase histogram;
+			// widgetsRepainted and fboBytes arrive in Phase 4 with the pool.
 			widgetsRepainted: 0,
 			fboBytes: 0,
-			phases: { hot: 0, warm: 0, cold: 0, waking: 0, dormant: 0 },
+			phases,
 		});
 	});
 
