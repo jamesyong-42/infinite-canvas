@@ -60,20 +60,28 @@ export const NavigationStackResource = defineResource('NavigationStack', {
 export type Breakpoint = 'micro' | 'compact' | 'normal' | 'expanded' | 'detailed';
 
 /**
+ * Built-in card preset sizes (iOS widget conventions — 155×155 tile).
+ * Single source of truth consumed by:
+ *   - {@link CardPresetsResource} — runtime lookup by the cardSystem.
+ *   - `createCardWidget` / `createGeometryCardWidget` — widget-registration-
+ *     time `defaultSize`, which must be known before the engine is built.
+ */
+export const DEFAULT_CARD_PRESET_SIZES: Record<CardPreset, { width: number; height: number }> = {
+	small: { width: 155, height: 155 },
+	medium: { width: 329, height: 155 },
+	large: { width: 329, height: 345 },
+	xl: { width: 329, height: 535 },
+};
+
+/**
  * iOS-style card preset size map. Lookup happens by `Card.preset`; the
  * `cardSystem` stamps `Transform2D.width/height` from the resolved size.
  *
- * Defaults mirror iOS widget conventions — 155×155 tile + 19px gap.
  * Override at `createLayoutEngine({ cardPresets })` for tablet-scale or
  * custom design systems.
  */
 export const CardPresetsResource = defineResource('CardPresets', {
-	presets: {
-		small: { width: 155, height: 155 },
-		medium: { width: 329, height: 155 },
-		large: { width: 329, height: 345 },
-		xl: { width: 329, height: 535 },
-	} as Record<CardPreset, { width: number; height: number }>,
+	presets: { ...DEFAULT_CARD_PRESET_SIZES },
 	/** Gap between adjacent tiles (future tile-snap system reads this). */
 	gap: 19,
 });

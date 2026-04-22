@@ -146,18 +146,13 @@ export class Profiler {
 	private r3fWrite = 0;
 	private r3fFilled = false;
 
-	// Scratch state for the currently-building tick sample.
+	// Scratch state for the currently-building tick sample. Only the ECS
+	// fields are kept between beginFrame and endFrame; the WebGL pass runs
+	// AFTER endFrame in the rAF loop, so WebGL stats are written directly
+	// into the ring's most recent sample via getMostRecentTickSample().
 	private frameStart = 0;
 	private currentSystems: Record<string, number> = {};
 	private visibilityMs = 0;
-	private webglGridMs = 0;
-	private webglSelectionMs = 0;
-	private webglDrawCalls = 0;
-	private webglTriangles = 0;
-	private webglSelectionFrames = 0;
-	private webglSnapGuides = 0;
-	private webglSpacingIndicators = 0;
-	private webglDomPositionsUpdated = 0;
 	private currentTick = 0;
 
 	/** Enable/disable profiling. When disabled, all methods are no-ops. */
@@ -178,14 +173,6 @@ export class Profiler {
 		this.currentTick = tick;
 		this.currentSystems = {};
 		this.visibilityMs = 0;
-		this.webglGridMs = 0;
-		this.webglSelectionMs = 0;
-		this.webglDrawCalls = 0;
-		this.webglTriangles = 0;
-		this.webglSelectionFrames = 0;
-		this.webglSnapGuides = 0;
-		this.webglSpacingIndicators = 0;
-		this.webglDomPositionsUpdated = 0;
 		this.frameStart = performance.now();
 		performance.mark('ic-frame-start');
 	}
@@ -239,7 +226,14 @@ export class Profiler {
 		performance.mark(`ic-gl-${pass}-start`);
 	}
 
-	/** Call right after the named engine WebGL pass renders. */
+	/**
+	 * Call right after the named engine WebGL pass renders.
+	 *
+	 * The WebGL pass runs AFTER endFrame has flushed the tick sample to the
+	 * ring, so we mutate the most-recent ring entry in place instead of
+	 * writing to scratch state (which would be wiped by the next beginFrame
+	 * before ever being read).
+	 */
 	endWebGL(pass: WebGLPass) {
 		if (!this.enabled) return;
 		performance.mark(`ic-gl-${pass}-end`);
@@ -249,8 +243,11 @@ export class Profiler {
 				`ic-gl-${pass}-start`,
 				`ic-gl-${pass}-end`,
 			);
-			if (pass === 'grid') this.webglGridMs = measure.duration;
-			else this.webglSelectionMs = measure.duration;
+			const sample = this.getMostRecentTickSample();
+			if (sample) {
+				if (pass === 'grid') sample.webgl.gridMs = measure.duration;
+				else sample.webgl.selectionMs = measure.duration;
+			}
 		} catch {
 			// marks may be cleared
 		}
@@ -264,6 +261,9 @@ export class Profiler {
 	 * across all engine passes in this tick (grid + selection). Callers must
 	 * reset `renderer.info` at the start of the tick (with `autoReset=false`)
 	 * so these values cover both passes.
+	 *
+	 * Called from the rAF loop AFTER engine.tick() / endFrame, so it targets
+	 * the most-recent ring sample directly (see {@link endWebGL}).
 	 */
 	recordWebGLStats(stats: {
 		drawCalls: number;
@@ -274,12 +274,22 @@ export class Profiler {
 		domPositionsUpdated: number;
 	}) {
 		if (!this.enabled) return;
-		this.webglDrawCalls = stats.drawCalls;
-		this.webglTriangles = stats.triangles;
-		this.webglSelectionFrames = stats.selectionFrames;
-		this.webglSnapGuides = stats.snapGuides;
-		this.webglSpacingIndicators = stats.spacingIndicators;
-		this.webglDomPositionsUpdated = stats.domPositionsUpdated;
+		const sample = this.getMostRecentTickSample();
+		if (!sample) return;
+		sample.webgl.drawCalls = stats.drawCalls;
+		sample.webgl.triangles = stats.triangles;
+		sample.webgl.selectionFrames = stats.selectionFrames;
+		sample.webgl.snapGuides = stats.snapGuides;
+		sample.webgl.spacingIndicators = stats.spacingIndicators;
+		sample.webgl.domPositionsUpdated = stats.domPositionsUpdated;
+	}
+
+	/** Returns the most recently pushed tick sample, or null if the ring is empty. */
+	private getMostRecentTickSample(): TickSample | null {
+		const n = this.tickRing.length;
+		if (n === 0) return null;
+		const idx = (this.tickWrite - 1 + TICK_RING_SIZE) % TICK_RING_SIZE;
+		return this.tickRing[idx % n] ?? null;
 	}
 
 	/** Call at the end of engine.tick() — flushes a TickSample to the ring. */
@@ -298,10 +308,10 @@ export class Profiler {
 		performance.clearMarks('ic-frame-end');
 
 		// `totalMs` is the ECS tick only — the WebGL engine pass runs AFTER
-		// endFrame. Its ms lives separately in the sample so consumers can
-		// combine (ecs.totalMs + webgl.gridMs + webgl.selectionMs) if they
-		// want a compound figure.
-
+		// endFrame and populates the webgl fields in place (see endWebGL /
+		// recordWebGLStats). Consumers can combine
+		// (ecs.totalMs + webgl.gridMs + webgl.selectionMs) for a compound
+		// figure.
 		const sample: TickSample = {
 			tick: this.currentTick,
 			timestamp: performance.now(),
@@ -313,14 +323,14 @@ export class Profiler {
 				visibleCount,
 			},
 			webgl: {
-				gridMs: this.webglGridMs,
-				selectionMs: this.webglSelectionMs,
-				drawCalls: this.webglDrawCalls,
-				triangles: this.webglTriangles,
-				selectionFrames: this.webglSelectionFrames,
-				snapGuides: this.webglSnapGuides,
-				spacingIndicators: this.webglSpacingIndicators,
-				domPositionsUpdated: this.webglDomPositionsUpdated,
+				gridMs: 0,
+				selectionMs: 0,
+				drawCalls: 0,
+				triangles: 0,
+				selectionFrames: 0,
+				snapGuides: 0,
+				spacingIndicators: 0,
+				domPositionsUpdated: 0,
 			},
 		};
 

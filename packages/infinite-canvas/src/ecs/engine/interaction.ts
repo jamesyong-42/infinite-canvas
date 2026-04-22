@@ -63,11 +63,10 @@ export interface InteractionContext {
  * The pointer state machine, hit testing, selection logic, and the
  * root-container cursor resolution.
  *
- * Extracted from engine.ts as a cohesive unit because every branch of the
- * state machine needs access to the same closed-over state (inputState,
- * hoveredEntity, snap result). Splitting these further would require
- * threading state refs through every callee, which hurts readability more
- * than it helps.
+ * Kept as one cohesive unit because every branch of the state machine needs
+ * access to the same closed-over state (inputState, hoveredEntity, snap
+ * result). Splitting further would require threading state refs through
+ * every callee, which hurts readability more than it helps.
  */
 export function createInteractionRuntime(ctx: InteractionContext) {
 	const { world, spatialIndex, commandBuffer, markDirty, notifySelectionChanged } = ctx;
@@ -457,8 +456,15 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 			commandBuffer.endGroup();
 		}
 		if (inputState.mode === 'dragging') {
+			// Clear transient Dragging state tag.
 			for (const e of inputState.startPositions.keys()) {
 				if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
+			}
+			// Restore the z-indices that handlePointerMove elevated on drag start.
+			// Without this, a mid-drag cancel (system dialog, touch interrupt) leaves
+			// every participating entity permanently at maxZ+1.
+			for (const [entity, originalZ] of inputState.originalZIndices) {
+				world.setComponent(entity, ZIndex, { value: originalZ });
 			}
 		}
 		currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };

@@ -1,8 +1,6 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { createContext, useContext } from 'react';
-import type { DomWidgetProps, R3FWidgetProps, WidgetSurface } from '../widgets/registry.js';
-
-export type { WidgetSurface };
+import type { DomWidgetProps, R3FWidgetProps } from '../widgets/registry.js';
 
 /**
  * Discriminated resolution of a widget by type. The surface determines which

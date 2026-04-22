@@ -12,7 +12,7 @@ import type { Archetype, ArchetypeRegistry, SpawnOptions } from '../archetype.js
 import { createArchetypeRegistry } from '../archetype.js';
 import type { Command } from '../commands.js';
 import { CommandBuffer } from '../commands.js';
-import type { CardPreset, InteractionRoleType } from '../components.js';
+import type { InteractionRoleType } from '../components.js';
 import {
 	Active,
 	Children,
@@ -777,8 +777,3 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 
 	return engine;
 }
-
-// Silence noUnusedLocals for CardPreset which is referenced only in types.ts.
-// Without an explicit reference here, tsc complains about the unused import in
-// some consumer configurations.
-export type { CardPreset };

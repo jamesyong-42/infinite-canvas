@@ -7,18 +7,11 @@ import { ExtrudeGeometry, Shape } from 'three';
 import type { Archetype } from '../../ecs/archetype.js';
 import type { CardPreset } from '../../ecs/components.js';
 import { Card, Dragging } from '../../ecs/components.js';
+import { DEFAULT_CARD_PRESET_SIZES } from '../../ecs/resources.js';
 import type { StandardSchemaV1 } from '../../ecs/schema.js';
 import { useTag } from '../../react/hooks/ecs.js';
 import { useWidgetData } from '../../react/hooks/widget.js';
 import type { R3FWidget, R3FWidgetProps } from '../../react/widgets/registry.js';
-
-/** Must match {@link CardPresetsResource} defaults. */
-const DEFAULT_CARD_PRESET_SIZES: Record<CardPreset, { width: number; height: number }> = {
-	small: { width: 155, height: 155 },
-	medium: { width: 329, height: 155 },
-	large: { width: 329, height: 345 },
-	xl: { width: 329, height: 535 },
-};
 
 /**
  * Pure-three rounded-rect extrude geometry — avoids a drei dependency.

@@ -21,12 +21,9 @@ interface R3FManagerProps {
  *
  * Owns the `<Canvas>`, drives camera sync with the engine, mounts the
  * profiler probe, and renders one {@link R3FWidgetSlot} per R3F-surface
- * widget entity. This mirrors the role {@link WebGLManager} plays for the
+ * widget entity. Mirrors the role {@link WebGLManager} plays for the
  * vanilla-WebGL layer: one component/class per rendering surface that
  * InfiniteCanvas composes together.
- *
- * Previously this was called `WebGLWidgetLayer` — a confusing name, because
- * everything inside it is R3F, not vanilla WebGL.
  */
 export function R3FManager({ engine, entities, resolve }: R3FManagerProps) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
