@@ -7,6 +7,7 @@ import { EngineProvider } from '../react/context/engine-context.js';
 import type { ResolvedWidget } from '../react/context/widget-resolver-context.js';
 import type { R3FWidgetProps } from '../react/widgets/registry.js';
 import { CameraSync } from './CameraSync.js';
+import { EngineInvalidator } from './EngineInvalidator.js';
 import { ProfilerProbe } from './ProfilerProbe.js';
 import { R3FWidgetSlot } from './R3FWidgetSlot.js';
 
@@ -54,7 +55,7 @@ export function R3FManager({ engine, entities, resolve }: R3FManagerProps) {
 		<Canvas
 			ref={canvasRef}
 			camera={initialCamera}
-			frameloop="always"
+			frameloop="demand"
 			gl={{ alpha: true, antialias: true }}
 			style={{
 				position: 'absolute',
@@ -65,6 +66,7 @@ export function R3FManager({ engine, entities, resolve }: R3FManagerProps) {
 			}}
 		>
 			<EngineProvider value={engine}>
+				<EngineInvalidator engine={engine} />
 				<CameraSync engine={engine} />
 				<ProfilerProbe engine={engine} widgetCount={widgetEntries.length} />
 				{widgetEntries.map(({ entityId, component }) => (

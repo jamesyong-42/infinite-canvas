@@ -1,7 +1,7 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import type * as React from 'react';
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { Group } from 'three';
 import { ExtrudeGeometry, Shape } from 'three';
 import type { Archetype } from '../../ecs/archetype.js';
@@ -139,16 +139,29 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 		const data = useWidgetData<T>(entityId);
 		const dragging = useTag(entityId, Dragging);
 		const groupRef = useRef<Group>(null);
+		const invalidate = useThree((s) => s.invalidate);
 
-		// Spring-lerp the group scale + z on drag for the iOS lift feel.
+		// Kick the demand loop when drag state flips so the spring starts running.
+		useEffect(() => {
+			invalidate();
+		}, [dragging, invalidate]);
+
+		// Spring-lerp the group scale + z on drag for the iOS lift feel. Self-
+		// invalidates while not settled so the demand loop keeps firing.
 		useFrame(() => {
 			const g = groupRef.current;
 			if (!g) return;
 			const targetScale = dragging ? 1.05 : 1;
 			const targetZ = dragging ? 8 : 0;
 			const s = g.scale.x;
-			g.scale.setScalar(s + (targetScale - s) * 0.2);
-			g.position.z += (targetZ - g.position.z) * 0.2;
+			const nextS = s + (targetScale - s) * 0.2;
+			const nextZ = g.position.z + (targetZ - g.position.z) * 0.2;
+			g.scale.setScalar(nextS);
+			g.position.z = nextZ;
+
+			if (Math.abs(targetScale - nextS) > 0.001 || Math.abs(targetZ - nextZ) > 0.01) {
+				invalidate();
+			}
 		});
 
 		return (
