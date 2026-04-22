@@ -13,7 +13,7 @@ describe('ResourceRegistry', () => {
 		expect(reg.geometryCount()).toBe(1);
 	});
 
-	it('disposes geometry only when refCount hits zero', () => {
+	it('disposes geometry only when refCount hits zero (deferred via microtask)', async () => {
 		const reg = new ResourceRegistry();
 		const geom = new BoxGeometry(1, 1, 1);
 		const dispose = vi.spyOn(geom, 'dispose');
@@ -22,12 +22,30 @@ describe('ResourceRegistry', () => {
 		reg.acquireGeometry('k', () => geom); // refCount = 2
 
 		reg.releaseGeometry('k'); // refCount = 1
+		await Promise.resolve(); // flush microtasks
 		expect(dispose).not.toHaveBeenCalled();
 		expect(reg.geometryCount()).toBe(1);
 
-		reg.releaseGeometry('k'); // refCount = 0 → dispose
+		reg.releaseGeometry('k'); // refCount = 0 → deferred dispose
+		await Promise.resolve();
 		expect(dispose).toHaveBeenCalledTimes(1);
 		expect(reg.geometryCount()).toBe(0);
+	});
+
+	it('a re-acquire before the disposal microtask fires preserves the resource', async () => {
+		const reg = new ResourceRegistry();
+		const geom = new BoxGeometry(1, 1, 1);
+		const dispose = vi.spyOn(geom, 'dispose');
+
+		// Pattern that React StrictMode's effect double-mount triggers:
+		// acquire → release → acquire (synchronously, before microtask).
+		const a = reg.acquireGeometry('k', () => geom);
+		reg.releaseGeometry('k'); // refCount = 0, queues microtask
+		const b = reg.acquireGeometry('k', () => geom); // refCount = 1 → cancels disposal
+		await Promise.resolve();
+		expect(dispose).not.toHaveBeenCalled();
+		expect(b).toBe(a);
+		expect(reg.geometryCount()).toBe(1);
 	});
 
 	it('release on a missing key is a no-op', () => {
@@ -35,7 +53,7 @@ describe('ResourceRegistry', () => {
 		expect(() => reg.releaseGeometry('nope')).not.toThrow();
 	});
 
-	it('material acquire / release follows the same contract', () => {
+	it('material acquire / release follows the same contract', async () => {
 		const reg = new ResourceRegistry();
 		const a = reg.acquireMaterial('m', () => new MeshBasicMaterial());
 		const b = reg.acquireMaterial('m', () => new MeshBasicMaterial());
@@ -43,10 +61,11 @@ describe('ResourceRegistry', () => {
 		expect(reg.materialCount()).toBe(1);
 		reg.releaseMaterial('m');
 		reg.releaseMaterial('m');
+		await Promise.resolve();
 		expect(reg.materialCount()).toBe(0);
 	});
 
-	it('texture acquire / release follows the same contract', () => {
+	it('texture acquire / release follows the same contract', async () => {
 		const reg = new ResourceRegistry();
 		const a = reg.acquireTexture('t', () => new Texture());
 		const b = reg.acquireTexture('t', () => new Texture());
@@ -54,6 +73,7 @@ describe('ResourceRegistry', () => {
 		expect(reg.textureCount()).toBe(1);
 		reg.releaseTexture('t');
 		reg.releaseTexture('t');
+		await Promise.resolve();
 		expect(reg.textureCount()).toBe(0);
 	});
 

@@ -150,10 +150,19 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 		const invalidate = useThree((s) => s.invalidate);
 		const engine = useLayoutEngine();
 		const animatingRef = useRef(false);
+		// Skip the first effect run — at mount the spring is already at rest
+		// (scale 1, z 0) and `dragging` is false, so kicking the state
+		// machine to Hot would be a wasted Hot→Warm cycle.
+		const initRef = useRef(true);
 
-		// On drag flip, kick the spring: tag the widget so the state machine
-		// moves it to Hot, and invalidate so useFrame starts firing.
+		// On *transitions* of dragging, kick the spring: tag the widget so
+		// the state machine moves it to Hot, and invalidate so useFrame
+		// starts firing.
 		useEffect(() => {
+			if (initRef.current) {
+				initRef.current = false;
+				return;
+			}
 			animatingRef.current = true;
 			engine.world.addTag(entityId, R3FAnimationSignal);
 			invalidate();

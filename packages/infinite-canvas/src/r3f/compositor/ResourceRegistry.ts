@@ -118,8 +118,19 @@ export class ResourceRegistry {
 		if (!entry) return;
 		entry.refCount--;
 		if (entry.refCount <= 0) {
-			entry.resource.dispose();
-			map.delete(key);
+			// Defer disposal by one microtask. Under React StrictMode the
+			// effect cleanup fires immediately followed by a remount + new
+			// acquire — without the defer, the resource is disposed before
+			// the remount can re-acquire it. The microtask gives the
+			// reacquire a chance to bump refCount back above 0; if it
+			// doesn't, we dispose for real.
+			queueMicrotask(() => {
+				const current = map.get(key);
+				if (current && current.refCount <= 0) {
+					current.resource.dispose();
+					map.delete(key);
+				}
+			});
 		}
 	}
 }

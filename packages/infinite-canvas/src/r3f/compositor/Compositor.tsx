@@ -45,6 +45,11 @@ export function Compositor({
 	if (!registryRef.current) registryRef.current = new ResourceRegistry();
 	const registry = registryRef.current;
 
+	// Per-Compositor unit-square geometry — shared across all composition
+	// quads in this canvas, scaled per-mesh. Owned by the instance so HMR /
+	// remount cleanly disposes it instead of leaking module-scoped state.
+	const quadGeometry = useMemo(() => new PlaneGeometry(1, 1), []);
+
 	// Per-widget composition quad mesh kept in the default scene. Mounted /
 	// removed as widgets register / unregister.
 	const quadsRef = useRef(new Map<EntityId, Mesh>());
@@ -64,7 +69,7 @@ export function Compositor({
 			widgetsRef.current.set(entityId, entry);
 
 			// Spawn a composition quad for this widget.
-			const mesh = new Mesh(SHARED_QUAD_GEOMETRY, new CompositionMaterial());
+			const mesh = new Mesh(quadGeometry, new CompositionMaterial());
 			mesh.frustumCulled = false;
 			mesh.visible = false; // Hidden until the widget has painted at least once.
 			defaultScene.add(mesh);
@@ -84,18 +89,19 @@ export function Compositor({
 				pool.release(entityId);
 			};
 		},
-		[defaultScene, pool],
+		[defaultScene, pool, quadGeometry],
 	);
 
 	const ctxValue = useMemo(() => ({ pool, registry, register }), [pool, registry, register]);
 
-	// Dispose pool + registry when the Compositor unmounts.
+	// Dispose pool + registry + shared geometry when the Compositor unmounts.
 	useEffect(() => {
 		return () => {
 			pool.dispose();
 			registry.dispose();
+			quadGeometry.dispose();
 		};
-	}, [pool, registry]);
+	}, [pool, registry, quadGeometry]);
 
 	// Custom render loop. Priority > 0 suppresses R3F's default render so we
 	// own the entire pass.
@@ -196,6 +202,3 @@ export const COMPOSITOR_TELEMETRY = {
 	widgetsRepainted: 0,
 	fboBytes: 0,
 };
-
-/** Unit-square geometry shared by every composition quad — scaled per-mesh. */
-const SHARED_QUAD_GEOMETRY = new PlaneGeometry(1, 1);
