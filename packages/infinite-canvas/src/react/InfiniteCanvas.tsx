@@ -587,9 +587,17 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 						containerRef.current.style.cursor = cursor;
 					}
 
-					// 1b. Render WebGL dot grid + selection
+					// 1b. Render WebGL dot grid + selection, with profiler probes.
+					const profiler = engine.profiler;
+					const profilerOn = profiler.isEnabled();
+					let selectionFramesDrawn = 0;
+					let snapGuidesDrawn = 0;
+					let spacingIndicatorsDrawn = 0;
+
 					if (gridRendererRef.current) {
+						profiler.beginWebGL('grid');
 						gridRendererRef.current.render(camera.x, camera.y, camera.zoom);
+						profiler.endWebGL('grid');
 					}
 					if (selectionRendererRef.current && gridRendererRef.current) {
 						const selected = engine.getSelectedEntities();
@@ -619,6 +627,13 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 									height: wb.worldHeight,
 								};
 						}
+						const snapGuides = engine.getSnapGuides();
+						const equalSpacing = engine.getEqualSpacing();
+						selectionFramesDrawn = selBounds.length + (hovBounds ? 1 : 0);
+						snapGuidesDrawn = snapGuides.length;
+						spacingIndicatorsDrawn = equalSpacing.length;
+
+						profiler.beginWebGL('selection');
 						selectionRendererRef.current.render(
 							gridRendererRef.current.getWebGLRenderer(),
 							camera.x,
@@ -626,9 +641,29 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 							camera.zoom,
 							selBounds,
 							hovBounds,
-							engine.getSnapGuides(),
-							engine.getEqualSpacing(),
+							snapGuides,
+							equalSpacing,
 						);
+						profiler.endWebGL('selection');
+					}
+
+					// 1c. Capture renderer.info deltas + counts from the engine
+					// WebGL renderer. Only when enabled — renderer.info stays warm
+					// regardless but reading + storing is wasted work otherwise.
+					if (profilerOn && gridRendererRef.current) {
+						const info = gridRendererRef.current.getWebGLRenderer().info;
+						const prev = profiler.readWebGLBaseline({
+							calls: info.render.calls,
+							triangles: info.render.triangles,
+						});
+						profiler.recordWebGLStats({
+							drawCallsDelta: Math.max(0, info.render.calls - prev.calls),
+							trianglesDelta: Math.max(0, info.render.triangles - prev.triangles),
+							selectionFrames: selectionFramesDrawn,
+							snapGuides: snapGuidesDrawn,
+							spacingIndicators: spacingIndicatorsDrawn,
+							domPositionsUpdated: changes.positionsChanged.length,
+						});
 					}
 
 					// 2. Fix #1: Use WorldBounds (world-space) not Transform2D (local/parent-relative)

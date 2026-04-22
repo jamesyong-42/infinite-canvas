@@ -70,7 +70,16 @@ export {
 	worldToScreen,
 } from './math.js';
 // Profiler types (commonly needed)
-export type { FrameSample, ProfilerStats } from './profiler.js';
+export type {
+	EcsStats,
+	FrameTimeStats,
+	ProfilerStats,
+	R3FSample,
+	R3FStats,
+	TickSample,
+	WebGLPass,
+	WebGLStats,
+} from './profiler.js';
 // Card widget helpers
 export type { CardFrameProps, CreateCardWidgetOptions } from './react/card.js';
 export { CardFrame, createCardWidget } from './react/card.js';
