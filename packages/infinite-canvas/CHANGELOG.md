@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v1.1.0...infinite-canvas-v1.2.0) (2026-04-22)
+
+
+### Features
+
+* iOS-style card widgets + R3F PBR cards + multi-layer profiler ([#8](https://github.com/jamesyong-42/infinite-canvas/issues/8)) ([92846f3](https://github.com/jamesyong-42/infinite-canvas/commit/92846f3fb38439328435a72d73cff8413651f775))
+* **profiler:** engine WebGL fps + budget, total-frame stacked bar ([92846f3](https://github.com/jamesyong-42/infinite-canvas/commit/92846f3fb38439328435a72d73cff8413651f775))
+
 ## [1.1.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v1.0.0...infinite-canvas-v1.1.0) (2026-04-21)
 
 
