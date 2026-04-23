@@ -7,7 +7,6 @@ import type { LayoutEngine } from '../../ecs/engine/index.js';
 import { CompositorContext, type CompositorWidgetEntry } from './CompositorContext.js';
 import { type EvictionCandidate, selectEvictions } from './eviction.js';
 import { ResourceRegistry } from './ResourceRegistry.js';
-import { ShadowMaterial } from './ShadowMaterial.js';
 import { R3FRenderBudget, R3FRenderState } from './state.js';
 import { WidgetRenderTargetPool } from './WidgetRenderTargetPool.js';
 import { isOutOfBand, selectBand } from './ZoomBands.js';
@@ -68,10 +67,6 @@ export function Compositor({
 	// removed as widgets register / unregister.
 	const quadsRef = useRef(new Map<EntityId, Mesh>());
 
-	// Per-widget drop-shadow mesh — sits behind the composition quad and
-	// fades in proportional to drag-lift z. RFC-002 § Phase 7.
-	const shadowsRef = useRef(new Map<EntityId, Mesh>());
-
 	// Per-widget drag-lift state, lerped at composition time. Lives outside
 	// the per-widget scene so the widget's FBO never has to grow to fit
 	// scaled-up content (which would clip rounded corners against the FBO
@@ -117,23 +112,8 @@ export function Compositor({
 			);
 			mesh.frustumCulled = false;
 			mesh.visible = false; // Hidden until the widget has painted at least once.
-			// All composition quads share renderOrder=1; all shadows
-			// renderOrder=0. Without this, Three's transparent-pass sort by
-			// camera distance is undefined when widget A's shadow and
-			// widget B's quad sit at the same lift z — flickering across
-			// frames. Splitting by renderOrder guarantees every shadow
-			// renders before every quad in a single deterministic pass.
-			mesh.renderOrder = 1;
 			defaultScene.add(mesh);
 			quadsRef.current.set(entityId, mesh);
-
-			// Companion shadow mesh — invisible until drag-lift kicks in.
-			const shadow = new Mesh(quadGeometry, new ShadowMaterial());
-			shadow.frustumCulled = false;
-			shadow.visible = false;
-			shadow.renderOrder = 0;
-			defaultScene.add(shadow);
-			shadowsRef.current.set(entityId, shadow);
 
 			// Trigger an initial render so the widget can paint.
 			entry.requestRepaint();
@@ -145,12 +125,6 @@ export function Compositor({
 					defaultScene.remove(m);
 					(m.material as MeshBasicMaterial).dispose();
 					quadsRef.current.delete(entityId);
-				}
-				const s = shadowsRef.current.get(entityId);
-				if (s) {
-					defaultScene.remove(s);
-					(s.material as ShadowMaterial).dispose();
-					shadowsRef.current.delete(entityId);
 				}
 				liftRef.current.delete(entityId);
 				pool.release(entityId);
@@ -365,29 +339,6 @@ export function Compositor({
 			if (material.map !== fbo.texture) {
 				material.map = fbo.texture;
 				material.needsUpdate = true;
-			}
-
-			// Drop-shadow quad — sits behind the lifted card, fades in with
-			// lift.z. Y-offsets downward to read as gravity-correct.
-			const shadow = shadowsRef.current.get(entityId);
-			if (shadow) {
-				const liftAmt = Math.max(0, Math.min(1, lift.z / 8));
-				const strength = liftAmt * 0.45;
-				if (strength < 0.001) {
-					shadow.visible = false;
-				} else {
-					shadow.visible = true;
-					shadow.position.set(
-						wb.worldX + wb.worldWidth / 2,
-						-(wb.worldY + wb.worldHeight / 2) - lift.z * 0.45,
-						lift.z * 0.5,
-					);
-					const sScale = lift.scale * (1 + liftAmt * 0.06);
-					shadow.scale.set(wb.worldWidth * sScale, wb.worldHeight * sScale, 1);
-					const sm = shadow.material as ShadowMaterial;
-					sm.setMap(fbo.texture);
-					sm.setStrength(strength);
-				}
 			}
 		}
 

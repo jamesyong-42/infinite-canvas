@@ -66,6 +66,6 @@ export const CrystalWidget = createGeometryCardWidget<CrystalData>({
 	size: 'small',
 	schema,
 	defaultData: { tint: '#9AE5FF' },
-	background: 'transparent',
+	chrome: 'none',
 	geometry: CrystalScene,
 });

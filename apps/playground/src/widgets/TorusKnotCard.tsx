@@ -64,6 +64,6 @@ export const TorusKnotCard = createGeometryCardWidget<TorusKnotData>({
 	size: 'medium',
 	schema,
 	defaultData: { hue: 285 },
-	background: { color: '#0B0B10', roughness: 0.9, metalness: 0 },
+	chrome: { background: '#0B0B10' },
 	geometry: TorusKnotScene,
 });

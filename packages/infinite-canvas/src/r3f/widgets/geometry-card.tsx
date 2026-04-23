@@ -1,82 +1,12 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import type * as React from 'react';
-import { ExtrudeGeometry, Shape } from 'three';
 import type { Archetype } from '../../ecs/archetype.js';
 import type { CardPreset } from '../../ecs/components.js';
 import { Card } from '../../ecs/components.js';
 import { DEFAULT_CARD_PRESET_SIZES } from '../../ecs/resources.js';
 import type { StandardSchemaV1 } from '../../ecs/schema.js';
 import { useWidgetData } from '../../react/hooks/widget.js';
-import type { R3FWidget, R3FWidgetProps } from '../../react/widgets/registry.js';
-import { useSharedGeometry } from '../compositor/hooks.js';
-
-/**
- * Pure-three rounded-rect extrude geometry — avoids a drei dependency.
- * Rounded corners match the DOM CardFrame radius (21.67 px).
- */
-function makeRoundedCardGeometry(
-	width: number,
-	height: number,
-	radius: number,
-	depth: number,
-): ExtrudeGeometry {
-	const shape = new Shape();
-	const r = Math.min(radius, Math.min(width, height) / 2);
-	const x = -width / 2;
-	const y = -height / 2;
-	shape.moveTo(x, y + r);
-	shape.lineTo(x, y + height - r);
-	shape.quadraticCurveTo(x, y + height, x + r, y + height);
-	shape.lineTo(x + width - r, y + height);
-	shape.quadraticCurveTo(x + width, y + height, x + width, y + height - r);
-	shape.lineTo(x + width, y + r);
-	shape.quadraticCurveTo(x + width, y, x + width - r, y);
-	shape.lineTo(x + r, y);
-	shape.quadraticCurveTo(x, y, x, y + r);
-
-	return new ExtrudeGeometry(shape, {
-		depth,
-		bevelEnabled: true,
-		bevelSegments: 3,
-		bevelSize: 0.6,
-		bevelThickness: 0.6,
-	});
-}
-
-interface CardBackProps {
-	width: number;
-	height: number;
-	color: string;
-	roughness: number;
-	metalness: number;
-}
-
-function CardBack({ width, height, color, roughness, metalness }: CardBackProps) {
-	// Cards of the same preset size share one geometry instance via the
-	// compositor's ResourceRegistry. With many widgets of one archetype, GPU
-	// geometry memory stays O(1) instead of O(N).
-	const geometry = useSharedGeometry(`card-back:${width}x${height}:r21.67:d3`, () =>
-		makeRoundedCardGeometry(width, height, 21.67, 3),
-	);
-	return (
-		<mesh geometry={geometry} position={[0, 0, -6]} receiveShadow>
-			<meshStandardMaterial color={color} roughness={roughness} metalness={metalness} />
-		</mesh>
-	);
-}
-
-/** Background options for a geometry card widget. */
-export type GeometryCardBackground =
-	| 'card'
-	| 'transparent'
-	| {
-			/** Hex color for the card back (e.g. '#1C1C1E' dark, '#F2F2F7' light). */
-			color: string;
-			/** PBR roughness. Default 0.55. */
-			roughness?: number;
-			/** PBR metalness. Default 0. */
-			metalness?: number;
-	  };
+import type { R3FChromeConfig, R3FWidget, R3FWidgetProps } from '../../react/widgets/registry.js';
 
 /** Props passed to the user's geometry component. */
 export interface GeometryCardRenderProps<T> {
@@ -100,11 +30,15 @@ export interface CreateGeometryCardWidgetOptions<T> {
 	/** Default data for new instances. */
 	defaultData: T;
 	/**
-	 * `'card'` (default) renders a dark iOS-style card back behind the geometry.
-	 * `'transparent'` skips the card so the geometry floats over the canvas.
-	 * Object form customises the back's color and PBR parameters.
+	 * DOM chrome rendered beneath the WebGL canvas (rounded background +
+	 * box-shadow). Browser-native CSS produces a far better-looking shadow
+	 * than any shader approximation we can write in WebGL.
+	 *
+	 *   `'card'` (default) — dark iOS-style card back with soft shadow.
+	 *   `'none'`           — no chrome; geometry floats over canvas bg.
+	 *   object             — custom background color and / or radius.
 	 */
-	background?: GeometryCardBackground;
+	chrome?: R3FChromeConfig;
 	/** The 3D content rendered in local space (origin at centre). */
 	geometry: React.ComponentType<GeometryCardRenderProps<T>>;
 }
@@ -115,6 +49,11 @@ export interface CreateGeometryCardWidgetOptions<T> {
  * no engine-drawn selection frame, and lifts on drag (scale + z) — but
  * renders a three.js scene instead of DOM content.
  *
+ * The card background and drop shadow are rendered as DOM `<CardChrome>`
+ * beneath the WebGL canvas, not inside the FBO. The user's `geometry`
+ * component renders ONLY the 3D content; the chrome layer handles the
+ * iOS-style rounded body and lift-on-drag shadow.
+ *
  * Lighting: this helper adds no lights. Declare your own in the `geometry`
  * component (typically a local `pointLight` scoped with `distance`).
  */
@@ -124,39 +63,14 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 } {
 	const defaultSize = DEFAULT_CARD_PRESET_SIZES[opts.size];
 	const Render = opts.geometry;
-	const backgroundConfig = opts.background ?? 'card';
-
-	const resolvedBack =
-		backgroundConfig === 'transparent'
-			? null
-			: backgroundConfig === 'card'
-				? { color: '#1C1C1E', roughness: 0.55, metalness: 0 }
-				: {
-						color: backgroundConfig.color,
-						roughness: backgroundConfig.roughness ?? 0.55,
-						metalness: backgroundConfig.metalness ?? 0,
-					};
+	const chrome = opts.chrome ?? 'card';
 
 	const Component: React.ComponentType<R3FWidgetProps> = ({ entityId, width, height }) => {
 		const data = useWidgetData<T>(entityId);
 		// Drag-lift (scale + z) is applied at the composition layer, not
 		// inside this widget's FBO — keeps rounded corners from clipping
 		// against the FBO rectangle when the lift expands the content.
-
-		return (
-			<group>
-				{resolvedBack && (
-					<CardBack
-						width={width}
-						height={height}
-						color={resolvedBack.color}
-						roughness={resolvedBack.roughness}
-						metalness={resolvedBack.metalness}
-					/>
-				)}
-				<Render entityId={entityId} data={data} width={width} height={height} />
-			</group>
-		);
+		return <Render entityId={entityId} data={data} width={width} height={height} />;
 	};
 
 	const widget: R3FWidget<T> = {
@@ -166,6 +80,7 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 		defaultData: opts.defaultData,
 		defaultSize,
 		component: Component,
+		chrome,
 	};
 
 	const archetype: Archetype = {

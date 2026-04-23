@@ -20,7 +20,7 @@ export function WidgetProvider({ engine, children }: WidgetProviderProps) {
 			const def = engine.getWidget(widgetType);
 			if (!def) return null;
 			if (isR3FWidget(def)) {
-				return { surface: 'webgl', component: def.component };
+				return { surface: 'webgl', component: def.component, chrome: def.chrome };
 			}
 			return { surface: 'dom', component: def.component };
 		},

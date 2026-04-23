@@ -60,6 +60,6 @@ export const GoldKnotCard = createGeometryCardWidget<GoldKnotData>({
 	size: 'large',
 	schema,
 	defaultData: { metal: 'gold' },
-	background: { color: '#14101A', roughness: 0.4, metalness: 0.2 },
+	chrome: { background: '#14101A' },
 	geometry: GoldKnotScene,
 });

@@ -1,13 +1,26 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { memo, useCallback, useEffect, useRef } from 'react';
-import { WorldBounds } from '../../ecs/components.js';
+import { Dragging, Widget, WorldBounds } from '../../ecs/components.js';
 import type { Modifiers } from '../../ecs/engine/index.js';
 import { useContainerRef } from '../context/container-ref-context.js';
 import { useLayoutEngine } from '../context/engine-context.js';
+import { useWidgetResolver } from '../context/widget-resolver-context.js';
+import { useTag } from '../hooks/ecs.js';
+import { CardChrome } from '../widgets/CardChrome.js';
+import type { R3FChromeConfig } from '../widgets/registry.js';
 
 interface SelectionOverlaySlotProps {
 	entityId: EntityId;
 	slotRef: (entityId: EntityId, el: HTMLDivElement | null) => void;
+}
+
+function resolveChrome(chrome: R3FChromeConfig | undefined): {
+	background: string;
+	radius: number;
+} | null {
+	if (chrome === 'none') return null;
+	if (!chrome || chrome === 'card') return { background: '#1c1c1e', radius: 21.67 };
+	return { background: chrome.background ?? '#1c1c1e', radius: chrome.radius ?? 21.67 };
 }
 
 function getMods(e: React.PointerEvent): Modifiers {
@@ -25,6 +38,13 @@ export const SelectionOverlaySlot = memo(function SelectionOverlaySlot({
 	const wrapperRef = useRef<HTMLDivElement>(null);
 	const engine = useLayoutEngine();
 	const containerRefObj = useContainerRef();
+	const resolver = useWidgetResolver();
+	const dragging = useTag(entityId, Dragging);
+
+	const widgetType = engine.get(entityId, Widget)?.type ?? '';
+	const resolved = resolver?.(entityId, widgetType);
+	const chromeConfig =
+		resolved && resolved.surface === 'webgl' ? resolveChrome(resolved.chrome) : null;
 
 	useEffect(() => {
 		slotRef(entityId, wrapperRef.current);
@@ -108,6 +128,14 @@ export const SelectionOverlaySlot = memo(function SelectionOverlaySlot({
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			onDoubleClick={onDoubleClick}
-		/>
+		>
+			{chromeConfig && (
+				<CardChrome
+					lifted={dragging}
+					radius={chromeConfig.radius}
+					background={chromeConfig.background}
+				/>
+			)}
+		</div>
 	);
 });
