@@ -1,14 +1,15 @@
 # RFC-003: Layer Architecture & Drag-Promote
 
-- **Status**: Draft v2
+- **Status**: Implemented v3
 - **Author**: James Yong
 - **Date**: 2026-04-23
 - **Area**: Rendering / ECS / Interaction
 - **Related**: RFC-002 (R3F Virtual-Texture Compositor) — extends the
   compositor with a clipping uniform and `renderOrder` bump for the
   dragged widget; relies on the per-widget render-target pipeline.
-- **Supersedes**: RFC-003 v1 (same-day; resolves Open Questions 1, 4, 5
-  into the proposal — see "Revision notes")
+- **Supersedes**: RFC-003 v2 (resolves Open Questions); v3 records the
+  Card-as-single-source-of-truth refinement that emerged from playground
+  testing (R3F card chrome must NOT promote — see "Revision notes")
 
 ---
 
@@ -625,41 +626,48 @@ Acceptance:
 ## Acceptance criteria
 
 **Phase 1 (Layer component + resource)**
-- [ ] `Layer`, `LayerOrderResource`, `PreDragLayer` defined.
-- [ ] Default `Layer.name = 'base'` on every widget that doesn't
+- [x] `Layer`, `LayerOrderResource`, `PreDragLayer` defined.
+- [x] Default `Layer.name = 'base'` on every widget that doesn't
       explicitly set it.
-- [ ] Serialization skip list updated for `PreDragLayer`.
-- [ ] No existing tests regress.
+- [x] Serialization skip list updated for `PreDragLayer`.
+- [x] No existing tests regress.
 
 **Phase 2 (three DOM containers)**
-- [ ] InfiniteCanvas renders one container per layer name.
-- [ ] All current widgets visually identical (everything still in
+- [x] InfiniteCanvas renders one container per layer name.
+- [x] All current widgets visually identical (everything still in
       `'base'`).
-- [ ] Camera transform applies uniformly.
-- [ ] Pointer events route through every layer's slot to the engine.
+- [x] Camera transform applies uniformly.
+- [x] Pointer events route through every layer's slot to the engine.
 
-**Phase 3 (DragPromoteSystem)**
-- [ ] Adding `Dragging` flips `Layer.name` to `'overlay'`; removing
-      restores via `PreDragLayer`.
-- [ ] Idempotent: re-adding `Dragging` while promoted preserves the
+**Phase 3 (DragPromoteSystem)** *(refined per v3)*
+- [x] Adding `Dragging` to a Card-bearing DOM widget flips
+      `Layer.name` to `'overlay'`; removing restores via `PreDragLayer`.
+- [x] Promotion is gated on the `Card` ECS component — bare DOM
+      widgets without `Card` are not card-shaped affordances and do
+      not promote.
+- [x] Promotion is gated on `Widget.surface !== 'webgl'` — R3F card
+      chrome stays in 'base' (its opaque background would otherwise
+      occlude its own 3D content if hoisted above the R3F canvas).
+- [x] Idempotent: re-adding `Dragging` while promoted preserves the
       original `PreDragLayer` value.
-- [ ] DOM widget visually pops above R3F canvas during drag (case A).
-- [ ] R3F widget chrome (DOM) visually pops above R3F canvas during
-      drag — but other R3F widgets still paint over it (waiting for
-      Phase 4 to close case B).
+- [x] DOM card visually pops above R3F canvas during drag (case A).
 
 **Phase 4 (compositor uniforms)**
-- [ ] `uDraggedRect` + `uIsDragged` uniforms wired into composition
-      material.
-- [ ] Dragged R3F widget's quad gets `renderOrder = 99`; restored to
-      `1` on drop.
-- [ ] Other R3F widgets' fragments inside dragged rect are discarded —
-      chrome visible there (case B closed).
-- [ ] R3F widget without chrome dragged on top of overlapping R3F
-      widget paints above it (case C closed).
-- [ ] No regression when no widget is being dragged
+- [x] `uDraggedRect` + `uIsDragged` uniforms wired into composition
+      material (custom `CompositionMaterial` `ShaderMaterial`).
+- [x] Dragged R3F widget's quad gets `renderOrder = 99`; restored to
+      `1` on drop. Applies to ALL dragged R3F widgets (with or without
+      Card) so card-less widgets stack on top of overlapping R3F
+      content (case C).
+- [x] Other R3F widgets' fragments inside dragged rect are discarded —
+      chrome visible there (case B closed). Discard rect computation
+      is gated on `Card` so card-less widgets don't clip neighbours.
+- [x] R3F widget without chrome dragged on top of overlapping R3F
+      widget paints above it via `renderOrder` alone (case C closed).
+- [x] No regression when no widget is being dragged
       (`uDraggedRect = ZERO_RECT` is a no-op).
-- [ ] Discard rect correctly accounts for lift scale (1.05×).
+- [x] Discard rect correctly accounts for lift scale (1.05×) via
+      `liftScaleRef`.
 
 ---
 
@@ -736,3 +744,64 @@ Q2 (WebGL chrome zIndex 3 vs overlay zIndex 2) and Q3 (engine-drawn
 elements outside Layer system) remain documented as intentionally
 unresolved — they call out architectural decisions that are correct
 as-is and don't need follow-up.
+
+**v2 → v3** (post-implementation refinement)
+
+Two important deviations from the v2 design surfaced during playground
+testing and are now baked into the implementation. Updating the RFC
+to match.
+
+1. **Card is the single source of truth for card-shaped behaviour.**
+   v2 carried a parallel `R3FChromeConfig` on the R3F widget binding
+   to declare chrome (`'card' | 'none' | { background, radius }`).
+   In practice this duplicated information that the `Card` ECS
+   component already carried for DOM cards. v3 collapses both into
+   the `Card` component:
+
+     - Presence of `Card` opts a widget into the full bundle: DOM
+       `<CardChrome>`, CSS lift transition on `Dragging`,
+       drag-promote (DOM-only), and compositor `uDraggedRect` discard
+       (R3F-only).
+     - Absence of `Card` opts out of all of it — bare debug-style
+       widget with no chrome and no card-shaped affordances.
+     - `Card.background: string` field carries the chrome's
+       background colour so `<CardChrome>` reads it directly.
+
+   `R3FChromeConfig`, `R3FWidget.chrome`, and the chrome plumbing
+   through `ResolvedWidget` / `WidgetProvider` /
+   `SelectionOverlaySlot.resolveChrome` are deleted.
+   `createGeometryCardWidget` exposes `background?: string` (forwarded
+   to `Card`) and `withCard?: boolean` (skips `Card` entirely for
+   bare 3D widgets).
+
+2. **R3F card chrome must NOT promote to the overlay layer.** v2's
+   Phase 3 acceptance criterion said R3F chrome should promote during
+   drag (so the chrome would "pop above the R3F canvas"). In practice
+   this puts the chrome's opaque background fill above the R3F canvas,
+   which then occludes the dragged widget's own 3D content. The
+   correct design: R3F cards stay in `'base'` for the entire drag and
+   rely on the compositor's `uDraggedRect` clip + `renderOrder` bump
+   to defend their visual stacking. `dragPromoteSystem` now has two
+   guards: skip if no `Card`; skip if `Widget.surface === 'webgl'`.
+
+3. **`FrameChanges.layersChanged` re-bucket signal.** A small
+   discovery during Phase 3 wiring: the React bucket memo only
+   re-runs when `visibleEntities` changes, which in turn only changes
+   on entered/exited. A `Layer` component flip without entry/exit
+   would have been a silent no-op. The engine now emits
+   `layersChanged: boolean` on `FrameChanges` from
+   `world.queryChanged(Layer).length > 0`, and the rAF loop's
+   `setVisibleEntities` trigger extends to include it. One source of
+   truth for "did any entity's Layer flip" — generalises naturally
+   for future re-bucket triggers.
+
+4. **`LayerContainer.zIndex` via direct DOM write, not React style.**
+   Initial implementation used `style={{ zIndex }}`, which React
+   reconciliation overwrote on every commit, wiping the rAF loop's
+   `style.transform` writes on the same element. v3 applies `zIndex`
+   via a one-shot `useEffect` that writes `style.zIndex` directly,
+   leaving React out of the style attribute. Documented in the
+   `LayerContainer` component's comment.
+
+All v2 acceptance criteria now check; v3 ones are in the updated
+"Acceptance criteria" section above.
