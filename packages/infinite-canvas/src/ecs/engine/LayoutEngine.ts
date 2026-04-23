@@ -233,6 +233,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		cameraChanged: false,
 		navigationChanged: false,
 		selectionChanged: false,
+		layersChanged: false,
 	};
 
 	function markDirtyInternal() {
@@ -762,6 +763,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 				cameraChanged: cameraChangedThisTick,
 				navigationChanged: navigationChangedThisTick,
 				selectionChanged: selectionChangedThisTick,
+				layersChanged: world.queryChanged(Layer).length > 0,
 			};
 
 			currentVisible = newVisible;

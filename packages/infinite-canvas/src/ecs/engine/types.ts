@@ -64,6 +64,13 @@ export interface FrameChanges {
 	cameraChanged: boolean;
 	navigationChanged: boolean;
 	selectionChanged: boolean;
+	/**
+	 * True when at least one entity's `Layer` component value changed
+	 * during the last tick. Render layers consume this to re-bucket
+	 * widget slots into their target layer container — see RFC-003 §
+	 * dragPromoteSystem and `<InfiniteCanvas>`'s bucket memo.
+	 */
+	layersChanged: boolean;
 }
 
 /** Configuration options for `createLayoutEngine()`. */

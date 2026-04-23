@@ -118,10 +118,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 		const overlayLayerRef = useRef<HTMLDivElement>(null);
 		const slotRefs = useRef(new Map<EntityId, HTMLDivElement>());
 		const [visibleEntities, setVisibleEntities] = useState<EntityId[]>([]);
-		// Bumped whenever any entity's Layer component changes — the bucket
-		// memo keys on it so dragPromoteSystem's Layer flip immediately
-		// re-buckets the slot into the overlay container.
-		const [layerEpoch, setLayerEpoch] = useState(0);
 
 		// Register slot ref for batch updater
 		const registerSlotRef = useCallback((entityId: EntityId, el: HTMLDivElement | null) => {
@@ -210,18 +206,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				if (wheelGestureTimer !== null) clearTimeout(wheelGestureTimer);
 				engine.setGesturing(false);
 			};
-		}, [engine]);
-
-		// Re-bucket slots when any entity's Layer component changes (RFC-003).
-		// Without this, the bucket memo wouldn't re-run on a Layer flip
-		// because visibleEntities is only updated on entered/exited changes
-		// — dragPromoteSystem's promote/restore would set the component but
-		// the slot would stay in its old container.
-		useEffect(() => {
-			const unsub = engine.world.onComponentChanged(Layer, () => {
-				setLayerEpoch((n) => n + 1);
-			});
-			return unsub;
 		}, [engine]);
 
 		// Touch gesture handler — iOS Freeform-style interactions
@@ -657,8 +641,10 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 						el.style.height = `${wb.worldHeight}px`;
 					}
 
-					// 3. Update visible entity list if entities entered/exited
-					if (changes.entered.length > 0 || changes.exited.length > 0) {
+					// 3. Update visible entity list if entities entered/exited,
+					// or any visible entity's Layer component changed (re-bucket
+					// trigger for RFC-003 dragPromoteSystem).
+					if (changes.entered.length > 0 || changes.exited.length > 0 || changes.layersChanged) {
 						const visible = engine.getVisibleEntities();
 						setVisibleEntities(visible.map((v) => v.entityId));
 					}
@@ -738,13 +724,12 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 		// SelectionOverlaySlot (chrome + interaction surface) buckets into
 		// the layer container matching their Layer.name.
 		//
-		// Memo deps include layerEpoch — bumped by the Layer-change
-		// subscription above — so that a Layer component flip re-runs
-		// the bucket even when the entity set is unchanged. layerEpoch
-		// is read into a trivially-used local so the linter recognises
-		// it as a true dep rather than dead weight.
+		// Re-bucket runs when visibleEntities ref changes — driven by the
+		// rAF loop, which now calls setVisibleEntities on entered/exited
+		// OR FrameChanges.layersChanged. The latter fires whenever any
+		// entity's Layer component value changed during the tick (RFC-003
+		// dragPromoteSystem flip / restore).
 		const { backgroundDom, baseDom, overlayDom, webglEntities } = useMemo(() => {
-			void layerEpoch;
 			const background: EntityId[] = [];
 			const base: EntityId[] = [];
 			const overlay: EntityId[] = [];
@@ -763,7 +748,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				overlayDom: overlay,
 				webglEntities: webgl,
 			};
-		}, [visibleEntities, engine, layerEpoch]);
+		}, [visibleEntities, engine]);
 
 		const canvasContent = (
 			<div
