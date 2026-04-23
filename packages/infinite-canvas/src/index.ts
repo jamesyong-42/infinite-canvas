@@ -162,6 +162,8 @@ export { WidgetProvider } from './react/widgets/WidgetProvider.js';
 
 // === DOM card widget helper ===
 
+export type { CardChromeProps } from './react/widgets/CardChrome.js';
+export { CardChrome } from './react/widgets/CardChrome.js';
 export type { CardFrameProps, CreateCardWidgetOptions } from './react/widgets/card.js';
 export { CardFrame, createCardWidget } from './react/widgets/card.js';
 
