@@ -1,6 +1,8 @@
 export { Compositor } from './Compositor.js';
 export type { CompositorContextValue, CompositorWidgetEntry } from './CompositorContext.js';
 export { CompositorContext, useCompositor } from './CompositorContext.js';
+export type { EvictionCandidate } from './eviction.js';
+export { selectEvictions } from './eviction.js';
 export {
 	useSharedGeometry,
 	useSharedMaterial,

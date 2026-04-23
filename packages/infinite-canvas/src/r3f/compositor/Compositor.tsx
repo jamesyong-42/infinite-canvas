@@ -5,8 +5,9 @@ import { Mesh, MeshBasicMaterial, OrthographicCamera, PlaneGeometry, type Scene 
 import { Dragging, WorldBounds } from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
 import { CompositorContext, type CompositorWidgetEntry } from './CompositorContext.js';
+import { type EvictionCandidate, selectEvictions } from './eviction.js';
 import { ResourceRegistry } from './ResourceRegistry.js';
-import { R3FRenderState } from './state.js';
+import { R3FRenderBudget, R3FRenderState } from './state.js';
 import { WidgetRenderTargetPool } from './WidgetRenderTargetPool.js';
 import { isOutOfBand, selectBand } from './ZoomBands.js';
 
@@ -251,6 +252,44 @@ export function Compositor({
 				},
 			});
 			widgetsRepainted++;
+		}
+
+		// Eviction pass — if the pool is over budget after this frame's
+		// paints, release FBOs in priority order until back under: Cold (LRU)
+		// → Warm (LRU) → Dormant (LRU). Hot / Waking are never evicted. The
+		// state machine sees fboGeneration=-1 and transitions evicted
+		// widgets to Waking on next paint when they're visible again.
+		const budget = world.getResource(R3FRenderBudget);
+		if (pool.bytesUsed() > budget.maxBytes) {
+			const candidates: EvictionCandidate[] = [];
+			for (const info of pool.entryInfos()) {
+				const s = world.getComponent(info.entityId, R3FRenderState);
+				if (!s) continue;
+				candidates.push({
+					entityId: info.entityId,
+					phase: s.phase,
+					bytes: info.bytes,
+					lastUsedMs: info.lastUsedMs,
+				});
+			}
+			const toEvict = selectEvictions(candidates, pool.bytesUsed(), budget.maxBytes);
+			for (const eid of toEvict) {
+				pool.release(eid);
+				const s = world.getComponent(eid, R3FRenderState);
+				if (s) {
+					world.setComponent(eid, R3FRenderState, { ...s, fboGeneration: -1 });
+				}
+			}
+			// Tell the global pool gauge what the post-eviction usage is.
+			world.setResource(R3FRenderBudget, {
+				...budget,
+				currentBytes: pool.bytesUsed(),
+			});
+		} else if (budget.currentBytes !== pool.bytesUsed()) {
+			world.setResource(R3FRenderBudget, {
+				...budget,
+				currentBytes: pool.bytesUsed(),
+			});
 		}
 
 		// Update composition quads. A quad is only made visible after its

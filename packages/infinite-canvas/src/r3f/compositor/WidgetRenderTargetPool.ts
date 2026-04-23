@@ -14,6 +14,15 @@ type PoolEntry = {
 	pixelHeight: number;
 	dpr: number;
 	bytes: number;
+	/** `performance.now()` of the most recent acquire — drives LRU eviction. */
+	lastUsedMs: number;
+};
+
+/** Snapshot returned by {@link WidgetRenderTargetPool.entries}. */
+export type PoolEntryInfo = {
+	entityId: EntityId;
+	bytes: number;
+	lastUsedMs: number;
 };
 
 /**
@@ -43,8 +52,14 @@ export class WidgetRenderTargetPool {
 		const pixelWidth = Math.max(1, Math.round(width * dpr));
 		const pixelHeight = Math.max(1, Math.round(height * dpr));
 
+		const now =
+			typeof performance !== 'undefined' && typeof performance.now === 'function'
+				? performance.now()
+				: 0;
+
 		const existing = this.entries.get(entityId);
 		if (existing && existing.pixelWidth === pixelWidth && existing.pixelHeight === pixelHeight) {
+			existing.lastUsedMs = now;
 			return existing.rt;
 		}
 
@@ -65,7 +80,14 @@ export class WidgetRenderTargetPool {
 		// display-ready values.
 		rt.texture.colorSpace = SRGBColorSpace;
 		const bytes = pixelWidth * pixelHeight * BYTES_PER_PIXEL;
-		this.entries.set(entityId, { rt, pixelWidth, pixelHeight, dpr, bytes });
+		this.entries.set(entityId, {
+			rt,
+			pixelWidth,
+			pixelHeight,
+			dpr,
+			bytes,
+			lastUsedMs: now,
+		});
 		this.totalBytes += bytes;
 		return rt;
 	}
@@ -111,6 +133,18 @@ export class WidgetRenderTargetPool {
 	/** Iterate live entries. */
 	forEach(cb: (entityId: EntityId, rt: WebGLRenderTarget) => void): void {
 		for (const [id, entry] of this.entries) cb(id, entry.rt);
+	}
+
+	/**
+	 * Snapshot of every live entry's `bytes` + `lastUsedMs` — input for the
+	 * eviction algorithm in {@link selectEvictions}.
+	 */
+	entryInfos(): PoolEntryInfo[] {
+		const out: PoolEntryInfo[] = [];
+		for (const [id, entry] of this.entries) {
+			out.push({ entityId: id, bytes: entry.bytes, lastUsedMs: entry.lastUsedMs });
+		}
+		return out;
 	}
 
 	/** Dispose every FBO. After this, acquire throws and release returns false. */
