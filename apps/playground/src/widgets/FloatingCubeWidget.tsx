@@ -1,5 +1,5 @@
 import type { GeometryCardRenderProps } from '@jamesyong42/infinite-canvas';
-import { createGeometryCardWidget } from '@jamesyong42/infinite-canvas';
+import { createGeometryCardWidget, useWidgetAnimation } from '@jamesyong42/infinite-canvas';
 import { RoundedBox } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
@@ -11,9 +11,11 @@ const schema = z.object({
 });
 type CubeData = z.infer<typeof schema>;
 
-function CubeScene({ data, width, height }: GeometryCardRenderProps<CubeData>) {
+function CubeScene({ entityId, data, width, height }: GeometryCardRenderProps<CubeData>) {
 	const groupRef = useRef<Group>(null);
 	const size = Math.min(width, height);
+
+	useWidgetAnimation(entityId, true);
 
 	useFrame((state, dt) => {
 		if (!groupRef.current) return;

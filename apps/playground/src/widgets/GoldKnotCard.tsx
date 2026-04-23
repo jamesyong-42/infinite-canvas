@@ -1,5 +1,5 @@
 import type { GeometryCardRenderProps } from '@jamesyong42/infinite-canvas';
-import { createGeometryCardWidget } from '@jamesyong42/infinite-canvas';
+import { createGeometryCardWidget, useWidgetAnimation } from '@jamesyong42/infinite-canvas';
 import { Environment } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
@@ -18,10 +18,12 @@ const METALS: Record<GoldKnotData['metal'], { color: string; roughness: number }
 	copper: { color: '#D97B46', roughness: 0.18 },
 };
 
-function GoldKnotScene({ data, width, height }: GeometryCardRenderProps<GoldKnotData>) {
+function GoldKnotScene({ entityId, data, width, height }: GeometryCardRenderProps<GoldKnotData>) {
 	const meshRef = useRef<Mesh>(null);
 	const size = Math.min(width, height);
 	const metal = METALS[data.metal];
+
+	useWidgetAnimation(entityId, true);
 
 	useFrame((state, dt) => {
 		if (!meshRef.current) return;

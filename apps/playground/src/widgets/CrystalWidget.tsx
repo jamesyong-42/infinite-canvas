@@ -1,5 +1,5 @@
 import type { GeometryCardRenderProps } from '@jamesyong42/infinite-canvas';
-import { createGeometryCardWidget } from '@jamesyong42/infinite-canvas';
+import { createGeometryCardWidget, useWidgetAnimation } from '@jamesyong42/infinite-canvas';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
 import type { Mesh } from 'three';
@@ -10,9 +10,11 @@ const schema = z.object({
 });
 type CrystalData = z.infer<typeof schema>;
 
-function CrystalScene({ data, width, height }: GeometryCardRenderProps<CrystalData>) {
+function CrystalScene({ entityId, data, width, height }: GeometryCardRenderProps<CrystalData>) {
 	const meshRef = useRef<Mesh>(null);
 	const size = Math.min(width, height);
+
+	useWidgetAnimation(entityId, true);
 
 	useFrame((state, dt) => {
 		if (!meshRef.current) return;
