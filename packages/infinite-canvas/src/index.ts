@@ -178,12 +178,15 @@ export { createGeometryCardWidget } from './r3f/widgets/geometry-card.js';
 
 export type { R3FPhase } from './r3f/compositor/index.js';
 export {
+	isOutOfBand,
+	selectBand,
 	useSharedGeometry,
 	useSharedMaterial,
 	useSharedTexture,
 	useWidgetAnimation,
 	useWidgetInvalidate,
 	useWidgetPhase,
+	ZOOM_BANDS,
 } from './r3f/compositor/index.js';
 
 // === Grid + selection config (needed for InfiniteCanvas props) ===

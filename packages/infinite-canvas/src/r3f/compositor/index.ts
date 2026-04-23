@@ -15,3 +15,4 @@ export { R3FAnimationSignal, R3FRenderBudget, R3FRenderState } from './state.js'
 export { VirtualWidget } from './VirtualWidget.js';
 export { WidgetRenderTargetPool } from './WidgetRenderTargetPool.js';
 export { WidgetStateMachine } from './WidgetStateMachine.js';
+export { isOutOfBand, selectBand, ZOOM_BANDS } from './ZoomBands.js';

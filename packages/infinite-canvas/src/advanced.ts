@@ -55,10 +55,12 @@ export type {
 export {
 	Compositor,
 	CompositorContext,
+	isOutOfBand,
 	R3FAnimationSignal,
 	R3FRenderBudget,
 	R3FRenderState,
 	ResourceRegistry,
+	selectBand,
 	useCompositor,
 	useSharedGeometry,
 	useSharedMaterial,
@@ -69,6 +71,7 @@ export {
 	VirtualWidget,
 	WidgetRenderTargetPool,
 	WidgetStateMachine,
+	ZOOM_BANDS,
 } from './r3f/compositor/index.js';
 export { ProfilerProbe } from './r3f/ProfilerProbe.js';
 export { R3FManager } from './r3f/R3FManager.js';

@@ -8,6 +8,7 @@ import { CompositorContext, type CompositorWidgetEntry } from './CompositorConte
 import { ResourceRegistry } from './ResourceRegistry.js';
 import { R3FRenderState } from './state.js';
 import { WidgetRenderTargetPool } from './WidgetRenderTargetPool.js';
+import { isOutOfBand, selectBand } from './ZoomBands.js';
 
 /**
  * Drives the per-widget paint + composition render loop (RFC-002 Phase 4).
@@ -183,6 +184,8 @@ export function Compositor({
 		// throwing widget can't leave the GL render target bound to its FBO
 		// — that would corrupt the subsequent composition pass into the
 		// canvas backbuffer.
+		const band = selectBand(cam.zoom);
+		const effectiveDpr = dpr * band;
 		let widgetsRepainted = 0;
 		for (const [entityId, entry] of widgetsRef.current) {
 			const wb = world.getComponent(entityId, WorldBounds);
@@ -192,11 +195,15 @@ export function Compositor({
 
 			const phaseWantsPaint = state.phase === 'Hot' || state.phase === 'Waking';
 			const generationDirty = state.paintGeneration > state.fboGeneration;
-			if (!phaseWantsPaint && !generationDirty && pool.get(entityId) !== null) {
+			// Hysteresis-banded zoom: if camera zoom has wandered outside the
+			// band the widget was painted at, repaint at the new band so the
+			// composition sample ratio snaps back near 1:1.
+			const bandChanged = isOutOfBand(cam.zoom, state.paintedAt.zoom);
+			if (!phaseWantsPaint && !generationDirty && !bandChanged && pool.get(entityId) !== null) {
 				continue;
 			}
 
-			const fbo = pool.acquire(entityId, wb.worldWidth, wb.worldHeight, dpr);
+			const fbo = pool.acquire(entityId, wb.worldWidth, wb.worldHeight, effectiveDpr);
 			gl.setRenderTarget(fbo);
 			try {
 				gl.setClearColor(0x000000, 0);
@@ -206,15 +213,17 @@ export function Compositor({
 				gl.setRenderTarget(null);
 			}
 
-			// Mark the widget as painted at this generation.
+			// Mark the widget as painted at this generation. paintedAt.zoom
+			// stores the BAND (not the live camera zoom) so subsequent ticks
+			// compare against the same hysteresis edge.
 			world.setComponent(entityId, R3FRenderState, {
 				...state,
 				fboGeneration: state.paintGeneration,
 				paintedAt: {
 					width: wb.worldWidth,
 					height: wb.worldHeight,
-					dpr,
-					zoom: cam.zoom,
+					dpr: effectiveDpr,
+					zoom: band,
 				},
 			});
 			widgetsRepainted++;
