@@ -53,7 +53,6 @@ export type {
 	R3FRenderStateData,
 } from './r3f/compositor/index.js';
 export {
-	CompositionMaterial,
 	Compositor,
 	CompositorContext,
 	R3FAnimationSignal,

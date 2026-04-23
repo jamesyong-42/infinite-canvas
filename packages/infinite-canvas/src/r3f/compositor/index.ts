@@ -1,4 +1,3 @@
-export { CompositionMaterial } from './CompositionMaterial.js';
 export { Compositor } from './Compositor.js';
 export type { CompositorContextValue, CompositorWidgetEntry } from './CompositorContext.js';
 export { CompositorContext, useCompositor } from './CompositorContext.js';

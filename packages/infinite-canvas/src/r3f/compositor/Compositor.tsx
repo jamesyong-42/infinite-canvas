@@ -1,10 +1,9 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Mesh, OrthographicCamera, PlaneGeometry, type Scene } from 'three';
+import { Mesh, MeshBasicMaterial, OrthographicCamera, PlaneGeometry, type Scene } from 'three';
 import { Dragging, WorldBounds } from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
-import { CompositionMaterial } from './CompositionMaterial.js';
 import { CompositorContext, type CompositorWidgetEntry } from './CompositorContext.js';
 import { ResourceRegistry } from './ResourceRegistry.js';
 import { R3FRenderState } from './state.js';
@@ -86,8 +85,20 @@ export function Compositor({
 		(entityId: EntityId, entry: CompositorWidgetEntry) => {
 			widgetsRef.current.set(entityId, entry);
 
-			// Spawn a composition quad for this widget.
-			const mesh = new Mesh(quadGeometry, new CompositionMaterial());
+			// Spawn a composition quad for this widget. MeshBasicMaterial
+			// (rather than a custom ShaderMaterial) so Three.js's built-in
+			// pipeline handles texture color-space conversion + tone mapping
+			// + sRGB output encoding the same way it does for direct-to-canvas
+			// rendering. Otherwise the FBO's tone-mapped values get displayed
+			// in the wrong gamma space and look washed-out / desaturated.
+			const mesh = new Mesh(
+				quadGeometry,
+				new MeshBasicMaterial({
+					transparent: true,
+					depthWrite: false,
+					alphaTest: 0.001,
+				}),
+			);
 			mesh.frustumCulled = false;
 			mesh.visible = false; // Hidden until the widget has painted at least once.
 			defaultScene.add(mesh);
@@ -101,7 +112,7 @@ export function Compositor({
 				const m = quadsRef.current.get(entityId);
 				if (m) {
 					defaultScene.remove(m);
-					(m.material as CompositionMaterial).dispose();
+					(m.material as MeshBasicMaterial).dispose();
 					quadsRef.current.delete(entityId);
 				}
 				liftRef.current.delete(entityId);
@@ -249,7 +260,11 @@ export function Compositor({
 			mesh.visible = true;
 			mesh.position.set(wb.worldX + wb.worldWidth / 2, -(wb.worldY + wb.worldHeight / 2), lift.z);
 			mesh.scale.set(wb.worldWidth * lift.scale, wb.worldHeight * lift.scale, 1);
-			(mesh.material as CompositionMaterial).setMap(fbo.texture);
+			const material = mesh.material as MeshBasicMaterial;
+			if (material.map !== fbo.texture) {
+				material.map = fbo.texture;
+				material.needsUpdate = true;
+			}
 		}
 
 		// Composition pass to the canvas backbuffer. Explicit setRenderTarget

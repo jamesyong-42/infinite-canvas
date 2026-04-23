@@ -1,5 +1,5 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
-import { WebGLRenderTarget } from 'three';
+import { SRGBColorSpace, WebGLRenderTarget } from 'three';
 
 /**
  * Bytes per pixel for the default render target format (RGBA8 colour +
@@ -53,7 +53,17 @@ export class WidgetRenderTargetPool {
 			this.totalBytes -= existing.bytes;
 		}
 
-		const rt = new WebGLRenderTarget(pixelWidth, pixelHeight);
+		// MSAA matches the canvas's antialias setting so widget edges look
+		// the same as the old direct-to-canvas pass.
+		const rt = new WebGLRenderTarget(pixelWidth, pixelHeight, { samples: 4 });
+		// sRGB color space — without this, Three.js writes tone-mapped
+		// LINEAR values to the FBO. The composition shader samples raw,
+		// outputs raw, and the canvas backbuffer interprets the linear
+		// values as if they were sRGB → washed-out / dark colours. Setting
+		// SRGBColorSpace tells Three's built-in materials to apply sRGB
+		// encoding when writing to this target, so the FBO already holds
+		// display-ready values.
+		rt.texture.colorSpace = SRGBColorSpace;
 		const bytes = pixelWidth * pixelHeight * BYTES_PER_PIXEL;
 		this.entries.set(entityId, { rt, pixelWidth, pixelHeight, dpr, bytes });
 		this.totalBytes += bytes;
