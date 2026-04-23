@@ -49,6 +49,6 @@ export const MatteSphereCard = createGeometryCardWidget<MatteSphereData>({
 	size: 'small',
 	schema,
 	defaultData: { color: '#F5B8D0' },
-	background: '#1C1C1E',
+	background: 'linear-gradient(135deg, #FFB6C1 0%, #FF7E8A 55%, #C24A6B 100%)',
 	geometry: MatteSphereScene,
 });
