@@ -22,11 +22,21 @@ export const CursorResource = defineResource<CursorResourceData>('Cursor', {
 	cursor: 'default',
 });
 
-/** Camera state: world-space position (x, y) and zoom level. Updated by pan/zoom gestures. */
+/**
+ * Camera state: world-space position (x, y) and zoom level.
+ *
+ * `gesturing` is true while the user is actively manipulating the camera
+ * (continuous wheel zoom, pinch, two-finger pan). Set/cleared by gesture
+ * handlers via {@link LayoutEngine.setGesturing}; render layers can use it
+ * to defer expensive work (e.g. the R3F compositor skips zoom-band
+ * repaints while gesturing so a continuous pinch doesn't trigger a
+ * repaint storm across every visible widget).
+ */
 export const CameraResource = defineResource('Camera', {
 	x: 0,
 	y: 0,
 	zoom: 1,
+	gesturing: false,
 });
 
 /** Viewport dimensions in CSS pixels and device pixel ratio. Updated on resize. */

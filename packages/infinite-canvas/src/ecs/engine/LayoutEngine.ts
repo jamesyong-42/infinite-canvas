@@ -469,6 +469,21 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			markDirtyInternal();
 		},
 
+		/**
+		 * Toggle the camera's `gesturing` flag. Called by gesture handlers
+		 * (wheel debounced, touch pinch / pan start+end) so render layers
+		 * can defer expensive work — e.g. the R3F compositor skips zoom-band
+		 * repaints while gesturing is true so a continuous pinch doesn't
+		 * trigger a repaint storm across every visible widget.
+		 */
+		setGesturing(active: boolean) {
+			const camera = world.getResource(CameraResource);
+			if (camera.gesturing === active) return;
+			camera.gesturing = active;
+			cameraChangedThisTick = true;
+			markDirtyInternal();
+		},
+
 		zoomToFit(entityIds?: EntityId[], padding = 50) {
 			const viewport = world.getResource(ViewportResource);
 			if (viewport.width === 0) return;

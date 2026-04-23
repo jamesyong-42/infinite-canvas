@@ -175,6 +175,8 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			const container = containerRef.current;
 			if (!container) return;
 
+			let wheelGestureTimer: ReturnType<typeof setTimeout> | null = null;
+			const WHEEL_GESTURE_IDLE_MS = 200;
 			const onWheel = (e: WheelEvent) => {
 				e.preventDefault();
 				if (e.ctrlKey || e.metaKey) {
@@ -183,10 +185,23 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				} else {
 					engine.panBy(-e.deltaX, -e.deltaY);
 				}
+				// Wheel events are discrete; debounce them into a continuous
+				// "gesturing" window so render layers can defer expensive work
+				// (zoom-band repaints, etc.) until the user stops scrolling.
+				engine.setGesturing(true);
+				if (wheelGestureTimer !== null) clearTimeout(wheelGestureTimer);
+				wheelGestureTimer = setTimeout(() => {
+					engine.setGesturing(false);
+					wheelGestureTimer = null;
+				}, WHEEL_GESTURE_IDLE_MS);
 			};
 
 			container.addEventListener('wheel', onWheel, { passive: false });
-			return () => container.removeEventListener('wheel', onWheel);
+			return () => {
+				container.removeEventListener('wheel', onWheel);
+				if (wheelGestureTimer !== null) clearTimeout(wheelGestureTimer);
+				engine.setGesturing(false);
+			};
 		}, [engine]);
 
 		// Touch gesture handler — iOS Freeform-style interactions
@@ -424,16 +439,36 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				engine.handlePointerCancel();
 			}
 
-			container.addEventListener('touchstart', onTouchStart, { passive: false });
-			container.addEventListener('touchmove', onTouchMove, { passive: false });
-			container.addEventListener('touchend', onTouchEnd, { passive: false });
-			container.addEventListener('touchcancel', onTouchCancel, { passive: true });
+			// View-manipulation gestures (pinch / two-finger pan) toggle the
+			// engine's gesturing flag so render layers can defer expensive
+			// work. Sync after each touch event — setGesturing is idempotent.
+			function syncGesturing() {
+				const isView = gesture.type === 'pinching' || gesture.type === 'panning';
+				engine.setGesturing(isView);
+			}
+			function wrap<T extends (e: TouchEvent) => void>(fn: T): T {
+				return ((e: TouchEvent) => {
+					fn(e);
+					syncGesturing();
+				}) as T;
+			}
+
+			const touchStart = wrap(onTouchStart);
+			const touchMove = wrap(onTouchMove);
+			const touchEnd = wrap(onTouchEnd);
+			const touchCancel = wrap(onTouchCancel);
+
+			container.addEventListener('touchstart', touchStart, { passive: false });
+			container.addEventListener('touchmove', touchMove, { passive: false });
+			container.addEventListener('touchend', touchEnd, { passive: false });
+			container.addEventListener('touchcancel', touchCancel, { passive: true });
 
 			return () => {
-				container.removeEventListener('touchstart', onTouchStart);
-				container.removeEventListener('touchmove', onTouchMove);
-				container.removeEventListener('touchend', onTouchEnd);
-				container.removeEventListener('touchcancel', onTouchCancel);
+				container.removeEventListener('touchstart', touchStart);
+				container.removeEventListener('touchmove', touchMove);
+				container.removeEventListener('touchend', touchEnd);
+				container.removeEventListener('touchcancel', touchCancel);
+				engine.setGesturing(false);
 			};
 		}, [engine]);
 

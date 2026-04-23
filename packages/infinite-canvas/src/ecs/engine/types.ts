@@ -134,12 +134,14 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 
 	// Camera
 
-	getCamera(): { x: number; y: number; zoom: number };
+	getCamera(): { x: number; y: number; zoom: number; gesturing: boolean };
 	panBy(dx: number, dy: number): void;
 	panTo(worldX: number, worldY: number): void;
 	zoomAtPoint(screenX: number, screenY: number, delta: number): void;
 	zoomTo(zoom: number): void;
 	zoomToFit(entityIds?: EntityId[], padding?: number): void;
+	/** Mark the camera as actively manipulated (continuous wheel / pinch / pan). */
+	setGesturing(active: boolean): void;
 
 	// Viewport
 

@@ -72,6 +72,15 @@ export function Compositor({
 	// rectangle). RFC-002 § Phase 7 in spirit.
 	const liftRef = useRef(new Map<EntityId, { scale: number; z: number }>());
 
+	// Dynamic DPR: drop the canvas pixel ratio while the user is actively
+	// gesturing (pinch / wheel) and restore on idle. Cuts composition GPU
+	// cost during continuous interaction without making the static idle
+	// view fuzzy. Tracks the last applied DPR so we only call
+	// gl.setPixelRatio (which reallocates backing buffers) on transitions.
+	const lastDprRef = useRef(-1);
+	const idleDpr = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
+	const gestureDpr = Math.min(idleDpr, 1);
+
 	// World-space ortho camera that drives the composition pass. Replaces
 	// the role the previous CameraSync played for the shared scene.
 	const compCamera = useMemo(() => new OrthographicCamera(0, 1, 0, -1, 0.1, 10000), []);
@@ -148,6 +157,14 @@ export function Compositor({
 		compCamera.position.set(cam.x, -cam.y, 1000);
 		compCamera.updateProjectionMatrix();
 
+		// Apply dynamic DPR for the canvas backbuffer. setPixelRatio
+		// reallocates buffers, so only call it on actual transitions.
+		const targetDpr = cam.gesturing ? gestureDpr : idleDpr;
+		if (lastDprRef.current !== targetDpr) {
+			gl.setPixelRatio(targetDpr);
+			lastDprRef.current = targetDpr;
+		}
+
 		const dpr = gl.getPixelRatio();
 		const world = engine.world;
 
@@ -198,7 +215,14 @@ export function Compositor({
 			// Hysteresis-banded zoom: if camera zoom has wandered outside the
 			// band the widget was painted at, repaint at the new band so the
 			// composition sample ratio snaps back near 1:1.
-			const bandChanged = isOutOfBand(cam.zoom, state.paintedAt.zoom);
+			//
+			// While the user is actively gesturing (pinch / wheel zoom), we
+			// SKIP band-driven repaints — without this, a continuous pinch
+			// would trigger a repaint storm across every visible widget at
+			// each band crossing. The composition shader's bilinear stretch
+			// is "good enough" during the gesture; a single batch repaint
+			// happens once the user stops.
+			const bandChanged = !cam.gesturing && isOutOfBand(cam.zoom, state.paintedAt.zoom);
 			if (!phaseWantsPaint && !generationDirty && !bandChanged && pool.get(entityId) !== null) {
 				continue;
 			}
