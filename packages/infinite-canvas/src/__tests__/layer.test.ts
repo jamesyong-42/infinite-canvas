@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLayoutEngine, Layer, LayerOrderResource, Transform2D } from '../index.js';
+import { createLayoutEngine, Dragging, Layer, LayerOrderResource, Transform2D } from '../index.js';
 
 describe('Layer system (RFC-003 Phase 1)', () => {
 	it('LayerOrderResource defaults to background → base → overlay', () => {
@@ -25,5 +25,69 @@ describe('Layer system (RFC-003 Phase 1)', () => {
 		]);
 		engine.set(e, Layer, { name: 'overlay' });
 		expect(engine.get(e, Layer)).toEqual({ name: 'overlay' });
+	});
+});
+
+describe('dragPromoteSystem (RFC-003 Phase 3)', () => {
+	it('promotes a dragged widget to overlay and restores on drop', () => {
+		const engine = createLayoutEngine();
+		const e = engine.createEntity([
+			[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+			[Layer, { name: 'base' }],
+		]);
+
+		engine.world.addTag(e, Dragging);
+		expect(engine.get(e, Layer)).toEqual({ name: 'overlay' });
+
+		engine.world.removeTag(e, Dragging);
+		expect(engine.get(e, Layer)).toEqual({ name: 'base' });
+	});
+
+	it('restores the original layer (not always "base") on drop', () => {
+		// A widget that lives in 'background' should return there after drag.
+		const engine = createLayoutEngine();
+		const e = engine.createEntity([
+			[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+			[Layer, { name: 'background' }],
+		]);
+
+		engine.world.addTag(e, Dragging);
+		expect(engine.get(e, Layer)).toEqual({ name: 'overlay' });
+
+		engine.world.removeTag(e, Dragging);
+		expect(engine.get(e, Layer)).toEqual({ name: 'background' });
+	});
+
+	it('defaults pre-drag layer to "base" when widget has no Layer component', () => {
+		const engine = createLayoutEngine();
+		const e = engine.createEntity([
+			[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+		]);
+
+		engine.world.addTag(e, Dragging);
+		expect(engine.get(e, Layer)).toEqual({ name: 'overlay' });
+
+		engine.world.removeTag(e, Dragging);
+		expect(engine.get(e, Layer)).toEqual({ name: 'base' });
+	});
+
+	it('is idempotent: re-adding Dragging while promoted preserves the original', () => {
+		const engine = createLayoutEngine();
+		const e = engine.createEntity([
+			[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+			[Layer, { name: 'background' }],
+		]);
+
+		engine.world.addTag(e, Dragging);
+		// (Some other system or test could spuriously re-fire; the
+		// PreDragLayer guard must prevent overwriting 'background' with
+		// the now-current 'overlay'.)
+		engine.world.addTag(e, Dragging); // no-op in reactive-ecs (already set), but exercise the guard
+		// Force the listener again by removing + re-adding within the test.
+		engine.world.removeTag(e, Dragging);
+		engine.world.addTag(e, Dragging);
+		engine.world.removeTag(e, Dragging);
+
+		expect(engine.get(e, Layer)).toEqual({ name: 'background' });
 	});
 });

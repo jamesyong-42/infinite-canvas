@@ -19,9 +19,12 @@ import {
 	Container,
 	CursorHint,
 	Draggable,
+	Dragging,
 	HandleSet,
 	InteractionRole,
+	Layer,
 	Parent,
+	PreDragLayer,
 	Resizable,
 	Selectable,
 	Selected,
@@ -176,6 +179,34 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	unsubscribers.push(world.onTagRemoved(Draggable, refreshInteractionRole));
 	unsubscribers.push(world.onTagAdded(Selectable, refreshInteractionRole));
 	unsubscribers.push(world.onTagRemoved(Selectable, refreshInteractionRole));
+
+	// Drag-promote: while a widget carries Dragging, hoist it to the
+	// 'overlay' layer (RFC-003 § DragPromoteSystem). On Dragging
+	// removal, restore the pre-drag Layer.name from PreDragLayer.
+	// Idempotent: if PreDragLayer already exists when Dragging is
+	// re-added, we do not overwrite it — keeps the original.
+	unsubscribers.push(
+		world.onTagAdded(Dragging, (entity) => {
+			if (world.hasComponent(entity, PreDragLayer)) return;
+			const prev = world.getComponent(entity, Layer)?.name ?? 'base';
+			world.addComponent(entity, PreDragLayer, { name: prev });
+			if (world.hasComponent(entity, Layer)) {
+				world.setComponent(entity, Layer, { name: 'overlay' });
+			} else {
+				world.addComponent(entity, Layer, { name: 'overlay' });
+			}
+			markDirtyInternal();
+		}),
+	);
+	unsubscribers.push(
+		world.onTagRemoved(Dragging, (entity) => {
+			const stash = world.getComponent(entity, PreDragLayer);
+			if (!stash) return;
+			world.setComponent(entity, Layer, { name: stash.name });
+			world.removeComponent(entity, PreDragLayer);
+			markDirtyInternal();
+		}),
+	);
 
 	// Pre-register widgets and archetypes from config
 	if (config?.widgets) {
