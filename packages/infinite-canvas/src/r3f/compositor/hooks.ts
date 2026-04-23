@@ -23,12 +23,19 @@ export function useWidgetAnimation(entityId: EntityId, active: boolean): void {
 	useEffect(() => {
 		if (active) {
 			engine.world.addTag(entityId, R3FAnimationSignal);
+			// Force an engine tick so the state machine sees the new tag and
+			// transitions the widget to Hot — without this, the page would
+			// stay still until *something else* (drag, pan, etc.) ticks the
+			// engine and lets the state machine pick up the signal.
+			engine.markDirty();
 			return () => {
 				engine.world.removeTag(entityId, R3FAnimationSignal);
+				engine.markDirty();
 			};
 		}
 		// Ensure clean-up if the active → inactive transition happens mid-effect.
 		engine.world.removeTag(entityId, R3FAnimationSignal);
+		engine.markDirty();
 		return undefined;
 	}, [engine, entityId, active]);
 }
