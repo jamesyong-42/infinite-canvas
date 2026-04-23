@@ -2,7 +2,7 @@ import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Mesh, MeshBasicMaterial, OrthographicCamera, PlaneGeometry, type Scene } from 'three';
-import { WorldBounds } from '../../ecs/components.js';
+import { Dragging, WorldBounds } from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
 import { CompositorContext, type CompositorWidgetEntry } from './CompositorContext.js';
 import { type EvictionCandidate, selectEvictions } from './eviction.js';
@@ -67,6 +67,13 @@ export function Compositor({
 	// removed as widgets register / unregister.
 	const quadsRef = useRef(new Map<EntityId, Mesh>());
 
+	// Per-widget lift-scale tracker. CSS chrome scales 1× → 1.05× via a
+	// 180ms transition on Dragging; mirroring it here keeps the WebGL
+	// content visually pegged to the chrome's bounds. Same target value,
+	// independent lerp — close enough that the user perceives them as one
+	// moving element.
+	const liftScaleRef = useRef(new Map<EntityId, number>());
+
 	// Dynamic DPR: drop the canvas pixel ratio while the user is actively
 	// gesturing (pinch / wheel) and restore on idle. Cuts composition GPU
 	// cost during continuous interaction without making the static idle
@@ -120,6 +127,7 @@ export function Compositor({
 					(m.material as MeshBasicMaterial).dispose();
 					quadsRef.current.delete(entityId);
 				}
+				liftScaleRef.current.delete(entityId);
 				pool.release(entityId);
 			};
 		},
@@ -289,10 +297,12 @@ export function Compositor({
 		// fboGeneration >= 0 so a freshly-acquired (empty) target never gets
 		// sampled into the composition.
 		//
-		// Drag-lift is owned by DOM CardChrome (CSS box-shadow + scale
-		// transition) — the WebGL quad just stays at widget bounds. Trying
-		// to mirror the lift here would just produce a second animation
-		// system running in parallel that drifts out of phase with CSS.
+		// The visual lift (box-shadow + 1.05× scale) is owned by DOM
+		// CardChrome (CSS transition). We mirror only the scale here so the
+		// WebGL content stays pegged to the chrome's bounds during drag.
+		// Lerp toward the same target value — independent timing but close
+		// enough that the user perceives them as one moving element.
+		let liftSettling = false;
 		for (const [entityId, mesh] of quadsRef.current) {
 			const wb = world.getComponent(entityId, WorldBounds);
 			const state = world.getComponent(entityId, R3FRenderState);
@@ -306,9 +316,20 @@ export function Compositor({
 			// only called on repaint and Warm widgets never repaint.
 			pool.touch(entityId);
 
+			const dragging = world.hasTag(entityId, Dragging);
+			const targetScale = dragging ? 1.05 : 1;
+			let scale = liftScaleRef.current.get(entityId) ?? 1;
+			scale += (targetScale - scale) * 0.2;
+			if (Math.abs(targetScale - scale) > 0.001) {
+				liftSettling = true;
+			} else {
+				scale = targetScale;
+			}
+			liftScaleRef.current.set(entityId, scale);
+
 			mesh.visible = true;
 			mesh.position.set(wb.worldX + wb.worldWidth / 2, -(wb.worldY + wb.worldHeight / 2), 0);
-			mesh.scale.set(wb.worldWidth, wb.worldHeight, 1);
+			mesh.scale.set(wb.worldWidth * scale, wb.worldHeight * scale, 1);
 			const material = mesh.material as MeshBasicMaterial;
 			if (material.map !== fbo.texture) {
 				material.map = fbo.texture;
@@ -327,9 +348,10 @@ export function Compositor({
 		COMPOSITOR_TELEMETRY.widgetsRepainted = widgetsRepainted;
 		COMPOSITOR_TELEMETRY.fboBytes = pool.bytesUsed();
 
-		// Self-sustain the demand loop while any widget is in Hot phase
+		// Self-sustain the demand loop while: any widget is in Hot phase
 		// (animation-signalled widgets — e.g. rotating mesh — need
-		// continuous frames). invalidate() inside a useFrame sets
+		// continuous frames), OR any widget's lift scale is still settling
+		// toward its target. invalidate() inside a useFrame sets
 		// internal.frames to 2, so the loop keeps spinning.
 		let anyHot = false;
 		for (const eid of widgetsRef.current.keys()) {
@@ -339,7 +361,7 @@ export function Compositor({
 				break;
 			}
 		}
-		if (anyHot) invalidate();
+		if (anyHot || liftSettling) invalidate();
 	}, 1);
 
 	return <CompositorContext.Provider value={ctxValue}>{children}</CompositorContext.Provider>;
