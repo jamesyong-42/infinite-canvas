@@ -800,7 +800,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				{/* R3F layer — 3D widgets (lazy, only when webgl entities exist) */}
 				{webglEntities.length > 0 && <R3FBridge engine={engine} entities={webglEntities} />}
 
-				<LayerContainer layerRef={overlayLayerRef} zIndexClass="z-[2]">
+				<LayerContainer layerRef={overlayLayerRef} zIndex={2}>
 					{bucketSlots(overlayDom, engine, registerSlotRef)}
 				</LayerContainer>
 
@@ -842,27 +842,28 @@ function R3FBridge({ engine, entities }: { engine: LayoutEngine; entities: Entit
  * bucketed into its layer; the container's CSS transform is driven by
  * the rAF loop so all layers pan / zoom in lockstep.
  *
- * `zIndexClass` is a Tailwind class string (e.g. `'z-[2]'`). Using a
- * class rather than `style={{ zIndex }}` matters: the rAF loop writes
- * `style.transform` directly on this element, and a React-managed
- * `style` prop would wipe that transform on every commit.
+ * `zIndex` is applied via a one-shot effect (not via React's `style`
+ * prop) so it doesn't fight the rAF loop's direct `style.transform`
+ * writes — and so it doesn't depend on Tailwind's content scanner
+ * picking up the class from inside the library bundle (which it
+ * doesn't, since the library lives in node_modules of the consumer).
  */
 function LayerContainer({
 	layerRef,
-	zIndexClass,
+	zIndex,
 	children,
 }: {
 	layerRef: React.RefObject<HTMLDivElement | null>;
-	zIndexClass?: string;
+	zIndex?: number;
 	children: React.ReactNode;
 }) {
+	useEffect(() => {
+		if (zIndex !== undefined && layerRef.current) {
+			layerRef.current.style.zIndex = String(zIndex);
+		}
+	}, [layerRef, zIndex]);
 	return (
-		<div
-			ref={layerRef}
-			className={`absolute left-0 top-0 origin-top-left will-change-transform${
-				zIndexClass ? ` ${zIndexClass}` : ''
-			}`}
-		>
+		<div ref={layerRef} className="absolute left-0 top-0 origin-top-left will-change-transform">
 			{children}
 		</div>
 	);
