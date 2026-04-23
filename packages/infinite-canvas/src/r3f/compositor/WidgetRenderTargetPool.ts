@@ -98,6 +98,22 @@ export class WidgetRenderTargetPool {
 	}
 
 	/**
+	 * Refresh `lastUsedMs` without re-acquiring. The Compositor calls this
+	 * for every widget it samples in the composition pass — without it,
+	 * Warm widgets that never repaint would freeze their `lastUsedMs` at
+	 * the time of their last paint, and eviction LRU would treat
+	 * still-visible widgets as stale.
+	 */
+	touch(entityId: EntityId): void {
+		const entry = this.entries.get(entityId);
+		if (!entry) return;
+		entry.lastUsedMs =
+			typeof performance !== 'undefined' && typeof performance.now === 'function'
+				? performance.now()
+				: 0;
+	}
+
+	/**
 	 * Release `entityId`'s FBO. Returns true if something was released.
 	 * Safe to call after dispose — returns false rather than corrupting the
 	 * byte counter or double-disposing the target.

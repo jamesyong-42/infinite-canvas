@@ -442,14 +442,38 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			// View-manipulation gestures (pinch / two-finger pan) toggle the
 			// engine's gesturing flag so render layers can defer expensive
 			// work. Sync after each touch event — setGesturing is idempotent.
+			//
+			// `false` is debounced with the same idle window as the wheel
+			// handler so rapid pinch cycles don't trigger a band-repaint
+			// storm between gestures. `true` is set immediately so the
+			// deferral takes effect on the very first frame of a new gesture.
+			let touchGestureClearTimer: ReturnType<typeof setTimeout> | null = null;
+			const TOUCH_GESTURE_IDLE_MS = 200;
 			function syncGesturing() {
 				const isView = gesture.type === 'pinching' || gesture.type === 'panning';
-				engine.setGesturing(isView);
+				if (isView) {
+					if (touchGestureClearTimer !== null) {
+						clearTimeout(touchGestureClearTimer);
+						touchGestureClearTimer = null;
+					}
+					engine.setGesturing(true);
+				} else if (touchGestureClearTimer === null) {
+					touchGestureClearTimer = setTimeout(() => {
+						engine.setGesturing(false);
+						touchGestureClearTimer = null;
+					}, TOUCH_GESTURE_IDLE_MS);
+				}
 			}
 			function wrap<T extends (e: TouchEvent) => void>(fn: T): T {
+				// try/finally guarantees syncGesturing fires even if the
+				// inner handler throws — without it, a thrown handler would
+				// leave the gesturing flag stuck on its previous value.
 				return ((e: TouchEvent) => {
-					fn(e);
-					syncGesturing();
+					try {
+						fn(e);
+					} finally {
+						syncGesturing();
+					}
 				}) as T;
 			}
 
@@ -468,6 +492,10 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				container.removeEventListener('touchmove', touchMove);
 				container.removeEventListener('touchend', touchEnd);
 				container.removeEventListener('touchcancel', touchCancel);
+				if (touchGestureClearTimer !== null) {
+					clearTimeout(touchGestureClearTimer);
+					touchGestureClearTimer = null;
+				}
 				engine.setGesturing(false);
 			};
 		}, [engine]);

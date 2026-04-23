@@ -117,6 +117,13 @@ export function Compositor({
 			);
 			mesh.frustumCulled = false;
 			mesh.visible = false; // Hidden until the widget has painted at least once.
+			// All composition quads share renderOrder=1; all shadows
+			// renderOrder=0. Without this, Three's transparent-pass sort by
+			// camera distance is undefined when widget A's shadow and
+			// widget B's quad sit at the same lift z — flickering across
+			// frames. Splitting by renderOrder guarantees every shadow
+			// renders before every quad in a single deterministic pass.
+			mesh.renderOrder = 1;
 			defaultScene.add(mesh);
 			quadsRef.current.set(entityId, mesh);
 
@@ -124,6 +131,7 @@ export function Compositor({
 			const shadow = new Mesh(quadGeometry, new ShadowMaterial());
 			shadow.frustumCulled = false;
 			shadow.visible = false;
+			shadow.renderOrder = 0;
 			defaultScene.add(shadow);
 			shadowsRef.current.set(entityId, shadow);
 
@@ -292,22 +300,21 @@ export function Compositor({
 			}
 			const toEvict = selectEvictions(candidates, pool.bytesUsed(), budget.maxBytes);
 			for (const eid of toEvict) {
-				pool.release(eid);
 				const s = world.getComponent(eid, R3FRenderState);
+				// Dormant evictions are logged at debug level so the memory
+				// budget can be tuned when they happen — RFC § Phase 6.
+				if (s?.phase === 'Dormant') {
+					console.debug(
+						'[r3f-compositor] evicting Dormant widget',
+						eid,
+						'— consider raising R3FRenderBudget.maxBytes',
+					);
+				}
+				pool.release(eid);
 				if (s) {
 					world.setComponent(eid, R3FRenderState, { ...s, fboGeneration: -1 });
 				}
 			}
-			// Tell the global pool gauge what the post-eviction usage is.
-			world.setResource(R3FRenderBudget, {
-				...budget,
-				currentBytes: pool.bytesUsed(),
-			});
-		} else if (budget.currentBytes !== pool.bytesUsed()) {
-			world.setResource(R3FRenderBudget, {
-				...budget,
-				currentBytes: pool.bytesUsed(),
-			});
 		}
 
 		// Update composition quads. A quad is only made visible after its
@@ -327,6 +334,10 @@ export function Compositor({
 				mesh.visible = false;
 				continue;
 			}
+			// Refresh LRU timestamp — eviction would otherwise treat
+			// still-composited Warm widgets as stale because pool.acquire is
+			// only called on repaint and Warm widgets never repaint.
+			pool.touch(entityId);
 
 			// Lerp drag-lift toward target.
 			const dragging = world.hasTag(entityId, Dragging);
