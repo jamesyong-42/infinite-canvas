@@ -1,7 +1,7 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Mesh, OrthographicCamera, PlaneGeometry } from 'three';
+import { Mesh, OrthographicCamera, PlaneGeometry, type Scene } from 'three';
 import { Dragging, WorldBounds } from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
 import { CompositionMaterial } from './CompositionMaterial.js';
@@ -138,6 +138,35 @@ export function Compositor({
 
 		const dpr = gl.getPixelRatio();
 		const world = engine.world;
+
+		// Share scene.environment across per-widget scenes. In the old
+		// shared-scene architecture, drei's <Environment> mounted inside any
+		// widget set IBL on the single root scene, so every PBR material got
+		// the env reflection for free. With per-widget scenes each portal
+		// sees only its own env; PBR materials in other widgets (especially
+		// metallic ones) would render unlit. Propagate the first env we find
+		// to every widget scene so global IBL behaviour is preserved.
+		let sharedEnv = null as Scene['environment'];
+		for (const [, entry] of widgetsRef.current) {
+			if (entry.scene.environment) {
+				sharedEnv = entry.scene.environment;
+				break;
+			}
+		}
+		if (sharedEnv) {
+			for (const [eid, entry] of widgetsRef.current) {
+				if (entry.scene.environment === sharedEnv) continue;
+				entry.scene.environment = sharedEnv;
+				// Re-render so the new IBL is reflected in this widget's FBO.
+				const s = world.getComponent(eid, R3FRenderState);
+				if (s) {
+					world.setComponent(eid, R3FRenderState, {
+						...s,
+						paintGeneration: s.paintGeneration + 1,
+					});
+				}
+			}
+		}
 
 		// Per-widget paint pass. Each paint is wrapped in try/finally so a
 		// throwing widget can't leave the GL render target bound to its FBO
