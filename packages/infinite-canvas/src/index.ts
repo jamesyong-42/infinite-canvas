@@ -160,7 +160,6 @@ export { InfiniteCanvas } from './react/InfiniteCanvas.js';
 export type {
 	DomWidget,
 	DomWidgetProps,
-	R3FChromeConfig,
 	R3FWidget,
 	R3FWidgetProps,
 	Widget as WidgetDef,

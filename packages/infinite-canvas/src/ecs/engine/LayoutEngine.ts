@@ -15,6 +15,7 @@ import { CommandBuffer } from '../commands.js';
 import type { InteractionRoleType } from '../components.js';
 import {
 	Active,
+	Card,
 	Children,
 	Container,
 	CursorHint,
@@ -180,16 +181,17 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	unsubscribers.push(world.onTagAdded(Selectable, refreshInteractionRole));
 	unsubscribers.push(world.onTagRemoved(Selectable, refreshInteractionRole));
 
-	// Drag-promote (RFC-003): while a DOM widget carries Dragging, hoist
-	// it to the 'overlay' layer so it visually pops above the R3F canvas.
-	// R3F widgets are deliberately excluded — they handle their own
-	// stacking via the compositor (uDraggedRect clip + renderOrder bump
-	// per RFC-003 Phase 4). Promoting an R3F widget's chrome to the
-	// overlay layer would put its opaque background fill above the R3F
-	// canvas, occluding the dragged widget's own 3D content.
+	// Drag-promote (RFC-003): while a DOM card is dragged, hoist it to
+	// the 'overlay' layer so it visually pops above the R3F canvas.
+	//
+	// Gated on the `Card` component. R3F cards skip promotion — they
+	// handle their own stacking via the compositor (uDraggedRect clip +
+	// renderOrder bump). DOM widgets without Card are bare debug-style
+	// surfaces that shouldn't acquire card-shaped affordances.
 	unsubscribers.push(
 		world.onTagAdded(Dragging, (entity) => {
 			if (world.hasComponent(entity, PreDragLayer)) return;
+			if (!world.hasComponent(entity, Card)) return;
 			const widget = world.getComponent(entity, WidgetComp);
 			if (widget?.surface === 'webgl') return;
 			const prev = world.getComponent(entity, Layer)?.name ?? 'base';

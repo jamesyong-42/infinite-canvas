@@ -6,7 +6,7 @@ import { Card } from '../../ecs/components.js';
 import { DEFAULT_CARD_PRESET_SIZES } from '../../ecs/resources.js';
 import type { StandardSchemaV1 } from '../../ecs/schema.js';
 import { useWidgetData } from '../../react/hooks/widget.js';
-import type { R3FChromeConfig, R3FWidget, R3FWidgetProps } from '../../react/widgets/registry.js';
+import type { R3FWidget, R3FWidgetProps } from '../../react/widgets/registry.js';
 
 /** Props passed to the user's geometry component. */
 export interface GeometryCardRenderProps<T> {
@@ -30,15 +30,22 @@ export interface CreateGeometryCardWidgetOptions<T> {
 	/** Default data for new instances. */
 	defaultData: T;
 	/**
-	 * DOM chrome rendered beneath the WebGL canvas (rounded background +
-	 * box-shadow). Browser-native CSS produces a far better-looking shadow
-	 * than any shader approximation we can write in WebGL.
+	 * If false, the widget skips the `Card` component entirely — no DOM
+	 * `<CardChrome>` (no rounded background, no drop shadow), no
+	 * lift-on-drag CSS transition, no compositor discard rect for
+	 * neighbours. The widget's 3D content floats over the canvas
+	 * background and just stacks on top of overlapping R3F content
+	 * during drag (via the compositor's renderOrder bump).
 	 *
-	 *   `'card'` (default) — dark iOS-style card back with soft shadow.
-	 *   `'none'`           — no chrome; geometry floats over canvas bg.
-	 *   object             — custom background color and / or radius.
+	 * Default true.
 	 */
-	chrome?: R3FChromeConfig;
+	withCard?: boolean;
+	/**
+	 * CSS background for the chrome's surface — only meaningful when
+	 * `withCard` is true. Stored on the `Card` component so the chrome
+	 * + any future tooling can read it. Defaults to the dark iOS card.
+	 */
+	background?: string;
 	/** The 3D content rendered in local space (origin at centre). */
 	geometry: React.ComponentType<GeometryCardRenderProps<T>>;
 }
@@ -49,10 +56,14 @@ export interface CreateGeometryCardWidgetOptions<T> {
  * no engine-drawn selection frame, and lifts on drag (scale + z) — but
  * renders a three.js scene instead of DOM content.
  *
- * The card background and drop shadow are rendered as DOM `<CardChrome>`
+ * The card body and drop shadow are rendered as DOM `<CardChrome>`
  * beneath the WebGL canvas, not inside the FBO. The user's `geometry`
- * component renders ONLY the 3D content; the chrome layer handles the
- * iOS-style rounded body and lift-on-drag shadow.
+ * component renders ONLY the 3D content; chrome is provided by the
+ * `Card` ECS component (the source of truth for all card-shaped
+ * behavior — chrome, lift, drag-promote, compositor discard).
+ *
+ * Pass `withCard: false` to skip card behavior entirely (bare 3D
+ * widget — no chrome, no lift, no discard).
  *
  * Lighting: this helper adds no lights. Declare your own in the `geometry`
  * component (typically a local `pointLight` scoped with `distance`).
@@ -63,7 +74,7 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 } {
 	const defaultSize = DEFAULT_CARD_PRESET_SIZES[opts.size];
 	const Render = opts.geometry;
-	const chrome = opts.chrome ?? 'card';
+	const withCard = opts.withCard ?? true;
 
 	const Component: React.ComponentType<R3FWidgetProps> = ({ entityId, width, height }) => {
 		const data = useWidgetData<T>(entityId);
@@ -80,13 +91,14 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 		defaultData: opts.defaultData,
 		defaultSize,
 		component: Component,
-		chrome,
 	};
 
 	const archetype: Archetype = {
 		id: opts.type,
 		widget: opts.type,
-		components: [[Card, { preset: opts.size }]],
+		components: withCard
+			? [[Card, { preset: opts.size, background: opts.background ?? '#1C1C1E' }]]
+			: [],
 		interactive: {
 			selectable: true,
 			draggable: true,

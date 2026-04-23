@@ -2,7 +2,7 @@ import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Mesh, OrthographicCamera, PlaneGeometry, type Scene } from 'three';
-import { Dragging, Widget, WorldBounds } from '../../ecs/components.js';
+import { Card, Dragging, Widget, WorldBounds } from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
 import { CompositionMaterial } from './CompositionMaterial.js';
 import { CompositorContext, type CompositorWidgetEntry } from './CompositorContext.js';
@@ -285,9 +285,14 @@ export function Compositor({
 			}
 		}
 
-		// First pass: locate the (single) dragged R3F widget if any, plus
-		// its lifted screen rect for the composition shader's discard
-		// uniform. RFC-003 § Compositor changes.
+		// First pass: locate the (single) dragged R3F widget if any.
+		//
+		// Compute the discard rect ONLY if the dragged widget has the
+		// `Card` component — only card widgets have CSS chrome that
+		// needs to be defended from being painted over by other R3F
+		// content. Card-less R3F widgets (CrystalWidget, FloatingCube)
+		// just want the renderOrder bump so their own quad draws on
+		// top; they don't need to clip neighbours. RFC-003 § Cases.
 		let draggedEntityId: EntityId | null = null;
 		let draggedRectMinX = 0;
 		let draggedRectMinY = 0;
@@ -298,8 +303,13 @@ export function Compositor({
 			if (!world.hasTag(entityId, Dragging)) continue;
 			const w = world.getComponent(entityId, Widget);
 			if (w?.surface !== 'webgl') continue;
+			draggedEntityId = entityId;
+			// Only compute the rect for card widgets — non-card widgets
+			// leave the rect at zero, which the shader treats as "no
+			// discard" while still respecting renderOrder.
+			if (!world.hasComponent(entityId, Card)) break;
 			const wb = world.getComponent(entityId, WorldBounds);
-			if (!wb) continue;
+			if (!wb) break;
 			// Use the live lift scale so the discard rect tracks the lifted
 			// chrome bounds (1.05× during drag).
 			const lift = liftScaleRef.current.get(entityId) ?? 1;
@@ -320,7 +330,6 @@ export function Compositor({
 			draggedRectMinY = canvasHeightPx - syBot;
 			draggedRectMaxX = sxMax;
 			draggedRectMaxY = canvasHeightPx - syTop;
-			draggedEntityId = entityId;
 			break;
 		}
 

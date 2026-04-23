@@ -58,6 +58,6 @@ export const FloatingCubeWidget = createGeometryCardWidget<CubeData>({
 	size: 'medium',
 	schema,
 	defaultData: { color: '#E8523B' },
-	chrome: 'none',
+	withCard: false,
 	geometry: CubeScene,
 });

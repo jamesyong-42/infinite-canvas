@@ -57,12 +57,34 @@ export const WidgetBreakpoint = defineComponent('WidgetBreakpoint', {
 export type CardPreset = 'small' | 'medium' | 'large' | 'xl';
 
 /**
- * Marks an entity as an iOS-style card with a fixed preset size.
- * The `cardSystem` reconciles `Transform2D.width/height` from the preset
- * each tick, so cards cannot be resized freely — change `preset` instead.
+ * Marks an entity as an iOS-style card with a fixed preset size, AND
+ * opts the entity into the full card-shaped behavior bundle:
+ *
+ *   - DOM `<CardChrome>` slot (rounded body, hairline ring, shadow,
+ *     CSS lift transition on Dragging)
+ *   - drag-promote to the 'overlay' layer for DOM cards (so dragged
+ *     DOM cards visually pop above the R3F canvas)
+ *   - composition discard rect for R3F cards (so other R3F widgets
+ *     are clipped out of the dragged card's screen rect — defends
+ *     the chrome from being painted over)
+ *
+ * Widgets *without* `Card` get none of this — they render bare (no
+ * chrome, no lift transition), and on drag they only get the
+ * compositor's renderOrder bump if they're R3F (so they stack on
+ * top of other R3F widgets they overlap).
+ *
+ * The `cardSystem` reconciles `Transform2D.width/height` from the
+ * preset each tick, so cards cannot be resized freely — change
+ * `preset` instead.
  */
 export const Card = defineComponent('Card', {
 	preset: 'small' as CardPreset,
+	/**
+	 * CSS background for the chrome's surface (any valid background value;
+	 * defaults to the dark iOS card colour). Picked up by the
+	 * `<CardChrome>` component rendered for this entity.
+	 */
+	background: '#1C1C1E',
 });
 
 // === Container ===

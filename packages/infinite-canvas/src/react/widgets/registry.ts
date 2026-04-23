@@ -34,25 +34,15 @@ export interface DomWidget<T = Record<string, unknown>> extends WidgetBinding<T>
 }
 
 /**
- * Chrome rendered by a DOM slot beneath the WebGL canvas for an R3F
- * widget. CSS `box-shadow` produces a far better-looking blur than any
- * shader approximation, so the iOS-style card body / shadow lives in DOM
- * regardless of whether the widget content is 3D.
- *
- *   `'card'` — default iOS card chrome (rounded, hairline ring, soft
- *              shadow, lift on drag).
- *   `'none'` — no DOM chrome; widget appears as 3D content alone over
- *              the canvas background.
- *   object  — same chrome with custom background colour and / or radius.
+ * An R3F (React Three Fiber) widget. The component receives local-space
+ * width/height. Card-shaped chrome / lift / drag-promote / compositor
+ * discard are all opted in via the `Card` ECS component on the spawned
+ * entity (typically declared in the widget's archetype) — see
+ * `createGeometryCardWidget` for the convenience wrapper.
  */
-export type R3FChromeConfig = 'card' | 'none' | { background?: string; radius?: number };
-
-/** An R3F (React Three Fiber) widget. The component receives local-space width/height. */
 export interface R3FWidget<T = Record<string, unknown>> extends WidgetBinding<T> {
 	surface: 'webgl';
 	component: React.ComponentType<R3FWidgetProps>;
-	/** DOM chrome rendered beneath the WebGL canvas. Defaults to `'card'`. */
-	chrome?: R3FChromeConfig;
 }
 
 /** Either kind of widget. */
