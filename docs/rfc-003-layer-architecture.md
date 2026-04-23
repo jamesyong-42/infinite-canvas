@@ -1,12 +1,14 @@
 # RFC-003: Layer Architecture & Drag-Promote
 
-- **Status**: Draft v1
+- **Status**: Draft v2
 - **Author**: James Yong
 - **Date**: 2026-04-23
 - **Area**: Rendering / ECS / Interaction
 - **Related**: RFC-002 (R3F Virtual-Texture Compositor) — extends the
   compositor with a clipping uniform and `renderOrder` bump for the
   dragged widget; relies on the per-widget render-target pipeline.
+- **Supersedes**: RFC-003 v1 (same-day; resolves Open Questions 1, 4, 5
+  into the proposal — see "Revision notes")
 
 ---
 
@@ -318,12 +320,15 @@ below).
 
 ### Compositor changes
 
-Two new uniforms on the R3F composition material (currently
-`MeshBasicMaterial`; we either switch back to a small `ShaderMaterial`
-or use `onBeforeCompile` to inject the discard logic into
-`MeshBasicMaterial`'s built-in shader — `onBeforeCompile` is the
-preferred path because we keep Three's tone mapping + sRGB output
-encoding for free):
+Switch the R3F composition material from `MeshBasicMaterial` back to a
+minimal custom `ShaderMaterial`. The composition pass is already
+"sample sRGB-encoded FBO texel and write it to the sRGB backbuffer
+unchanged" — we explicitly do *not* want Three's tone-mapping pipeline
+to touch these pixels (RFC-002 § sRGB FBO fix). A tiny shader is
+cleaner than `onBeforeCompile`-style chunk injection, has no caching
+hazards, and isn't coupled to Three's internal shader chunk names.
+
+Two uniforms on the new material:
 
 - `uDraggedRect: vec4` — screen-space pixel coords of the dragged R3F
   widget's AABB, expressed as `(minX, minY, maxX, maxY)` in
@@ -332,21 +337,44 @@ encoding for free):
 - `uIsDragged: float` — 1.0 if this quad's widget is the dragged one,
   0.0 otherwise.
 
-Fragment-shader patch (injected after the `texture2D` sample):
+Full composition shader (replaces the `MeshBasicMaterial` set in the
+Compositor's `register`):
 
 ```glsl
-if (uIsDragged < 0.5) {
-  vec2 sp = gl_FragCoord.xy;
-  if (sp.x >= uDraggedRect.x && sp.x <= uDraggedRect.z &&
-      sp.y >= uDraggedRect.y && sp.y <= uDraggedRect.w) {
-    discard;
+// vertex
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+
+// fragment
+uniform sampler2D map;
+uniform vec4 uDraggedRect; // (minX, minY, maxX, maxY) in gl_FragCoord px
+uniform float uIsDragged;
+varying vec2 vUv;
+void main() {
+  if (uIsDragged < 0.5) {
+    vec2 sp = gl_FragCoord.xy;
+    if (sp.x >= uDraggedRect.x && sp.x <= uDraggedRect.z &&
+        sp.y >= uDraggedRect.y && sp.y <= uDraggedRect.w) {
+      discard;
+    }
   }
+  vec4 c = texture2D(map, vUv);
+  if (c.a < 0.001) discard;
+  gl_FragColor = c;
 }
 ```
 
 When `uDraggedRect = (0,0,0,0)` the test is `sp.x >= 0 && sp.x <= 0` —
 false for any pixel — so the discard is a no-op. No branch cost in the
 common case.
+
+The material is `transparent: true`, `depthWrite: false`. The texture's
+sRGB encoding (set on the FBO per RFC-002 § sRGB FBO fix) means the
+sampled `c` is already in sRGB space, ready to write to the sRGB
+backbuffer — no tone mapping or output encoding needed.
 
 Compositor `useFrame` per-frame work:
 
@@ -536,9 +564,12 @@ Acceptance:
 
 ### Phase 4 — Compositor `uDraggedRect` + `renderOrder` bump
 
-Switch composition material from `MeshBasicMaterial` to either a small
-`ShaderMaterial` derivative or `MeshBasicMaterial` with
-`onBeforeCompile` injection — keep tone mapping + sRGB encoding intact.
+Replace `MeshBasicMaterial` with a minimal custom `ShaderMaterial`
+(see § Compositor changes for the full shader). The composition pass
+samples already-sRGB-encoded FBO texels and writes them to an sRGB
+backbuffer unchanged — no tone mapping needed, so the bespoke shader
+loses nothing vs `MeshBasicMaterial` and avoids `onBeforeCompile`
+chunk-injection hazards.
 
 Compositor's `useFrame` computes the dragged screen rect each frame,
 sets uniforms, sets `renderOrder`. Self-sustain loop already invalidates
@@ -562,40 +593,32 @@ Acceptance:
 
 ## Open questions
 
-1. **`onBeforeCompile` vs custom `ShaderMaterial`** for the composition
-   material. `onBeforeCompile` keeps Three's built-in pipeline (tone
-   mapping, sRGB encoding) and only adds the discard. A custom shader
-   would be cleaner but means re-implementing the encoding chain. Lean
-   toward `onBeforeCompile` for Phase 4 unless it produces hard-to-debug
-   shader compile errors.
-
-2. **WebGL chrome vs `'overlay'` layer ordering**. WebGL chrome is at
+1. **WebGL chrome vs `'overlay'` layer ordering**. WebGL chrome is at
    zIndex 3, overlay layer at zIndex 2. So a tooltip (future) in
    `'overlay'` would render *behind* selection outlines. Probably
-   correct (selection should always be visible), but flagging for
-   awareness. Adding a `'tooltip'` layer at zIndex 4 later is the
-   natural extension.
+   correct (selection should always be visible — Figma convention), but
+   flagging for awareness. Adding a `'tooltip'` layer at zIndex 4 later
+   is the natural extension.
 
-3. **`Layer` for `'webgl'` chrome / engine-drawn elements**. Right now
+2. **`Layer` for `'webgl'` chrome / engine-drawn elements**. Right now
    the WebGL grid + selection chrome are not ECS entities — they're
    rendered by `WebGLManager` directly. They sit at fixed zIndex
    positions outside the `Layer` system. If we ever want to move them
    into the layer system (e.g., user-controlled grid layer), they'd
    become entities with their own `Layer.name`. Out of scope.
 
-4. **Pointer event capture during promotion**. The chrome's slot
-   re-mounts into the overlay container, but pointer event handlers are
-   identical (`SelectionOverlaySlot` re-renders identically wherever
-   it's mounted). Pointer capture during drag uses
-   `containerRef.setPointerCapture` (the root container, not the slot),
-   so the re-mount doesn't affect drag continuity. Verify in Phase 3.
-
-5. **Custom user layers**. `LayerOrderResource` is exposed so apps
-   could in principle add `'tooltip'`, `'modal'`, etc. — but
-   `InfiniteCanvas` only renders the three default containers. To add
-   a custom layer, the app would need to either fork `InfiniteCanvas`
-   or we expose a `layerContainers` prop. Not needed for v1; flag as
-   future API.
+3. **Pointer event capture during promotion** *(verify in Phase 3,
+   contingency identified)*. The chrome's slot re-mounts into the
+   overlay container, but pointer capture is set on
+   `containerRef.current` (the root canvas div, not the slot), so the
+   re-mount cannot break capture in principle. Two scenarios to
+   exercise during Phase 3 acceptance: (a) drag a widget rapidly
+   immediately after pointerdown — no frame drops, no lost moves;
+   (b) drag, release, drag again — capture resets cleanly. **Fallback
+   if these regress**: don't re-parent the DOM node; instead apply
+   `style.zIndex` to the slot in place. Trades sibling-ordering
+   guarantees for capture continuity. Default plan stays with
+   container re-mount; only switch on observed failure.
 
 ---
 
@@ -662,10 +685,13 @@ Acceptance:
   on its own ref — by the time `Dragging` is added the pointer event
   has already returned, so this race shouldn't manifest. Verify
   carefully in Phase 3.
-- **`onBeforeCompile` shader caching**: Three's shader cache keys on
-  the `onBeforeCompile` function reference. If the same function is
-  passed for every widget, a single compiled program is reused.
-  Confirm by sharing the patch function across all materials.
+- **One material instance per widget**: each composition quad currently
+  has its own `MeshBasicMaterial`; the new `ShaderMaterial` pattern
+  preserves that (uniforms must be per-instance). Three.js compiles the
+  shader once and reuses the program across instances since they share
+  defines / vertexShader / fragmentShader strings — no shader cache
+  thrash. Confirm in Phase 4 by checking `renderer.info.programs.length`
+  stays at 1 for the composition shader regardless of widget count.
 - **`uDraggedRect` lift scale tracking**: the compositor's
   `liftScaleRef` is the source of truth for the dragged quad's
   effective scale. The discard rect must read the same value or the
@@ -682,3 +708,31 @@ Acceptance:
 that established three layers (`background`, `base`, `overlay`), one
 `DragPromoteSystem`, and compositor-side discard + renderOrder bump as
 the minimal changes needed to put the dragged widget visually on top.
+
+**v1 → v2** (same-day revision after walking through the open
+questions)
+
+Resolutions of v1 Open Questions:
+- **Q1 (`onBeforeCompile` vs custom `ShaderMaterial`)**: resolved into
+  proposal as **custom `ShaderMaterial`**. Composition is "sample
+  sRGB-encoded FBO and write unchanged" — no tone mapping needed, so
+  the bespoke shader loses nothing and avoids `onBeforeCompile`
+  chunk-injection hazards. Full shader source now in § Compositor
+  changes. Risks block updated to call out per-instance materials with
+  shared compiled program (verify via `renderer.info.programs`).
+- **Q4 (pointer capture during promotion)**: kept open but tightened —
+  added contingency (`style.zIndex` in place instead of re-parent) if
+  Phase 3 testing reveals capture / drag-continuity issues. Default
+  plan stays with container re-mount.
+- **Q5 (custom user layers)**: resolved by deferral. v1 documented
+  `LayerOrderResource` exposure as "could in principle" — v2 commits
+  to: three hardcoded containers in `InfiniteCanvas`,
+  `LayerOrderResource` retained for systems to read from (so
+  `DragPromoteSystem` doesn't hard-code `'overlay'` as a string), no
+  custom-layer API surface in v1. Add `layerContainers` prop later if
+  someone files an issue.
+
+Q2 (WebGL chrome zIndex 3 vs overlay zIndex 2) and Q3 (engine-drawn
+elements outside Layer system) remain documented as intentionally
+unresolved — they call out architectural decisions that are correct
+as-is and don't need follow-up.
