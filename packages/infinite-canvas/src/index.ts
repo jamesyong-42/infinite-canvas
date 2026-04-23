@@ -26,6 +26,8 @@ export type {
 	HandleSetData,
 	InteractionRoleData,
 	InteractionRoleType,
+	LayerData,
+	LayerName,
 } from './ecs/components.js';
 export {
 	Active,
@@ -39,6 +41,7 @@ export {
 	HandleSet,
 	Hitbox,
 	InteractionRole,
+	Layer,
 	Locked,
 	Parent,
 	Resizable,
@@ -95,12 +98,18 @@ export type {
 
 // === Resources ===
 
-export type { Breakpoint, CursorResourceData, NavigationFrame } from './ecs/resources.js';
+export type {
+	Breakpoint,
+	CursorResourceData,
+	LayerOrderData,
+	NavigationFrame,
+} from './ecs/resources.js';
 export {
 	BreakpointConfigResource,
 	CameraResource,
 	CardPresetsResource,
 	CursorResource,
+	LayerOrderResource,
 	NavigationStackResource,
 	ViewportResource,
 	ZoomConfigResource,

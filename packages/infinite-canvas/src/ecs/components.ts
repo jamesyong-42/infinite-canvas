@@ -194,3 +194,45 @@ export const Visible = defineTag('Visible');
  * compositor (RFC-002) holds widget render targets in its Cold pool.
  */
 export const Culled = defineTag('Culled');
+
+// === Layer system (RFC-003) ===
+
+/**
+ * Named DOM stacking layer a widget renders into. Three layers are
+ * rendered out of the box by `<InfiniteCanvas>`:
+ *
+ *   `'background'` — DOM widgets behind everything user-content.
+ *   `'base'`       — default; DOM widgets and R3F card chrome.
+ *   `'overlay'`    — DOM widgets and R3F chrome promoted above the R3F
+ *                    canvas (e.g. dragged widget, future tooltips).
+ *
+ * Per-widget `ZIndex` continues to control intra-layer ordering;
+ * `Layer.name` picks which layer container the widget mounts into.
+ *
+ * R3F widgets always render through the R3F canvas regardless of layer
+ * — `Layer.name` only controls where their CSS chrome / interaction
+ * surface mounts.
+ */
+export type LayerName = 'background' | 'base' | 'overlay';
+
+export type LayerData = {
+	name: LayerName;
+};
+
+export const Layer = defineComponent<LayerData>('Layer', { name: 'base' });
+
+/**
+ * Sidecar component on a widget that has been promoted to a higher
+ * layer by `dragPromoteSystem`; stores the widget's pre-drag
+ * `Layer.name` so it can be restored when `Dragging` is removed.
+ *
+ * Internal — not part of the public API. Serialization-skipped because
+ * it only carries transient interaction state.
+ */
+export type PreDragLayerData = {
+	name: LayerName;
+};
+
+export const PreDragLayer = defineComponent<PreDragLayerData>('PreDragLayer', {
+	name: 'base',
+});

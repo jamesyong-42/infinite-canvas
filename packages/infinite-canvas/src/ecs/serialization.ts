@@ -44,6 +44,9 @@ export function serializeWorld(
 		const tags: string[] = [];
 
 		for (const type of componentTypes) {
+			// Skip runtime-only components (PreDragLayer — recomputed by
+			// dragPromoteSystem on the next Dragging tag flip).
+			if (type.name === 'PreDragLayer') continue;
 			const data = world.getComponent(entityId, type);
 			if (data !== undefined) {
 				components[type.name] = structuredClone(data);
@@ -169,6 +172,7 @@ export function serializeEntities(
 		const tags: string[] = [];
 
 		for (const type of componentTypes) {
+			if (type.name === 'PreDragLayer') continue;
 			const data = world.getComponent(entityId, type);
 			if (data !== undefined) {
 				components[type.name] = structuredClone(data);

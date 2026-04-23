@@ -100,3 +100,23 @@ export const CardPresetsResource = defineResource('CardPresets', {
 export const SpatialIndexResource = defineResource('SpatialIndex', {
 	instance: null as SpatialIndex | null,
 });
+
+/**
+ * Render-layer order, low → high. `<InfiniteCanvas>` mounts a DOM
+ * container for each entry; widgets render into the container that
+ * matches their `Layer.name`. Per-widget `ZIndex` controls intra-layer
+ * ordering. RFC-003.
+ *
+ * Default: `['background', 'base', 'overlay']`. Out-of-the-box the
+ * three names map to fixed DOM positions in `<InfiniteCanvas>`'s
+ * stacking sandwich: background and base sit beneath the R3F canvas
+ * (zIndex < 1), overlay sits above it (zIndex 2). Custom layer names
+ * are not yet rendered by the default `<InfiniteCanvas>`.
+ */
+export type LayerOrderData = {
+	layers: import('./components.js').LayerName[];
+};
+
+export const LayerOrderResource = defineResource<LayerOrderData>('LayerOrder', {
+	layers: ['background', 'base', 'overlay'],
+});
