@@ -8,7 +8,7 @@ import React, {
 	useRef,
 	useState,
 } from 'react';
-import { SelectionFrame, Widget, WorldBounds } from '../ecs/components.js';
+import { Layer, SelectionFrame, Widget, WorldBounds } from '../ecs/components.js';
 import type { LayoutEngine } from '../ecs/engine/index.js';
 import { DEAD_ZONE_TOUCH_PX } from '../ecs/interaction-constants.js';
 import { CursorResource, NavigationStackResource } from '../ecs/resources.js';
@@ -111,7 +111,11 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 
 		const webglCanvasRef = useRef<HTMLCanvasElement>(null);
 		const webglManagerRef = useRef<WebGLManager | null>(null);
-		const cameraLayerRef = useRef<HTMLDivElement>(null);
+		// One transform ref per layer container — all driven by the same
+		// camera transform so they pan / zoom in lockstep. RFC-003.
+		const backgroundLayerRef = useRef<HTMLDivElement>(null);
+		const baseLayerRef = useRef<HTMLDivElement>(null);
+		const overlayLayerRef = useRef<HTMLDivElement>(null);
 		const slotRefs = useRef(new Map<EntityId, HTMLDivElement>());
 		const [visibleEntities, setVisibleEntities] = useState<EntityId[]>([]);
 
@@ -571,9 +575,10 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					const changes = engine.getFrameChanges();
 
 					// 1. Update camera layer CSS transform (O(1) for pan/zoom)
-					if (cameraLayerRef.current) {
-						cameraLayerRef.current.style.transform = `scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`;
-					}
+					const transform = `scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`;
+					if (backgroundLayerRef.current) backgroundLayerRef.current.style.transform = transform;
+					if (baseLayerRef.current) baseLayerRef.current.style.transform = transform;
+					if (overlayLayerRef.current) overlayLayerRef.current.style.transform = transform;
 
 					// RFC-001 Phase 7: apply derived cursor to root container.
 					const cursor = engine.world.getResource(CursorResource).cursor;
@@ -667,9 +672,11 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 
 			// Set initial camera transform
 			const camera = engine.getCamera();
-			if (cameraLayerRef.current) {
-				cameraLayerRef.current.style.transform = `scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`;
-			}
+			const initTransform = `scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`;
+			if (backgroundLayerRef.current) backgroundLayerRef.current.style.transform = initTransform;
+			if (baseLayerRef.current) baseLayerRef.current.style.transform = initTransform;
+			if (overlayLayerRef.current) overlayLayerRef.current.style.transform = initTransform;
+
 			// Initial WebGL render
 			const manager = webglManagerRef.current;
 			if (manager) {
@@ -709,19 +716,30 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			}
 		}, [visibleEntities, engine]);
 
-		// Split visible entities by surface
-		const { domEntities, webglEntities } = useMemo(() => {
-			const dom: EntityId[] = [];
+		// Split visible entities by surface AND by layer (RFC-003).
+		// DOM widgets bucket directly into their target layer container.
+		// R3F widgets always render through the R3F canvas; their
+		// SelectionOverlaySlot (chrome + interaction surface) buckets into
+		// the layer container matching their Layer.name.
+		const { backgroundDom, baseDom, overlayDom, webglEntities } = useMemo(() => {
+			const background: EntityId[] = [];
+			const base: EntityId[] = [];
+			const overlay: EntityId[] = [];
 			const webgl: EntityId[] = [];
 			for (const id of visibleEntities) {
 				const w = engine.get(id, Widget);
-				if (w?.surface === 'webgl') {
-					webgl.push(id);
-				} else {
-					dom.push(id);
-				}
+				if (w?.surface === 'webgl') webgl.push(id);
+				const layerName = engine.get(id, Layer)?.name ?? 'base';
+				const bucket =
+					layerName === 'background' ? background : layerName === 'overlay' ? overlay : base;
+				bucket.push(id);
 			}
-			return { domEntities: dom, webglEntities: webgl };
+			return {
+				backgroundDom: background,
+				baseDom: base,
+				overlayDom: overlay,
+				webglEntities: webgl,
+			};
 		}, [visibleEntities, engine]);
 
 		const canvasContent = (
@@ -740,24 +758,28 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				{/* Vanilla WebGL layer — dot grid + selection overlays (driven by WebGLManager) */}
 				<canvas ref={webglCanvasRef} className="absolute inset-0 pointer-events-none" />
 
-				{/* R3F layer — 3D widgets (lazy, only when webgl entities exist) */}
-				{webglEntities.length > 0 && <R3FBridge engine={engine} entities={webglEntities} />}
-
 				{/* Background — purely visual; pointer handlers live on the container. */}
 				<div className="absolute inset-0 pointer-events-none" />
 
-				{/* Camera transform layer — DOM widgets + selection overlays for R3F widgets */}
-				<div
-					ref={cameraLayerRef}
-					className="absolute left-0 top-0 origin-top-left will-change-transform"
-				>
-					{domEntities.map((entityId) => (
-						<WidgetSlot key={entityId} entityId={entityId} slotRef={registerSlotRef} />
-					))}
-					{webglEntities.map((entityId) => (
-						<SelectionOverlaySlot key={entityId} entityId={entityId} slotRef={registerSlotRef} />
-					))}
-				</div>
+				{/* RFC-003 layer stack:
+				    'background' + 'base' beneath the R3F canvas (zIndex < 1)
+				    R3F canvas at zIndex 1
+				    'overlay' above the R3F canvas (zIndex 2)
+				    All three DOM containers share the same camera transform
+				    so they pan / zoom in lockstep. */}
+				<LayerContainer layerRef={backgroundLayerRef}>
+					{bucketSlots(backgroundDom, engine, registerSlotRef)}
+				</LayerContainer>
+				<LayerContainer layerRef={baseLayerRef}>
+					{bucketSlots(baseDom, engine, registerSlotRef)}
+				</LayerContainer>
+
+				{/* R3F layer — 3D widgets (lazy, only when webgl entities exist) */}
+				{webglEntities.length > 0 && <R3FBridge engine={engine} entities={webglEntities} />}
+
+				<LayerContainer layerRef={overlayLayerRef} zIndex={2}>
+					{bucketSlots(overlayDom, engine, registerSlotRef)}
+				</LayerContainer>
 
 				{/* Children: toolbars, panels, etc. */}
 				{children}
@@ -789,4 +811,55 @@ function R3FBridge({ engine, entities }: { engine: LayoutEngine; entities: Entit
 	if (!resolver) return null;
 
 	return <R3FManager engine={engine} entities={entities} resolve={resolve} />;
+}
+
+/**
+ * One DOM container for a render layer (RFC-003). Each container holds
+ * the WidgetSlot / SelectionOverlaySlot elements for the entities
+ * bucketed into its layer; the container's CSS transform is driven by
+ * the rAF loop so all layers pan / zoom in lockstep.
+ *
+ * `zIndex` is only set when non-zero — undefined zIndex leaves the
+ * container at the default stacking position, preserving DOM source
+ * order so 'background' renders behind 'base'.
+ */
+function LayerContainer({
+	layerRef,
+	zIndex,
+	children,
+}: {
+	layerRef: React.RefObject<HTMLDivElement | null>;
+	zIndex?: number;
+	children: React.ReactNode;
+}) {
+	return (
+		<div
+			ref={layerRef}
+			className="absolute left-0 top-0 origin-top-left will-change-transform"
+			style={zIndex !== undefined ? { zIndex } : undefined}
+		>
+			{children}
+		</div>
+	);
+}
+
+/**
+ * Renders the right slot per entity in a layer container — DOM widgets
+ * get a `WidgetSlot`, R3F widgets get a `SelectionOverlaySlot` (chrome
+ * + interaction surface; the actual 3D content renders through the R3F
+ * canvas). Pure helper so the JSX in the main component stays compact.
+ */
+function bucketSlots(
+	entities: EntityId[],
+	engine: LayoutEngine,
+	registerSlotRef: (entityId: EntityId, el: HTMLDivElement | null) => void,
+): React.ReactNode[] {
+	return entities.map((entityId) => {
+		const w = engine.get(entityId, Widget);
+		return w?.surface === 'webgl' ? (
+			<SelectionOverlaySlot key={entityId} entityId={entityId} slotRef={registerSlotRef} />
+		) : (
+			<WidgetSlot key={entityId} entityId={entityId} slotRef={registerSlotRef} />
+		);
+	});
 }
