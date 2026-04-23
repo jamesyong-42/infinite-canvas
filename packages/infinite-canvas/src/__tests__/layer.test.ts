@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createLayoutEngine, Dragging, Layer, LayerOrderResource, Transform2D } from '../index.js';
+import {
+	createLayoutEngine,
+	Dragging,
+	Layer,
+	LayerOrderResource,
+	Transform2D,
+	Widget,
+} from '../index.js';
 
 describe('Layer system (RFC-003 Phase 1)', () => {
 	it('LayerOrderResource defaults to background → base → overlay', () => {
@@ -68,6 +75,20 @@ describe('dragPromoteSystem (RFC-003 Phase 3)', () => {
 		expect(engine.get(e, Layer)).toEqual({ name: 'overlay' });
 
 		engine.world.removeTag(e, Dragging);
+		expect(engine.get(e, Layer)).toEqual({ name: 'base' });
+	});
+
+	it('skips R3F widgets — their stacking is handled by the compositor', () => {
+		const engine = createLayoutEngine();
+		const e = engine.createEntity([
+			[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
+			[Widget, { surface: 'webgl', type: 'r3f-test' }],
+			[Layer, { name: 'base' }],
+		]);
+
+		engine.world.addTag(e, Dragging);
+		// R3F widget chrome would occlude its own 3D content if promoted —
+		// promotion is intentionally a DOM-only mechanism.
 		expect(engine.get(e, Layer)).toEqual({ name: 'base' });
 	});
 

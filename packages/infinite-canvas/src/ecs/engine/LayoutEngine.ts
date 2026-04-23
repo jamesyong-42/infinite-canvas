@@ -180,14 +180,18 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	unsubscribers.push(world.onTagAdded(Selectable, refreshInteractionRole));
 	unsubscribers.push(world.onTagRemoved(Selectable, refreshInteractionRole));
 
-	// Drag-promote: while a widget carries Dragging, hoist it to the
-	// 'overlay' layer (RFC-003 § DragPromoteSystem). On Dragging
-	// removal, restore the pre-drag Layer.name from PreDragLayer.
-	// Idempotent: if PreDragLayer already exists when Dragging is
-	// re-added, we do not overwrite it — keeps the original.
+	// Drag-promote (RFC-003): while a DOM widget carries Dragging, hoist
+	// it to the 'overlay' layer so it visually pops above the R3F canvas.
+	// R3F widgets are deliberately excluded — they handle their own
+	// stacking via the compositor (uDraggedRect clip + renderOrder bump
+	// per RFC-003 Phase 4). Promoting an R3F widget's chrome to the
+	// overlay layer would put its opaque background fill above the R3F
+	// canvas, occluding the dragged widget's own 3D content.
 	unsubscribers.push(
 		world.onTagAdded(Dragging, (entity) => {
 			if (world.hasComponent(entity, PreDragLayer)) return;
+			const widget = world.getComponent(entity, WidgetComp);
+			if (widget?.surface === 'webgl') return;
 			const prev = world.getComponent(entity, Layer)?.name ?? 'base';
 			world.addComponent(entity, PreDragLayer, { name: prev });
 			if (world.hasComponent(entity, Layer)) {
