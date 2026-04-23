@@ -1,9 +1,10 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Mesh, MeshBasicMaterial, OrthographicCamera, PlaneGeometry, type Scene } from 'three';
-import { Dragging, WorldBounds } from '../../ecs/components.js';
+import { Mesh, OrthographicCamera, PlaneGeometry, type Scene } from 'three';
+import { Dragging, Widget, WorldBounds } from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
+import { CompositionMaterial } from './CompositionMaterial.js';
 import { CompositorContext, type CompositorWidgetEntry } from './CompositorContext.js';
 import { type EvictionCandidate, selectEvictions } from './eviction.js';
 import { ResourceRegistry } from './ResourceRegistry.js';
@@ -97,20 +98,12 @@ export function Compositor({
 		(entityId: EntityId, entry: CompositorWidgetEntry) => {
 			widgetsRef.current.set(entityId, entry);
 
-			// Spawn a composition quad for this widget. MeshBasicMaterial
-			// (rather than a custom ShaderMaterial) so Three.js's built-in
-			// pipeline handles texture color-space conversion + tone mapping
-			// + sRGB output encoding the same way it does for direct-to-canvas
-			// rendering. Otherwise the FBO's tone-mapped values get displayed
-			// in the wrong gamma space and look washed-out / desaturated.
-			const mesh = new Mesh(
-				quadGeometry,
-				new MeshBasicMaterial({
-					transparent: true,
-					depthWrite: false,
-					alphaTest: 0.001,
-				}),
-			);
+			// Spawn a composition quad for this widget. CompositionMaterial
+			// is a minimal sample-and-write shader (no tone mapping — FBO
+			// already holds sRGB-encoded values per RFC-002 § sRGB FBO fix)
+			// with uDraggedRect / uIsDragged uniforms for the RFC-003 drag
+			// clip. Per-instance so the uniforms are independent.
+			const mesh = new Mesh(quadGeometry, new CompositionMaterial());
 			mesh.frustumCulled = false;
 			mesh.visible = false; // Hidden until the widget has painted at least once.
 			defaultScene.add(mesh);
@@ -124,7 +117,7 @@ export function Compositor({
 				const m = quadsRef.current.get(entityId);
 				if (m) {
 					defaultScene.remove(m);
-					(m.material as MeshBasicMaterial).dispose();
+					(m.material as CompositionMaterial).dispose();
 					quadsRef.current.delete(entityId);
 				}
 				liftScaleRef.current.delete(entityId);
@@ -292,6 +285,45 @@ export function Compositor({
 			}
 		}
 
+		// First pass: locate the (single) dragged R3F widget if any, plus
+		// its lifted screen rect for the composition shader's discard
+		// uniform. RFC-003 § Compositor changes.
+		let draggedEntityId: EntityId | null = null;
+		let draggedRectMinX = 0;
+		let draggedRectMinY = 0;
+		let draggedRectMaxX = 0;
+		let draggedRectMaxY = 0;
+		const canvasHeightPx = size.height * dpr;
+		for (const entityId of widgetsRef.current.keys()) {
+			if (!world.hasTag(entityId, Dragging)) continue;
+			const w = world.getComponent(entityId, Widget);
+			if (w?.surface !== 'webgl') continue;
+			const wb = world.getComponent(entityId, WorldBounds);
+			if (!wb) continue;
+			// Use the live lift scale so the discard rect tracks the lifted
+			// chrome bounds (1.05× during drag).
+			const lift = liftScaleRef.current.get(entityId) ?? 1;
+			const cx = wb.worldX + wb.worldWidth / 2;
+			const cy = wb.worldY + wb.worldHeight / 2;
+			const halfW = (wb.worldWidth * lift) / 2;
+			const halfH = (wb.worldHeight * lift) / 2;
+			const minWx = cx - halfW;
+			const maxWx = cx + halfW;
+			const minWy = cy - halfH;
+			const maxWy = cy + halfH;
+			// World → physical px in gl_FragCoord space (origin bottom-left).
+			const sxMin = (minWx - cam.x) * cam.zoom * dpr;
+			const sxMax = (maxWx - cam.x) * cam.zoom * dpr;
+			const syTop = (minWy - cam.y) * cam.zoom * dpr;
+			const syBot = (maxWy - cam.y) * cam.zoom * dpr;
+			draggedRectMinX = sxMin;
+			draggedRectMinY = canvasHeightPx - syBot;
+			draggedRectMaxX = sxMax;
+			draggedRectMaxY = canvasHeightPx - syTop;
+			draggedEntityId = entityId;
+			break;
+		}
+
 		// Update composition quads. A quad is only made visible after its
 		// widget's FBO has been painted at least once — checked via
 		// fboGeneration >= 0 so a freshly-acquired (empty) target never gets
@@ -330,11 +362,14 @@ export function Compositor({
 			mesh.visible = true;
 			mesh.position.set(wb.worldX + wb.worldWidth / 2, -(wb.worldY + wb.worldHeight / 2), 0);
 			mesh.scale.set(wb.worldWidth * scale, wb.worldHeight * scale, 1);
-			const material = mesh.material as MeshBasicMaterial;
-			if (material.map !== fbo.texture) {
-				material.map = fbo.texture;
-				material.needsUpdate = true;
-			}
+			// renderOrder bump: dragged R3F quad draws last in the
+			// composition pass (case C — even without chrome it sits on
+			// top of every other R3F widget it overlaps).
+			mesh.renderOrder = entityId === draggedEntityId ? 99 : 1;
+			const material = mesh.material as CompositionMaterial;
+			material.setMap(fbo.texture);
+			material.setIsDragged(entityId === draggedEntityId);
+			material.setDraggedRect(draggedRectMinX, draggedRectMinY, draggedRectMaxX, draggedRectMaxY);
 		}
 
 		// Composition pass to the canvas backbuffer. Explicit setRenderTarget
