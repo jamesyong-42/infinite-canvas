@@ -33,6 +33,12 @@ const big = (v: number) =>
 		: v >= 1_000
 			? `${(v / 1_000).toFixed(1)}k`
 			: `${Math.round(v)}`;
+const bytes = (v: number) =>
+	v >= 1024 * 1024
+		? `${(v / (1024 * 1024)).toFixed(1)} MB`
+		: v >= 1024
+			? `${(v / 1024).toFixed(1)} KB`
+			: `${v} B`;
 
 function Row({ label, value }: { label: string; value: string | number }) {
 	return (
@@ -402,6 +408,32 @@ export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 								<Row label="geometries" value={stats.r3f.geometries} />
 								<Row label="textures" value={stats.r3f.textures} />
 								<Row label="samples" value={stats.r3f.sampleCount} />
+
+								{/* === RFC-002 compositor metrics === */}
+								<div className="mt-1.5 mb-0.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-300 dark:text-neutral-600">
+									compositor
+								</div>
+								<Row label="repaints / frame" value={stats.r3f.avgWidgetsRepainted.toFixed(1)} />
+								<Row label="fbo memory" value={bytes(stats.r3f.fboBytes)} />
+								<div className="mt-1.5 mb-0.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-300 dark:text-neutral-600">
+									phases
+								</div>
+								<Row label="hot" value={stats.r3f.phases.hot} />
+								<Row label="warm" value={stats.r3f.phases.warm} />
+								<Row label="waking" value={stats.r3f.phases.waking} />
+								<Row label="cold" value={stats.r3f.phases.cold} />
+								<Row label="dormant" value={stats.r3f.phases.dormant} />
+								{stats.r3f.avgGpuPaintMs !== undefined && (
+									<>
+										<div className="mt-1.5 mb-0.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-300 dark:text-neutral-600">
+											gpu (avg / frame)
+										</div>
+										<Row label="paint" value={`${ms(stats.r3f.avgGpuPaintMs)} ms`} />
+										{stats.r3f.avgGpuCompositeMs !== undefined && (
+											<Row label="composite" value={`${ms(stats.r3f.avgGpuCompositeMs)} ms`} />
+										)}
+									</>
+								)}
 							</div>
 						)}
 					</>
