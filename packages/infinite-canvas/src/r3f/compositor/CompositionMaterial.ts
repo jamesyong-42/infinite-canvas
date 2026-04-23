@@ -19,6 +19,12 @@ void main() {
 }
 `;
 
+// Fragment shader. Includes Three's <colorspace_fragment> chunk after
+// writing gl_FragColor — Three.js's texture sampler automatically
+// decodes sRGB textures to linear during the texture2D call (because
+// the FBO declares colorSpace=SRGBColorSpace), so without re-encoding
+// to the renderer's outputColorSpace (also sRGB) the values would land
+// in the backbuffer as linear and read as washed-out / desaturated.
 const FRAGMENT_SHADER = /* glsl */ `
 uniform sampler2D map;
 uniform vec4 uDraggedRect;
@@ -36,6 +42,7 @@ void main() {
   vec4 c = texture2D(map, vUv);
   if (c.a < 0.001) discard;
   gl_FragColor = c;
+  #include <colorspace_fragment>
 }
 `;
 

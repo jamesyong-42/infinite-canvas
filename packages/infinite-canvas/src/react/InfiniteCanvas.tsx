@@ -777,7 +777,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				{/* R3F layer — 3D widgets (lazy, only when webgl entities exist) */}
 				{webglEntities.length > 0 && <R3FBridge engine={engine} entities={webglEntities} />}
 
-				<LayerContainer layerRef={overlayLayerRef} zIndex={2}>
+				<LayerContainer layerRef={overlayLayerRef} zIndexClass="z-[2]">
 					{bucketSlots(overlayDom, engine, registerSlotRef)}
 				</LayerContainer>
 
@@ -819,24 +819,26 @@ function R3FBridge({ engine, entities }: { engine: LayoutEngine; entities: Entit
  * bucketed into its layer; the container's CSS transform is driven by
  * the rAF loop so all layers pan / zoom in lockstep.
  *
- * `zIndex` is only set when non-zero — undefined zIndex leaves the
- * container at the default stacking position, preserving DOM source
- * order so 'background' renders behind 'base'.
+ * `zIndexClass` is a Tailwind class string (e.g. `'z-[2]'`). Using a
+ * class rather than `style={{ zIndex }}` matters: the rAF loop writes
+ * `style.transform` directly on this element, and a React-managed
+ * `style` prop would wipe that transform on every commit.
  */
 function LayerContainer({
 	layerRef,
-	zIndex,
+	zIndexClass,
 	children,
 }: {
 	layerRef: React.RefObject<HTMLDivElement | null>;
-	zIndex?: number;
+	zIndexClass?: string;
 	children: React.ReactNode;
 }) {
 	return (
 		<div
 			ref={layerRef}
-			className="absolute left-0 top-0 origin-top-left will-change-transform"
-			style={zIndex !== undefined ? { zIndex } : undefined}
+			className={`absolute left-0 top-0 origin-top-left will-change-transform${
+				zIndexClass ? ` ${zIndexClass}` : ''
+			}`}
 		>
 			{children}
 		</div>
