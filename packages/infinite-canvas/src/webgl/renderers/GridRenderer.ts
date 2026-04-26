@@ -19,14 +19,19 @@ export interface GridConfig {
 	levelWeight: [number, number];
 }
 
+// Tuned to match Apple Freeform / FigJam:
+//   - single perceptually-uniform grid at any zoom (levels hand off cleanly
+//     without stacking their intensities)
+//   - constant-perceptual-size dots (no CAD-style growth at sparser levels)
+//   - soft neutral gray color carrying the lightness, not low-alpha black
 export const DEFAULT_GRID_CONFIG: GridConfig = {
-	spacings: [8, 64, 512],
-	dotColor: [0, 0, 0],
-	dotAlpha: 0.18,
-	fadeIn: [4, 12],
-	fadeOut: [250, 500],
-	dotRadius: [0.5, 1.4],
-	levelWeight: [1.0, 0.4],
+	spacings: [20, 100, 500],
+	dotColor: [0.75, 0.77, 0.8],
+	dotAlpha: 1.0,
+	fadeIn: [8, 16],
+	fadeOut: [120, 200],
+	dotRadius: [0.75, 0.75],
+	levelWeight: [1.0, 0.0],
 };
 
 // === Shader source ===
@@ -85,16 +90,24 @@ void main() {
 		vec2 f = fract(worldPos / spacing + 0.5) - 0.5;
 		float dist = length(f) * spacing * effectiveZoom;
 
-		// Dot radius in device pixels — grows as grid becomes sparser
+		// Dot radius in device pixels — optionally grows for sparser levels
+		// (set u_dotRadius.x == u_dotRadius.y for Freeform/FigJam-style
+		// constant-size dots)
 		float t = clamp((cssSpacing - u_fadeIn.x) / 40.0, 0.0, 1.0);
 		float radius = mix(u_dotRadius.x, u_dotRadius.y, t) * u_dpr;
 
 		// Anti-aliased dot (0.5 device pixel smoothstep)
 		float dot = 1.0 - smoothstep(radius - 0.5, radius + 0.5, dist);
 
-		// Larger grid levels get progressively stronger dots
+		// Per-level weight: base + i * step. Step=0 keeps all levels at equal
+		// intensity; positive step emphasizes coarser levels (CAD feel).
 		float weight = u_levelWeight.x + float(i) * u_levelWeight.y;
-		totalAlpha += dot * opacity * weight;
+
+		// Composite with max, not sum. Additive compositing causes anti-
+		// aliased dot rims to stack at joint intersections (every N-th dot
+		// visibly fatter — a CAD tell). max() guarantees a joint intersection
+		// looks identical to a single-level dot, matching Freeform / FigJam.
+		totalAlpha = max(totalAlpha, dot * opacity * weight);
 	}
 
 	gl_FragColor = vec4(u_dotColor, clamp(totalAlpha * u_dotAlpha, 0.0, 1.0));
@@ -126,13 +139,13 @@ export class GridRenderer {
 				u_camera: { value: new THREE.Vector2(0, 0) },
 				u_zoom: { value: 1 },
 				u_dpr: { value: 1 },
-				u_spacings: { value: new THREE.Vector3(8, 64, 512) },
-				u_dotColor: { value: new THREE.Vector3(0, 0, 0) },
-				u_dotAlpha: { value: 0.18 },
-				u_fadeIn: { value: new THREE.Vector2(4, 12) },
-				u_fadeOut: { value: new THREE.Vector2(250, 500) },
-				u_dotRadius: { value: new THREE.Vector2(0.5, 1.4) },
-				u_levelWeight: { value: new THREE.Vector2(1.0, 0.4) },
+				u_spacings: { value: new THREE.Vector3(...DEFAULT_GRID_CONFIG.spacings) },
+				u_dotColor: { value: new THREE.Vector3(...DEFAULT_GRID_CONFIG.dotColor) },
+				u_dotAlpha: { value: DEFAULT_GRID_CONFIG.dotAlpha },
+				u_fadeIn: { value: new THREE.Vector2(...DEFAULT_GRID_CONFIG.fadeIn) },
+				u_fadeOut: { value: new THREE.Vector2(...DEFAULT_GRID_CONFIG.fadeOut) },
+				u_dotRadius: { value: new THREE.Vector2(...DEFAULT_GRID_CONFIG.dotRadius) },
+				u_levelWeight: { value: new THREE.Vector2(...DEFAULT_GRID_CONFIG.levelWeight) },
 			},
 			transparent: true,
 			depthTest: false,
