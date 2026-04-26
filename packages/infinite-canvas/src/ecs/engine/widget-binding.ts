@@ -1,7 +1,63 @@
+import type { EntityId, World } from '@jamesyong42/reactive-ecs';
 import type { StandardSchemaV1 } from '../schema.js';
 
 /** Rendering surface for a widget. */
 export type WidgetSurface = 'dom' | 'webgl';
+
+/**
+ * Drop-to-consume interaction handlers for a widget type (RFC-004 § Phase 1).
+ *
+ * All fields are optional. A widget that sets `accepts` on its `Card`
+ * component should typically also supply `onReceiveChild` so it can
+ * actually do something on consume; a widget that sets `provides`
+ * rarely needs `onDroppedOnParent` unless it wants to veto or run
+ * side effects.
+ *
+ * Handlers live on the widget *type* (not the entity) so `Card` data
+ * stays serializable and one handler triple drives every instance of
+ * the widget type.
+ */
+export interface WidgetInteractionHandlers {
+	/**
+	 * Parent-side: called on drop when a child lands on this widget.
+	 * Return `{ consume: true }` to accept the drop; the optional
+	 * `mutation` payload is passed to `applyMutation` / `revertMutation`
+	 * so undo can be symmetric.
+	 */
+	onReceiveChild?(ctx: { parent: EntityId; child: EntityId; world: World }): {
+		consume: boolean;
+		mutation?: unknown;
+	};
+
+	/**
+	 * Child-side: called on drop when this widget is being dropped
+	 * onto a parent. Optional side effects and optional veto.
+	 */
+	onDroppedOnParent?(ctx: {
+		child: EntityId;
+		parent: EntityId;
+		world: World;
+	}): { veto: boolean } | undefined;
+
+	/**
+	 * Parent-side runtime gate on top of the static `accepts` /
+	 * `provides` intersection — e.g. "container is full, refuse further
+	 * children." Returning `false` blocks the consume before
+	 * `onReceiveChild` is called.
+	 */
+	canAccept?(ctx: { parent: EntityId; child: EntityId; world: World }): boolean;
+
+	/**
+	 * Apply the mutation returned by `onReceiveChild` (forward path).
+	 * Called by `ConsumeCommand.execute`.
+	 */
+	applyMutation?(world: World, mutation: unknown): void;
+
+	/**
+	 * Reverse the mutation (undo path). Called by `ConsumeCommand.undo`.
+	 */
+	revertMutation?(world: World, mutation: unknown): void;
+}
 
 /**
  * Framework-free widget contract used by the engine.
@@ -29,6 +85,12 @@ export interface WidgetBinding<T = Record<string, unknown>> {
 	defaultSize: { width: number; height: number };
 	/** Minimum world-space size when resizing. */
 	minSize?: { width: number; height: number };
+	/**
+	 * Optional drop-to-consume handlers. Only meaningful for `Card`-tagged
+	 * widgets; non-card widgets don't participate in the consume mechanic
+	 * so any handlers here are dead code for them.
+	 */
+	interaction?: WidgetInteractionHandlers;
 }
 
 /** Simple in-memory registry of widget bindings. */

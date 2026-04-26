@@ -139,4 +139,5 @@ export const FitnessCard = createCardWidget<FitnessData>({
 		stand: { current: 9, goal: 12 },
 	},
 	render: FitnessRender,
+	provides: ['widget'],
 });

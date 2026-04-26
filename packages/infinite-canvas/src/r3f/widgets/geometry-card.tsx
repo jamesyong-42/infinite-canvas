@@ -3,6 +3,7 @@ import type * as React from 'react';
 import type { Archetype } from '../../ecs/archetype.js';
 import type { CardPreset } from '../../ecs/components.js';
 import { Card } from '../../ecs/components.js';
+import type { WidgetInteractionHandlers } from '../../ecs/engine/widget-binding.js';
 import { DEFAULT_CARD_PRESET_SIZES } from '../../ecs/resources.js';
 import type { StandardSchemaV1 } from '../../ecs/schema.js';
 import { useWidgetData } from '../../react/hooks/widget.js';
@@ -48,6 +49,22 @@ export interface CreateGeometryCardWidgetOptions<T> {
 	background?: string;
 	/** The 3D content rendered in local space (origin at centre). */
 	geometry: React.ComponentType<GeometryCardRenderProps<T>>;
+	/**
+	 * Drop-to-consume contract — what this card accepts as a parent
+	 * (RFC-004 § Phase 1). Only meaningful when `withCard` is true,
+	 * since non-card widgets don't participate in the consume mechanic.
+	 */
+	accepts?: readonly string[];
+	/**
+	 * Drop-to-consume contract — what this card provides as a child.
+	 * Only meaningful when `withCard` is true.
+	 */
+	provides?: readonly string[];
+	/**
+	 * Optional widget-type interaction handlers. Only meaningful when
+	 * `withCard` is true; dispatch logic skips non-card widgets.
+	 */
+	interaction?: WidgetInteractionHandlers;
 }
 
 /**
@@ -91,19 +108,34 @@ export function createGeometryCardWidget<T>(opts: CreateGeometryCardWidgetOption
 		defaultData: opts.defaultData,
 		defaultSize,
 		component: Component,
+		interaction: opts.interaction,
 	};
 
 	const archetype: Archetype = {
 		id: opts.type,
 		widget: opts.type,
 		components: withCard
-			? [[Card, { preset: opts.size, background: opts.background ?? '#1C1C1E' }]]
+			? [
+					[
+						Card,
+						{
+							preset: opts.size,
+							background: opts.background ?? '#1C1C1E',
+							accepts: opts.accepts ?? [],
+							provides: opts.provides ?? [],
+						},
+					],
+				]
 			: [],
 		interactive: {
 			selectable: true,
 			draggable: true,
 			resizable: false,
 			selectionFrame: false,
+			// Cards never snap themselves when dragged, but they ARE references
+			// other widgets snap to. Asymmetric on purpose.
+			snapSource: false,
+			snapTarget: true,
 		},
 		defaultSize,
 	};

@@ -1,6 +1,5 @@
 import type { GeometryCardRenderProps } from '@jamesyong42/infinite-canvas';
 import { createGeometryCardWidget, useWidgetAnimation } from '@jamesyong42/infinite-canvas';
-import { Environment } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
 import type { Mesh } from 'three';
@@ -33,12 +32,9 @@ function GoldKnotScene({ entityId, data, width, height }: GeometryCardRenderProp
 
 	return (
 		<group>
-			{/*
-			 * NB: drei's Environment sets scene.environment globally, so this
-			 * IBL affects every other R3F widget in the canvas as a side effect.
-			 * Acceptable: it makes other PBR widgets look a little nicer too.
-			 */}
-			<Environment preset="apartment" />
+			{/* IBL is supplied at canvas root via <InfiniteCanvas r3fRoot>; the
+			 * Compositor propagates that scene's environment to every widget
+			 * scene so lighting survives navigation (folder consume / exit). */}
 			<ambientLight intensity={0.15} />
 			<mesh ref={meshRef} position={[0, 0, 6]}>
 				<torusKnotGeometry args={[size * 0.18, size * 0.055, 220, 40]} />
@@ -62,4 +58,5 @@ export const GoldKnotCard = createGeometryCardWidget<GoldKnotData>({
 	defaultData: { metal: 'gold' },
 	background: 'linear-gradient(135deg, #4A2814 0%, #2A0E12 60%, #14080C 100%)',
 	geometry: GoldKnotScene,
+	provides: ['widget'],
 });

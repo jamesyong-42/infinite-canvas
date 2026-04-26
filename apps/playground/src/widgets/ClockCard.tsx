@@ -108,4 +108,5 @@ export const ClockCard = createCardWidget<ClockData>({
 	schema,
 	defaultData: { timezone: 'local' },
 	render: ClockRender,
+	provides: ['widget'],
 });

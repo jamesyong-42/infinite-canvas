@@ -65,4 +65,5 @@ export const CalendarCard = createCardWidget<CalendarData>({
 		nextEventTime: '3:30 PM',
 	},
 	render: CalendarRender,
+	provides: ['widget'],
 });

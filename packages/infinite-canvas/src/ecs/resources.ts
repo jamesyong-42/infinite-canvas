@@ -3,10 +3,15 @@ import { defineResource } from '@jamesyong42/reactive-ecs';
 import type { CardPreset, CSSCursor } from './components.js';
 import type { SpatialIndex } from './spatial/SpatialIndex.js';
 
-/** A single frame in the navigation stack, capturing the container and camera state. */
+/**
+ * A single frame in the navigation stack. `containerId === null` is the
+ * root canvas; any other value is the entity id of the container whose
+ * sub-canvas the user is currently inside. Camera state lives on a
+ * `ContainerCamera` component per container (or `RootCameraResource`
+ * for the root frame), not in the stack itself — see RFC-004 § Phase 0c.
+ */
 export interface NavigationFrame {
 	containerId: EntityId | null;
-	camera: { x: number; y: number; zoom: number };
 }
 
 /** Data shape for the CursorResource. */
@@ -60,10 +65,32 @@ export const BreakpointConfigResource = defineResource('BreakpointConfig', {
 	expanded: 1200,
 });
 
-/** Navigation stack for hierarchical container traversal. */
+/**
+ * Navigation stack for hierarchical container traversal. Always has at
+ * least one frame (the root). The last element is the current frame;
+ * `containerId === null` means the user is at the root canvas.
+ *
+ * Runtime-only view state — deliberately not serialized, so reloading a
+ * saved canvas always drops the user at the root frame (RFC-004 § Phase 0c).
+ */
 export const NavigationStackResource = defineResource('NavigationStack', {
-	frames: [{ containerId: null, camera: { x: 0, y: 0, zoom: 1 } }] as NavigationFrame[],
+	frames: [{ containerId: null }] as NavigationFrame[],
 	changed: false,
+});
+
+/** Shape shared by `ContainerCamera` components and `RootCameraResource`. */
+export type FrameCameraState = { x: number; y: number; zoom: number };
+
+/**
+ * Camera state for the root canvas. Persisted (serialized) so the root
+ * view returns to its previous pan/zoom across navigation push/pop and
+ * across save/load. Container frames use the `ContainerCamera` component
+ * on the container entity instead (RFC-004 § Phase 0c).
+ */
+export const RootCameraResource = defineResource<FrameCameraState>('RootCamera', {
+	x: 0,
+	y: 0,
+	zoom: 1,
 });
 
 /** Responsive breakpoint name derived from a widget's screen-space size. */

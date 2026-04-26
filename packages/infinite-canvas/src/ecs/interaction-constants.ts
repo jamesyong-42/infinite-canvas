@@ -12,14 +12,6 @@
  */
 export const HANDLE_VISUAL_SIZE_PX = 8;
 
-/**
- * Hit-zone size for handles (full width, screen px). Deliberately larger than
- * HANDLE_VISUAL_SIZE_PX to give a generous clickable area — preserves the
- * "invisible hit tolerance" feel the current engine provides via `8 / zoom`
- * (full clickable width = 16 px). Do not reduce this without a UX test.
- */
-export const HANDLE_HIT_SIZE_PX = 16;
-
 /** Drag dead zone for mouse input. */
 export const DEAD_ZONE_MOUSE_PX = 4;
 

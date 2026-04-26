@@ -26,16 +26,25 @@ export interface Archetype {
 	 * Which interaction capabilities to grant on spawn.
 	 *
 	 * - `true` (default) / `undefined`: add Selectable, Draggable, Resizable,
-	 *   and the SelectionFrame (engine-drawn outline).
+	 *   SelectionFrame, SnapSource, and SnapTarget — the full bundle.
 	 * - `false`: add none (backdrops, decorations, locked entities).
 	 * - object form: pick and choose — e.g. iOS-style cards use
-	 *   `{ selectable: true, draggable: true, resizable: false, selectionFrame: false }`
-	 *   so they can be moved and selected but never resized, and they render
-	 *   their own chrome instead of the engine-drawn frame.
+	 *   `{ selectable: true, draggable: true, resizable: false,
+	 *      selectionFrame: false, snapSource: false, snapTarget: true }`
+	 *   so they can be moved and selected but never resized, render their
+	 *   own chrome instead of the engine-drawn frame, don't snap to
+	 *   neighbours when dragged, but do serve as references that other
+	 *   widgets snap to.
 	 *
 	 * Omitted interaction keys default to `false`. `selectionFrame` is an
 	 * exception: if omitted, it follows `selectable` (an entity you can
 	 * select gets a frame unless you explicitly opt out).
+	 *
+	 * NOTE for upgraders from earlier versions: `interactive: true` now
+	 * additionally grants `SnapSource` and `SnapTarget`, so widgets using
+	 * the default bundle will start participating in alignment-snap math
+	 * during drag. If you previously relied on snap being a no-op for
+	 * these widgets, switch to the object form and set both to `false`.
 	 */
 	interactive?:
 		| boolean
@@ -44,6 +53,10 @@ export interface Archetype {
 				draggable?: boolean;
 				resizable?: boolean;
 				selectionFrame?: boolean;
+				/** Dragging this entity invokes alignment-snap math. Default false in the object form. */
+				snapSource?: boolean;
+				/** Bounds participate as references for other entities' snap math. Default false in the object form. */
+				snapTarget?: boolean;
 		  };
 	/** Overrides the widget's defaultSize. */
 	defaultSize?: { width: number; height: number };
@@ -64,7 +77,8 @@ export interface SpawnOptions {
 	data?: Record<string, unknown>;
 	/** Z-order. Default 0. */
 	zIndex?: number;
-	/** Parent entity for hierarchy nesting. */
+	/** Parent container entity — writes `ParentFrame` on spawn so the child
+	 *  lives in the container's sub-canvas frame. */
 	parent?: EntityId;
 }
 

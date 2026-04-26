@@ -4,14 +4,14 @@ import { Card, Transform2D } from '../components.js';
 import { CardPresetsResource } from '../resources.js';
 
 /**
- * Stamp Transform2D width/height from Card.preset.
- * Runs before transformPropagateSystem so WorldBounds reflect the preset
- * size in the same tick. Manual writes to Transform2D.width/height on a
- * card entity get overwritten — to change card size, update `Card.preset`.
+ * Stamp Transform2D width/height from Card.preset every tick. Manual
+ * writes to Transform2D.width/height on a card entity get overwritten
+ * — to change card size, update `Card.preset`. The spatial-index
+ * observer fires reactively on the Transform2D write, so no ordering
+ * constraint against other systems is needed.
  */
 export const cardSystem = defineSystem({
 	name: 'card',
-	before: 'transformPropagate',
 	execute: (world: World) => {
 		const resource = world.getResource(CardPresetsResource);
 		if (!resource) return;

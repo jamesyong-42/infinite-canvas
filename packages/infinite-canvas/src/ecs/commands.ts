@@ -1,4 +1,4 @@
-import type { ComponentType, EntityId, World } from '@jamesyong42/reactive-ecs';
+import type { ComponentType, EntityId, TagType, World } from '@jamesyong42/reactive-ecs';
 import { MIN_WIDGET_SIZE } from './interaction-constants.js';
 
 // === Command Interface ===
@@ -159,6 +159,103 @@ export class ResizeCommand implements Command {
 
 	undo(world: World) {
 		world.setComponent(this.entityId, this.transformType, this.before);
+	}
+}
+
+/**
+ * Snapshot of an entity's full component + tag state, suitable for
+ * reconstruction via {@link rehydrateEntity} on undo.
+ */
+export interface EntitySnapshot {
+	entityId: EntityId;
+	components: Array<{ type: ComponentType<unknown>; data: unknown }>;
+	tags: TagType[];
+}
+
+/**
+ * Capture an entity's complete current state. Used by `ConsumeCommand`
+ * so `undo` can fully reconstitute a destroyed child. Relies on
+ * `world.getComponentsOf(entity)` / `world.getTagsOf(entity)` so no
+ * external type registries need to be threaded through.
+ */
+export function snapshotEntity(world: World, entity: EntityId): EntitySnapshot {
+	const components: EntitySnapshot['components'] = [];
+	for (const type of world.getComponentsOf(entity)) {
+		const data = world.getComponent(entity, type);
+		if (data !== undefined) {
+			components.push({ type: type as ComponentType<unknown>, data: structuredClone(data) });
+		}
+	}
+	const tags = [...world.getTagsOf(entity)];
+	return { entityId: entity, components, tags };
+}
+
+/**
+ * Recreate an entity's state from a snapshot. Uses the same
+ * `EntityId` captured in the snapshot if the world allows
+ * reassignment; otherwise creates a fresh id and returns it.
+ */
+export function rehydrateEntity(world: World, snapshot: EntitySnapshot): EntityId {
+	const id = world.createEntity();
+	for (const entry of snapshot.components) {
+		world.addComponent(id, entry.type, entry.data);
+	}
+	for (const tag of snapshot.tags) {
+		world.addTag(id, tag);
+	}
+	return id;
+}
+
+/**
+ * Drop-to-consume command (RFC-004 § Phase 4). Undo / redo are
+ * fully supported by:
+ *  - capturing a full entity snapshot of the child at construction time,
+ *  - delegating the forward mutation to the parent widget's
+ *    `applyMutation` handler,
+ *  - delegating the reverse mutation to `revertMutation`.
+ *
+ * Handlers are supplied at construction time (captured from the widget
+ * registry in the interaction runtime's pointerup path), so the
+ * command doesn't need to know about the registry shape itself.
+ */
+export class ConsumeCommand implements Command {
+	/**
+	 * The entity id we currently target for destroy. Starts as the
+	 * initial `childId` captured at construction; updated to the fresh
+	 * id returned by `rehydrateEntity` on undo so that a subsequent
+	 * `redo()` destroys the rehydrated entity (not a stale id from a
+	 * previous execute cycle).
+	 */
+	private currentChildId: EntityId;
+
+	constructor(
+		public readonly parentId: EntityId,
+		public readonly childId: EntityId,
+		public readonly childSnapshot: EntitySnapshot,
+		public readonly mutation: unknown,
+		private readonly applyMutation: ((world: World, mutation: unknown) => void) | undefined,
+		private readonly revertMutation: ((world: World, mutation: unknown) => void) | undefined,
+	) {
+		this.currentChildId = childId;
+	}
+
+	execute(world: World) {
+		this.applyMutation?.(world, this.mutation);
+		// No author-supplied mutation → default behaviour: destroy the
+		// child. Simple "trash bin" widgets can rely on this without
+		// writing a custom handler. Widgets that re-parent instead
+		// (containers) implement `applyMutation` and must NOT destroy
+		// the child inside it.
+		if (this.applyMutation === undefined && world.entityExists(this.currentChildId)) {
+			world.destroyEntity(this.currentChildId);
+		}
+	}
+
+	undo(world: World) {
+		this.revertMutation?.(world, this.mutation);
+		if (!world.entityExists(this.currentChildId)) {
+			this.currentChildId = rehydrateEntity(world, this.childSnapshot);
+		}
 	}
 }
 

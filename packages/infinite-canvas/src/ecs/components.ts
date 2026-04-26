@@ -12,24 +12,68 @@ export const Transform2D = defineComponent('Transform2D', {
 	rotation: 0,
 });
 
-/** Computed world-space bounding box. Read-only -- updated by the transform propagation system. */
-export const WorldBounds = defineComponent('WorldBounds', {
-	worldX: 0,
-	worldY: 0,
-	worldWidth: 0,
-	worldHeight: 0,
-});
-
 /** Rendering and hit-test ordering. Higher values render on top. */
 export const ZIndex = defineComponent('ZIndex', { value: 0 });
 
+/** Easing curves supported by `transformTweenSystem` (RFC-004 § Phase 2). */
+export type TweenEasing = 'linear' | 'ease-out' | 'ease-in-out' | 'spring';
+
+/**
+ * Generic animated transition of `Transform2D.x` / `.y` over time.
+ * Runtime-only: the tween component is auto-removed on completion,
+ * and in-flight tweens are not serialized (the destination Transform2D
+ * is what survives a save/load).
+ *
+ * Introduced for RFC-004 Phase 4 fly-back but designed to be reusable
+ * for any future position-animation need (snap, drop-in, consume-pop).
+ * Starting a new tween on an entity that already has one overwrites.
+ */
+export const TransformTween = defineComponent('TransformTween', {
+	fromX: 0,
+	fromY: 0,
+	toX: 0,
+	toY: 0,
+	/** `performance.now()`-ish timestamp captured at tween start. */
+	startMs: 0,
+	/** Total duration in ms. */
+	durationMs: 250,
+	easing: 'ease-out' as TweenEasing,
+	/**
+	 * Discriminator so downstream systems can react per kind
+	 * (e.g. `'flyback'`, `'snap'`, `'spawn'`). The tween system
+	 * itself is kind-agnostic.
+	 */
+	kind: 'generic',
+});
+
 // === Hierarchy ===
 
-/** Parent entity reference. Used for nested containers and handle sync. */
-export const Parent = defineComponent('Parent', { id: 0 as EntityId });
+/**
+ * Container-hierarchy parenthood: the entity lives inside another
+ * entity's sub-canvas. Read by `navigationFilterSystem` to filter the
+ * active widget set by the current navigation frame.
+ *
+ * Container children have their own `Transform2D` in the container's
+ * local coord space — **no coord accumulation** through this reference.
+ * Replaces the old `Parent` component's container-hierarchy usage
+ * (RFC-005).
+ */
+export const ParentFrame = defineComponent('ParentFrame', { id: 0 as EntityId });
 
 /** Child entity IDs. Used for nested containers and handle sync. */
 export const Children = defineComponent('Children', { ids: [] as EntityId[] });
+
+/**
+ * Ordered list of the entities a container owns (RFC-004 § Phase 5).
+ * Redundant with `ParentFrame` (the inverse relation) but materialised
+ * so UI / compositor paths can cheaply read "give me this container's
+ * children" without a reverse-index scan. `applyMutation` /
+ * `revertMutation` keep the two in sync. Serialized; IDs are remapped
+ * alongside `ParentFrame` on load.
+ */
+export const ContainerChildren = defineComponent('ContainerChildren', {
+	ids: [] as EntityId[],
+});
 
 // === Widget ===
 
@@ -67,6 +111,7 @@ export type CardPreset = 'small' | 'medium' | 'large' | 'xl';
  *   - composition discard rect for R3F cards (so other R3F widgets
  *     are clipped out of the dragged card's screen rect — defends
  *     the chrome from being painted over)
+ *   - drop-to-consume contracts (`accepts` / `provides`) — RFC-004.
  *
  * Widgets *without* `Card` get none of this — they render bare (no
  * chrome, no lift transition), and on drag they only get the
@@ -85,6 +130,48 @@ export const Card = defineComponent('Card', {
 	 * `<CardChrome>` component rendered for this entity.
 	 */
 	background: '#1C1C1E',
+	/**
+	 * Drop-to-consume contract — what this card accepts as a *parent*.
+	 * An incoming dragged card's `provides` must intersect this list
+	 * for the consume mechanic to fire (RFC-004 § Phase 3). Empty
+	 * array = card never consumes anything.
+	 */
+	accepts: [] as readonly string[],
+	/**
+	 * Drop-to-consume contract — what this card offers when dropped
+	 * as a *child*. Empty array = card is never consumed by anything.
+	 */
+	provides: [] as readonly string[],
+});
+
+/**
+ * Transient — set by the card-overlap pass on every card whose AABB
+ * intersects the dragged card's AABB during drag. Layer 1 of the
+ * two-layer overlap visual state (RFC-004 § Phase 3). Cleared on drag
+ * end. Runtime-only — not serialized.
+ */
+export const OverlapCandidate = defineTag('OverlapCandidate');
+
+/**
+ * Transient — set on the single primary candidate (closest centre
+ * distance) iff its `accepts` contract intersects the dragged card's
+ * `provides` contract AND the optional `canAccept` gate passes.
+ * Layer 2 of the two-layer overlap visual state. Cleared on drag end
+ * or when match becomes false. Runtime-only — not serialized.
+ */
+export const OverlapTarget = defineTag('OverlapTarget');
+
+/**
+ * Per-candidate "hot point" for the position-dependent radial glow
+ * (RFC-004 § Phase 3). `x` and `y` are normalized [0..1] local coords
+ * within the overlapped card, pointing at the intersection centroid.
+ * `strength` ramps between 0 and 1 for the fade-in / fade-out.
+ * Runtime-only — not serialized.
+ */
+export const CardOverlapHotPoint = defineComponent('CardOverlapHotPoint', {
+	x: 0.5,
+	y: 0.5,
+	strength: 0,
 });
 
 // === Container ===
@@ -92,23 +179,22 @@ export const Card = defineComponent('Card', {
 /** Marks an entity as an enterable container (double-click/double-tap to enter). */
 export const Container = defineComponent('Container', { enterable: true });
 
+/**
+ * Per-container persistent camera state. When the user navigates out of
+ * a container, their current pan/zoom is snapshotted here; when they
+ * navigate back in, it's restored. Serialized — containers remember
+ * their view across save/load (RFC-004 § Phase 0c).
+ */
+export const ContainerCamera = defineComponent('ContainerCamera', {
+	x: 0,
+	y: 0,
+	zoom: 1,
+});
+
 // === Interaction ===
 
 /** Resize handle positions — 4 edges + 4 corners. */
 export type ResizeHandlePos = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
-
-/**
- * Rectangular interactable region anchored relative to the parent entity's WorldBounds.
- * Anchor values are in 0..1 space: 0 = parent min edge, 1 = parent max edge.
- * Widget bodies do NOT need Hitbox — their WorldBounds is already their hit area.
- * Hitbox is only for sub-entities (handles, ports) whose position is parent-relative.
- */
-export const Hitbox = defineComponent('Hitbox', {
-	anchorX: 0,
-	anchorY: 0,
-	width: 0,
-	height: 0,
-});
 
 /** Discriminated union of interaction roles an entity can fulfil. */
 export type InteractionRoleType =
@@ -128,24 +214,15 @@ export type InteractionRoleData = {
 
 /**
  * Declares what happens when this entity is hit, plus its hit-test priority.
- * Canonical layers: 0=canvas, 5=widget body, 10=edge handles, 15=corner handles, 20=reserved.
+ * Canonical layers: 0=canvas, 5=widget body, 20=reserved.
+ *
+ * Resize corner/edge roles are emitted inline by `interaction.ts` from the
+ * selected `Resizable` widget's Transform2D; they are NOT stored as
+ * per-handle entities (RFC-005).
  */
 export const InteractionRole = defineComponent<InteractionRoleData>('InteractionRole', {
 	layer: 0,
 	role: { type: 'canvas' },
-});
-
-/** Data shape for the HandleSet component. */
-export type HandleSetData = {
-	ids: EntityId[];
-};
-
-/**
- * Component on the parent entity listing the EntityIds of its spawned handle children.
- * Enables O(1) cascade destroy without a reverse-index scan of Parent components.
- */
-export const HandleSet = defineComponent<HandleSetData>('HandleSet', {
-	ids: [] as EntityId[],
 });
 
 /** CSS cursor values the canvas may request. */
@@ -184,6 +261,32 @@ export const Selectable = defineTag('Selectable');
 export const Draggable = defineTag('Draggable');
 /** Marks an entity as resizable via edge/corner handles. */
 export const Resizable = defineTag('Resizable');
+/**
+ * Marks an entity that, when dragged, runs alignment-snap math against
+ * the set of `SnapTarget` entities. Without this tag, dragging proceeds
+ * with raw pointer deltas (no snapping). Independent of `SnapTarget`:
+ * an entity can be a source without being a target (rare) or a target
+ * without being a source (e.g. cards — they participate as references
+ * for other widgets but never snap themselves).
+ *
+ * Multi-select drag: only the first selected entity's bounds drive the
+ * snap calculation; followers receive the same correction delta. Tag a
+ * follower-only entity with `SnapSource` if you also want it to lead a
+ * single-entity drag, but be aware its geometry is ignored when it is
+ * being dragged as part of a multi-select group.
+ */
+export const SnapSource = defineTag('SnapSource');
+/**
+ * Marks an entity whose bounds are usable as a snap reference when
+ * another `SnapSource` entity is being dragged. References are further
+ * filtered by `Active`, so only entities in the current navigation
+ * frame can pull a drag — a `SnapTarget` inside a closed container
+ * does not leak into a root-level drag. Visibility of the resulting
+ * guide lines is controlled separately by the engine's
+ * `snap.guidesVisible` config — this tag only governs participation
+ * in the math.
+ */
+export const SnapTarget = defineTag('SnapTarget');
 /** Prevents an entity from being moved or resized. */
 export const Locked = defineTag('Locked');
 /** Indicates the entity is currently selected. */

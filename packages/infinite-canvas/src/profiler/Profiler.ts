@@ -163,7 +163,7 @@ const TICK_RING_SIZE = 300; // ~5 s at 60 fps
 const R3F_RING_SIZE = 300;
 
 /** What's being timed inside the library's WebGL engine pass. */
-export type WebGLPass = 'grid' | 'selection';
+export type WebGLPass = 'grid' | 'selection' | 'snap-guides';
 
 export class Profiler {
 	private enabled = false;

@@ -130,4 +130,5 @@ export const WeatherCard = createCardWidget<WeatherData>({
 		condition: 'partly-cloudy',
 	},
 	render: WeatherRender,
+	provides: ['widget'],
 });

@@ -2,7 +2,7 @@ import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { createPortal, useThree } from '@react-three/fiber';
 import { useEffect, useLayoutEffect, useMemo } from 'react';
 import { OrthographicCamera, Scene } from 'three';
-import { WorldBounds } from '../../ecs/components.js';
+import { Transform2D } from '../../ecs/components.js';
 import { useLayoutEngine } from '../../react/context/engine-context.js';
 import { useComponent } from '../../react/hooks/ecs.js';
 import type { R3FWidgetProps } from '../../react/widgets/registry.js';
@@ -15,7 +15,8 @@ import { R3FRenderState } from './state.js';
  * canvas backbuffer.
  *
  * The user component is rendered in widget-local space — origin at centre,
- * X right, Y up, dimensions = (worldWidth, worldHeight) in world units.
+ * X right, Y up, dimensions = (Transform2D.width, Transform2D.height) in
+ * frame-local world units.
  * That matches the contract the previous `R3FWidgetSlot` exposed, so user
  * widget code (e.g. `geometry-card`) needs no changes.
  *
@@ -44,9 +45,9 @@ export function VirtualWidget({
 		camera.lookAt(0, 0, 0);
 	}, [camera]);
 
-	const wb = useComponent(entityId, WorldBounds);
-	const w = wb?.worldWidth ?? 0;
-	const h = wb?.worldHeight ?? 0;
+	const t = useComponent(entityId, Transform2D);
+	const w = t?.width ?? 0;
+	const h = t?.height ?? 0;
 
 	// Recompute the camera frustum + signal a repaint when bounds change.
 	// useLayoutEffect (not render-time) so the mutation runs after commit
@@ -83,12 +84,9 @@ export function VirtualWidget({
 		return unregister;
 	}, [entityId, register, scene, camera, invalidate]);
 
-	if (!wb) return null;
+	if (!t) return null;
 
 	// Portal mounts the React tree (and its useFrame / useState / etc.) into
 	// the widget's own scene rather than the main R3F scene.
-	return createPortal(
-		<Component entityId={entityId} width={wb.worldWidth} height={wb.worldHeight} />,
-		scene,
-	);
+	return createPortal(<Component entityId={entityId} width={t.width} height={t.height} />, scene);
 }

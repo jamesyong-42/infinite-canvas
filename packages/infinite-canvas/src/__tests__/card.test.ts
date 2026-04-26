@@ -62,7 +62,7 @@ describe('createCardWidget', () => {
 		expect(small.archetype.defaultSize).toEqual({ width: 155, height: 155 });
 	});
 
-	it('archetype is selectable + draggable but not resizable, and skips the selection frame', () => {
+	it('archetype is selectable + draggable but not resizable, skips the selection frame, and is a snap target only', () => {
 		const card = createCardWidget({
 			type: 'c-cap',
 			size: 'medium',
@@ -75,6 +75,8 @@ describe('createCardWidget', () => {
 			draggable: true,
 			resizable: false,
 			selectionFrame: false,
+			snapSource: false,
+			snapTarget: true,
 		});
 	});
 
@@ -89,7 +91,14 @@ describe('createCardWidget', () => {
 		const components = card.archetype.components ?? [];
 		const cardInit = components.find((init) => init[0] === Card);
 		expect(cardInit).toBeDefined();
-		expect(cardInit?.[1]).toEqual({ preset: 'xl' });
+		// createCardWidget now threads RFC-004 Phase 1 contract defaults into
+		// every Card init; extra fields beyond `preset` are allowed.
+		expect(cardInit?.[1]).toMatchObject({ preset: 'xl' });
+		const cardData = cardInit?.[1] as
+			| { accepts: readonly string[]; provides: readonly string[] }
+			| undefined;
+		expect(cardData?.accepts).toEqual([]);
+		expect(cardData?.provides).toEqual([]);
 	});
 
 	it('spawn end-to-end: preset enforced, not resizable, is draggable, no selection frame', () => {
@@ -117,5 +126,91 @@ describe('createCardWidget', () => {
 		const t = engine.get(id, Transform2D);
 		expect(t?.width).toBe(329);
 		expect(t?.height).toBe(155);
+	});
+});
+
+describe('Card contract fields (RFC-004 Phase 1)', () => {
+	it('defaults accepts / provides to empty arrays', () => {
+		const engine = createLayoutEngine();
+		engine.setViewport(1000, 800);
+		const id = engine.createEntity([[Card, { preset: 'small' }]]);
+		const card = engine.get(id, Card);
+		expect(card?.accepts).toEqual([]);
+		expect(card?.provides).toEqual([]);
+	});
+
+	it('preserves accepts / provides across cardSystem ticks', () => {
+		// The cardSystem writes Transform2D.width/height every tick from
+		// Card.preset. Because setComponent accepts Partial<T>, the contract
+		// fields on the Card component itself must survive untouched.
+		const engine = createLayoutEngine();
+		engine.setViewport(1000, 800);
+		const id = engine.createEntity([
+			[
+				Card,
+				{
+					preset: 'small',
+					accepts: ['widget'],
+					provides: ['widget'],
+				},
+			],
+			[Transform2D, { x: 0, y: 0, width: 0, height: 0, rotation: 0 }],
+		]);
+		engine.tick();
+		engine.tick();
+		const card = engine.get(id, Card);
+		expect(card?.accepts).toEqual(['widget']);
+		expect(card?.provides).toEqual(['widget']);
+	});
+
+	it('preserves accepts / provides across a partial setComponent on Card', () => {
+		// Regression guard: reactive-ecs `setComponent` takes `Partial<T>`.
+		// If any future caller writes `setComponent(entity, Card, { preset: ... })`
+		// without spreading the existing card, the new contract fields must
+		// still survive the merge.
+		const engine = createLayoutEngine();
+		engine.setViewport(1000, 800);
+		const id = engine.createEntity([
+			[
+				Card,
+				{
+					preset: 'small',
+					accepts: ['widget'],
+					provides: ['payload'],
+				},
+			],
+		]);
+		engine.set(id, Card, { preset: 'large' });
+		const card = engine.get(id, Card);
+		expect(card?.preset).toBe('large');
+		expect(card?.accepts).toEqual(['widget']);
+		expect(card?.provides).toEqual(['payload']);
+	});
+
+	it('accepts a widget binding with an `interaction` handler block', () => {
+		// Verifies that registering a widget with the new interaction hooks
+		// is accepted by the engine without error. The engine doesn't invoke
+		// these handlers yet (that lands in Phase 4), but the shape must plumb.
+		const engine = createLayoutEngine({
+			widgets: [
+				{
+					type: 'contract-card',
+					schema: stubSchema,
+					defaultData: {},
+					defaultSize: { width: 100, height: 100 },
+					interaction: {
+						onReceiveChild: ({ parent, child }) => ({
+							consume: true,
+							mutation: { parent, child },
+						}),
+						canAccept: () => true,
+						applyMutation: () => {},
+						revertMutation: () => {},
+					},
+				},
+			],
+		});
+		engine.setViewport(1000, 800);
+		expect(engine.getWidget('contract-card')?.interaction?.onReceiveChild).toBeTypeOf('function');
 	});
 });

@@ -1,16 +1,27 @@
 import type { ComponentType, EntityId, TagType, World } from '@jamesyong42/reactive-ecs';
-import { Children, HandleSet, Parent } from './components.js';
-import type { NavigationFrame } from './resources.js';
+import { Children, ContainerChildren, ParentFrame } from './components.js';
+import type { FrameCameraState } from './resources.js';
+import { CameraResource, RootCameraResource } from './resources.js';
 
 // === Serialization Types ===
 
-/** JSON-serializable snapshot of the canvas state, including all entities and camera. */
+/**
+ * JSON-serializable snapshot of the canvas state, including all entities,
+ * the current camera, and the persisted root-frame camera.
+ *
+ * The navigation stack is **not** serialized — reloading a canvas always
+ * drops the user at the root frame (RFC-004 § Phase 0c). Per-container
+ * camera state is persisted via the `ContainerCamera` component on each
+ * container entity (serialized as part of its component set).
+ */
 export interface CanvasDocument {
 	version: number;
 	entities: SerializedEntity[];
 	resources: {
-		camera: { x: number; y: number; zoom: number };
-		navigationStack: NavigationFrame[];
+		/** Current live camera (whatever frame the user was in at serialize time). */
+		camera: FrameCameraState;
+		/** Persisted root-frame camera — restored on load. */
+		rootCamera: FrameCameraState;
 	};
 }
 
@@ -31,8 +42,8 @@ export function serializeWorld(
 	world: World,
 	componentTypes: ComponentType[],
 	tagTypes: TagType[],
-	camera: { x: number; y: number; zoom: number },
-	navigationFrames: NavigationFrame[],
+	camera: FrameCameraState,
+	rootCamera: FrameCameraState,
 ): CanvasDocument {
 	const entities: SerializedEntity[] = [];
 
@@ -44,9 +55,19 @@ export function serializeWorld(
 		const tags: string[] = [];
 
 		for (const type of componentTypes) {
-			// Skip runtime-only components (PreDragLayer — recomputed by
-			// dragPromoteSystem on the next Dragging tag flip).
-			if (type.name === 'PreDragLayer') continue;
+			// Skip runtime-only components: `PreDragLayer` is recomputed by
+			// dragPromoteSystem on the next Dragging flip; `TransformTween`
+			// is an in-flight animation that should not be paused / resumed
+			// across reloads (the destination `Transform2D` persists instead);
+			// `CardOverlapHotPoint` is drag-scoped visual state with no
+			// meaning outside an active drag.
+			if (
+				type.name === 'PreDragLayer' ||
+				type.name === 'TransformTween' ||
+				type.name === 'CardOverlapHotPoint'
+			) {
+				continue;
+			}
 			const data = world.getComponent(entityId, type);
 			if (data !== undefined) {
 				components[type.name] = structuredClone(data);
@@ -55,8 +76,16 @@ export function serializeWorld(
 
 		for (const type of tagTypes) {
 			if (world.hasTag(entityId, type)) {
-				// Skip runtime-only tags (Active, Visible, Culled — they're recomputed)
-				if (type.name !== 'Active' && type.name !== 'Visible' && type.name !== 'Culled') {
+				// Skip runtime-only tags: Active/Visible/Culled are recomputed
+				// by the cull pipeline; OverlapCandidate/OverlapTarget are
+				// drag-scoped and meaningless outside an active drag.
+				if (
+					type.name !== 'Active' &&
+					type.name !== 'Visible' &&
+					type.name !== 'Culled' &&
+					type.name !== 'OverlapCandidate' &&
+					type.name !== 'OverlapTarget'
+				) {
 					tags.push(type.name);
 				}
 			}
@@ -72,7 +101,7 @@ export function serializeWorld(
 		entities,
 		resources: {
 			camera: { ...camera },
-			navigationStack: structuredClone(navigationFrames),
+			rootCamera: { ...rootCamera },
 		},
 	};
 }
@@ -125,13 +154,14 @@ export function deserializeWorld(
 		}
 	}
 
-	// Second pass: remap cross-reference components (Parent, Children, HandleSet)
+	// Second pass: remap cross-reference components (ParentFrame, Children,
+	// ContainerChildren).
 	for (const [_oldId, newId] of idMap) {
-		const parent = world.getComponent(newId, Parent);
+		const parent = world.getComponent(newId, ParentFrame);
 		if (parent && idMap.has(parent.id)) {
 			const mappedId = idMap.get(parent.id);
 			if (mappedId !== undefined) {
-				world.setComponent(newId, Parent, { id: mappedId });
+				world.setComponent(newId, ParentFrame, { id: mappedId });
 			}
 		}
 
@@ -142,13 +172,30 @@ export function deserializeWorld(
 			});
 		}
 
-		const handleSet = world.getComponent(newId, HandleSet);
-		if (handleSet) {
-			world.setComponent(newId, HandleSet, {
-				ids: handleSet.ids.map((id: EntityId) => idMap.get(id) ?? id),
-			});
+		const containerChildren = world.getComponent(newId, ContainerChildren);
+		if (containerChildren) {
+			// Drop ids that didn't round-trip (child was destroyed before save
+			// and still lingered in the list) rather than falling back to the
+			// raw pre-save id — that id may have been recycled to an unrelated
+			// entity by the post-load world and would leak into the container's
+			// child count / navigation target list.
+			const mapped: EntityId[] = [];
+			for (const id of containerChildren.ids) {
+				const remapped = idMap.get(id);
+				if (remapped !== undefined) mapped.push(remapped);
+			}
+			world.setComponent(newId, ContainerChildren, { ids: mapped });
 		}
 	}
+
+	// Restore camera resources. `gesturing` resets to false on load — it's
+	// transient interaction state, not persisted view state.
+	const live = doc.resources.camera;
+	world.setResource(CameraResource, { x: live.x, y: live.y, zoom: live.zoom, gesturing: false });
+	world.setResource(RootCameraResource, { ...doc.resources.rootCamera });
+
+	// NavigationStack is deliberately not restored — users always return
+	// to the root frame on load (RFC-004 § Phase 0c).
 }
 
 /**
@@ -172,7 +219,19 @@ export function serializeEntities(
 		const tags: string[] = [];
 
 		for (const type of componentTypes) {
-			if (type.name === 'PreDragLayer') continue;
+			// Skip runtime-only components: `PreDragLayer` is recomputed by
+			// dragPromoteSystem on the next Dragging flip; `TransformTween`
+			// is an in-flight animation that should not be paused / resumed
+			// across reloads (the destination `Transform2D` persists instead);
+			// `CardOverlapHotPoint` is drag-scoped visual state with no
+			// meaning outside an active drag.
+			if (
+				type.name === 'PreDragLayer' ||
+				type.name === 'TransformTween' ||
+				type.name === 'CardOverlapHotPoint'
+			) {
+				continue;
+			}
 			const data = world.getComponent(entityId, type);
 			if (data !== undefined) {
 				components[type.name] = structuredClone(data);

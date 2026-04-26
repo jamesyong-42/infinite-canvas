@@ -148,4 +148,5 @@ export const StocksCard = createCardWidget<StocksData>({
 		],
 	},
 	render: StocksRender,
+	provides: ['widget'],
 });

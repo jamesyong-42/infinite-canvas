@@ -2,10 +2,17 @@ import type { EntityId } from '@jamesyong42/reactive-ecs';
 import type * as React from 'react';
 import type { Archetype } from '../../ecs/archetype.js';
 import type { CardPreset } from '../../ecs/components.js';
-import { Card, Dragging } from '../../ecs/components.js';
+import {
+	Card,
+	CardOverlapHotPoint,
+	Dragging,
+	OverlapCandidate,
+	OverlapTarget,
+} from '../../ecs/components.js';
+import type { WidgetInteractionHandlers } from '../../ecs/engine/widget-binding.js';
 import { DEFAULT_CARD_PRESET_SIZES } from '../../ecs/resources.js';
 import type { StandardSchemaV1 } from '../../ecs/schema.js';
-import { useTag } from '../hooks/ecs.js';
+import { useComponent, useTag } from '../hooks/ecs.js';
 import { useWidgetData } from '../hooks/widget.js';
 import { CardChrome } from './CardChrome.js';
 import type { DomWidget, DomWidgetProps } from './registry.js';
@@ -28,8 +35,20 @@ export interface CardFrameProps {
  */
 export function CardFrame({ entityId, children, className, style }: CardFrameProps) {
 	const dragging = useTag(entityId, Dragging);
+	const overlapCandidate = useTag(entityId, OverlapCandidate);
+	const overlapTarget = useTag(entityId, OverlapTarget);
+	const hot = useComponent(entityId, CardOverlapHotPoint);
 	return (
-		<CardChrome lifted={dragging} className={className} style={style}>
+		<CardChrome
+			lifted={dragging}
+			className={className}
+			style={style}
+			overlapCandidate={overlapCandidate}
+			overlapTarget={overlapTarget}
+			hotX={hot?.x}
+			hotY={hot?.y}
+			hotStrength={hot?.strength}
+		>
 			{children}
 		</CardChrome>
 	);
@@ -48,6 +67,25 @@ export interface CreateCardWidgetOptions<T> {
 	defaultData: T;
 	/** The card's rendered content. Receives entityId + typed data. */
 	render: React.ComponentType<{ entityId: EntityId; data: T }>;
+	/**
+	 * Drop-to-consume contract — what this card accepts as a parent
+	 * (RFC-004 § Phase 1). Stamped onto the archetype's `Card`
+	 * component so every spawned instance carries it. Defaults to `[]`.
+	 */
+	accepts?: readonly string[];
+	/**
+	 * Drop-to-consume contract — what this card provides when dropped
+	 * as a child. Stamped onto the archetype's `Card` component.
+	 * Defaults to `[]`.
+	 */
+	provides?: readonly string[];
+	/**
+	 * Optional widget-type interaction handlers — `onReceiveChild` /
+	 * `canAccept` / `applyMutation` / `revertMutation` (RFC-004 § Phase 1).
+	 * Handlers live on the widget binding so every instance of this
+	 * type shares them.
+	 */
+	interaction?: WidgetInteractionHandlers;
 }
 
 /**
@@ -82,12 +120,22 @@ export function createCardWidget<T>(opts: CreateCardWidgetOptions<T>): {
 		defaultData: opts.defaultData,
 		defaultSize,
 		component: Component,
+		interaction: opts.interaction,
 	};
 
 	const archetype: Archetype = {
 		id: opts.type,
 		widget: opts.type,
-		components: [[Card, { preset: opts.size }]],
+		components: [
+			[
+				Card,
+				{
+					preset: opts.size,
+					accepts: opts.accepts ?? [],
+					provides: opts.provides ?? [],
+				},
+			],
+		],
 		interactive: {
 			selectable: true,
 			draggable: true,
@@ -95,6 +143,10 @@ export function createCardWidget<T>(opts: CreateCardWidgetOptions<T>): {
 			// Cards render their own chrome via CardFrame — opt out of the
 			// engine-drawn selection/hover outline.
 			selectionFrame: false,
+			// Cards never snap themselves when dragged, but they ARE references
+			// other widgets snap to. Asymmetric on purpose.
+			snapSource: false,
+			snapTarget: true,
 		},
 		defaultSize,
 	};

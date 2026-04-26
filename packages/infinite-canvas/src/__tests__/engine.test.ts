@@ -1,21 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
 	Active,
+	CameraResource,
 	Card,
 	CardPresetsResource,
 	Children,
 	Container,
+	ContainerCamera,
 	Culled,
 	CursorHint,
 	CursorResource,
 	createLayoutEngine,
 	Draggable,
 	Dragging,
-	HandleSet,
-	Hitbox,
 	InteractionRole,
-	Parent,
+	ParentFrame,
 	Resizable,
+	RootCameraResource,
 	Selectable,
 	Selected,
 	SelectionFrame,
@@ -24,7 +25,6 @@ import {
 	Widget,
 	WidgetBreakpoint,
 	WidgetData,
-	WorldBounds,
 	ZIndex,
 } from '../index.js';
 
@@ -336,7 +336,7 @@ describe('CanvasEngine', () => {
 			const child = engine.createEntity([
 				[Transform2D, { x: 50, y: 50, width: 200, height: 100, rotation: 0 }],
 				[Widget, { surface: 'dom', type: 'debug' }],
-				[Parent, { id: container }],
+				[ParentFrame, { id: container }],
 				[ZIndex, { value: 0 }],
 			]);
 
@@ -368,6 +368,135 @@ describe('CanvasEngine', () => {
 			expect(engine.world.hasTag(container, Active)).toBe(true);
 			expect(engine.world.hasTag(child, Active)).toBe(false);
 		});
+
+		it('auto-attaches ContainerCamera when Container is added', () => {
+			// RFC-004 Phase 0c: an archetype observer attaches a default
+			// ContainerCamera to every entity that gets the Container tag.
+			const engine = createTestEngine();
+			const container = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 400, height: 300, rotation: 0 }],
+				[Widget, { surface: 'dom', type: 'container' }],
+				[Container, { enterable: true }],
+			]);
+			expect(engine.has(container, ContainerCamera)).toBe(true);
+			const cam = engine.get(container, ContainerCamera);
+			expect(cam).toEqual({ x: 0, y: 0, zoom: 1 });
+		});
+
+		it('enterContainer / exitContainer round-trip preserves root camera', () => {
+			const engine = createTestEngine();
+			const container = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 400, height: 300, rotation: 0 }],
+				[Widget, { surface: 'dom', type: 'container' }],
+				[Container, { enterable: true }],
+			]);
+			engine.tick();
+
+			// Pan the root view.
+			engine.panTo(250, 175);
+			engine.zoomTo(2);
+
+			engine.enterContainer(container);
+			engine.tick();
+			// Inside the container the camera is the container's own default.
+			const inside = engine.world.getResource(CameraResource);
+			expect(inside.x).toBe(0);
+			expect(inside.y).toBe(0);
+			expect(inside.zoom).toBe(1);
+
+			// RootCameraResource should have snapped the outgoing root view.
+			const savedRoot = engine.world.getResource(RootCameraResource);
+			expect(savedRoot.zoom).toBe(2);
+
+			engine.exitContainer();
+			engine.tick();
+
+			// Root camera restored to its pre-enter state.
+			const afterExit = engine.world.getResource(CameraResource);
+			expect(afterExit.zoom).toBe(2);
+			// `panTo` centred the viewport at (250, 175) — we just need the
+			// same x/y back out after the round-trip.
+			expect(savedRoot.x).toBe(afterExit.x);
+			expect(savedRoot.y).toBe(afterExit.y);
+		});
+
+		it('per-container camera persists across enter/exit', () => {
+			const engine = createTestEngine();
+			const container = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 400, height: 300, rotation: 0 }],
+				[Widget, { surface: 'dom', type: 'container' }],
+				[Container, { enterable: true }],
+			]);
+			engine.tick();
+
+			engine.enterContainer(container);
+			engine.tick();
+
+			// Pan / zoom inside the container.
+			engine.panTo(123, 456);
+			engine.zoomTo(3);
+
+			engine.exitContainer();
+			engine.tick();
+
+			// The container's camera should have been snapshotted on exit.
+			const saved = engine.get(container, ContainerCamera);
+			expect(saved?.zoom).toBe(3);
+
+			// Re-enter — live camera matches the snapshot.
+			engine.enterContainer(container);
+			engine.tick();
+			const reenter = engine.world.getResource(CameraResource);
+			expect(reenter.zoom).toBe(3);
+			expect(reenter.x).toBe(saved?.x);
+			expect(reenter.y).toBe(saved?.y);
+		});
+
+		it('nested enter → exit preserves per-level cameras', () => {
+			const engine = createTestEngine();
+			const outer = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 600, height: 400, rotation: 0 }],
+				[Widget, { surface: 'dom', type: 'container' }],
+				[Container, { enterable: true }],
+			]);
+			const inner = engine.createEntity([
+				[Transform2D, { x: 0, y: 0, width: 300, height: 200, rotation: 0 }],
+				[Widget, { surface: 'dom', type: 'container' }],
+				[Container, { enterable: true }],
+				[ParentFrame, { id: outer }],
+			]);
+			engine.tick();
+
+			// Root view zoom = 2, then enter outer.
+			engine.zoomTo(2);
+			engine.enterContainer(outer);
+			engine.tick();
+
+			// Inside outer, set a distinct camera, then enter inner.
+			engine.zoomTo(4);
+			engine.enterContainer(inner);
+			engine.tick();
+
+			// Inside inner, set yet another camera, then exit back to outer.
+			// (Zoom values chosen to stay within the default [0.1, 5] range.)
+			engine.zoomTo(3);
+			engine.exitContainer();
+			engine.tick();
+
+			// Outer's camera should be what we set it to (zoom = 4).
+			const atOuter = engine.world.getResource(CameraResource);
+			expect(atOuter.zoom).toBe(4);
+			// Inner's saved ContainerCamera should hold zoom = 3.
+			expect(engine.get(inner, ContainerCamera)?.zoom).toBe(3);
+
+			// Exit back to root — root zoom should be 2.
+			engine.exitContainer();
+			engine.tick();
+			const atRoot = engine.world.getResource(CameraResource);
+			expect(atRoot.zoom).toBe(2);
+			// Outer's saved ContainerCamera should hold zoom = 4.
+			expect(engine.get(outer, ContainerCamera)?.zoom).toBe(4);
+		});
 	});
 
 	describe('frame changes', () => {
@@ -397,171 +526,6 @@ describe('CanvasEngine', () => {
 		});
 	});
 
-	describe('handle sync (RFC-001 Phase 4)', () => {
-		it('spawns 8 resize handles when a single resizable is selected', () => {
-			const engine = createTestEngine();
-			const e = createWidget(engine, 100, 100, 200, 150);
-			engine.tick();
-
-			// Select directly via tag — avoids going through pointer events.
-			engine.world.addTag(e, Selected);
-			engine.tick();
-
-			const handleSet = engine.get(e, HandleSet);
-			expect(handleSet).toBeDefined();
-			expect(handleSet?.ids.length).toBe(8);
-
-			for (const id of handleSet?.ids ?? []) {
-				expect(engine.world.entityExists(id)).toBe(true);
-				expect(engine.has(id, Hitbox)).toBe(true);
-				expect(engine.has(id, InteractionRole)).toBe(true);
-				expect(engine.has(id, CursorHint)).toBe(true);
-				expect(engine.has(id, Parent)).toBe(true);
-
-				const role = engine.get(id, InteractionRole);
-				expect(role?.role.type).toBe('resize');
-
-				const parent = engine.get(id, Parent);
-				expect(parent?.id).toBe(e);
-			}
-		});
-
-		it('despawns handles when selection is cleared', () => {
-			const engine = createTestEngine();
-			const e = createWidget(engine, 100, 100, 200, 150);
-			engine.tick();
-
-			engine.world.addTag(e, Selected);
-			engine.tick();
-
-			const handleSet = engine.get(e, HandleSet);
-			expect(handleSet?.ids.length).toBe(8);
-			const handleIds = [...(handleSet?.ids ?? [])];
-
-			// Deselect
-			engine.world.removeTag(e, Selected);
-			engine.tick();
-
-			expect(engine.has(e, HandleSet)).toBe(false);
-			for (const id of handleIds) {
-				expect(engine.world.entityExists(id)).toBe(false);
-			}
-		});
-
-		it('does not spawn handles when multiple resizables are selected', () => {
-			const engine = createTestEngine();
-			const e1 = createWidget(engine, 100, 100, 200, 150);
-			const e2 = createWidget(engine, 400, 100, 200, 150);
-			engine.tick();
-
-			engine.world.addTag(e1, Selected);
-			engine.world.addTag(e2, Selected);
-			engine.tick();
-
-			expect(engine.has(e1, HandleSet)).toBe(false);
-			expect(engine.has(e2, HandleSet)).toBe(false);
-		});
-
-		it('handles track parent bounds when resized', () => {
-			const engine = createTestEngine();
-			const e = createWidget(engine, 100, 100, 200, 150);
-			engine.tick();
-
-			engine.world.addTag(e, Selected);
-			engine.tick();
-
-			const handleSet = engine.get(e, HandleSet);
-			expect(handleSet).toBeDefined();
-
-			// Find the SE handle (anchorX=1, anchorY=1)
-			let seId: number | null = null;
-			for (const id of handleSet?.ids ?? []) {
-				const role = engine.get(id, InteractionRole);
-				if (role?.role.type === 'resize' && role.role.handle === 'se') {
-					seId = id;
-					break;
-				}
-			}
-			expect(seId).not.toBeNull();
-			if (seId === null) return;
-
-			// Clone because getComponent returns the live reference — setComponent
-			// mutates in place, so holding a raw reference across a tick is unsafe.
-			const beforeWBRaw = engine.get(seId, WorldBounds);
-			expect(beforeWBRaw).toBeDefined();
-			if (!beforeWBRaw) return;
-			const beforeWB = { ...beforeWBRaw };
-
-			// Resize the parent: width 200 -> 300 (+100 in X)
-			engine.set(e, Transform2D, { width: 300 });
-			engine.tick();
-
-			const afterWBRaw = engine.get(seId, WorldBounds);
-			expect(afterWBRaw).toBeDefined();
-			if (!afterWBRaw) return;
-			const afterWB = { ...afterWBRaw };
-
-			expect(afterWB.worldX - beforeWB.worldX).toBeCloseTo(100, 5);
-			expect(afterWB.worldY).toBeCloseTo(beforeWB.worldY, 5);
-		});
-
-		it('cascades destroy through HandleSet', () => {
-			const engine = createTestEngine();
-			const e = createWidget(engine, 100, 100, 200, 150);
-			engine.tick();
-
-			engine.world.addTag(e, Selected);
-			engine.tick();
-
-			const handleSet = engine.get(e, HandleSet);
-			expect(handleSet?.ids.length).toBe(8);
-			const handleIds = [...(handleSet?.ids ?? [])];
-
-			engine.destroyEntity(e);
-
-			for (const id of handleIds) {
-				expect(engine.world.entityExists(id)).toBe(false);
-			}
-			expect(engine.world.entityExists(e)).toBe(false);
-		});
-
-		it('grows the spatial index by 8 on selection', () => {
-			const engine = createTestEngine();
-			const e = createWidget(engine, 100, 100, 200, 150);
-			engine.tick();
-
-			const sizeBefore = engine.getSpatialIndex().size;
-
-			engine.world.addTag(e, Selected);
-			engine.tick();
-
-			const sizeAfter = engine.getSpatialIndex().size;
-			expect(sizeAfter - sizeBefore).toBe(8);
-		});
-
-		it('spawns handles after dropping from double to single selection', () => {
-			const engine = createTestEngine();
-			const e1 = createWidget(engine, 100, 100, 200, 150);
-			const e2 = createWidget(engine, 400, 100, 200, 150);
-			engine.tick();
-
-			engine.world.addTag(e1, Selected);
-			engine.world.addTag(e2, Selected);
-			engine.tick();
-
-			// Neither has handles yet.
-			expect(engine.has(e1, HandleSet)).toBe(false);
-			expect(engine.has(e2, HandleSet)).toBe(false);
-
-			// Drop to single selection.
-			engine.world.removeTag(e2, Selected);
-			engine.tick();
-
-			expect(engine.has(e1, HandleSet)).toBe(true);
-			expect(engine.get(e1, HandleSet)?.ids.length).toBe(8);
-		});
-	});
-
 	describe('unified hit test (RFC-001 Phase 5)', () => {
 		const mods = { shift: false, ctrl: false, alt: false, meta: false };
 
@@ -585,26 +549,12 @@ describe('CanvasEngine', () => {
 			engine.world.addTag(e, Selected);
 			engine.tick();
 
-			const handleSet = engine.get(e, HandleSet);
-			expect(handleSet?.ids.length).toBe(8);
-
-			// Find the SE handle and click at its world-space center.
-			let seId: number | null = null;
-			for (const id of handleSet?.ids ?? []) {
-				const role = engine.get(id, InteractionRole);
-				if (role?.role.type === 'resize' && role.role.handle === 'se') {
-					seId = id;
-					break;
-				}
-			}
-			expect(seId).not.toBeNull();
-			if (seId === null) return;
-
-			const wb = engine.get(seId, WorldBounds);
-			expect(wb).toBeDefined();
-			if (!wb) return;
-			const cx = wb.worldX + wb.worldWidth / 2;
-			const cy = wb.worldY + wb.worldHeight / 2;
+			// RFC-005: handles are not entities; the SE hotspot sits on the
+			// widget's bottom-right corner in world coords.
+			const t = engine.get(e, Transform2D);
+			if (!t) throw new Error('widget Transform2D missing');
+			const cx = t.x + t.width;
+			const cy = t.y + t.height;
 
 			const directive = engine.handlePointerDown(cx, cy, 0, mods);
 			expect(directive.action).toBe('capture-resize');
@@ -668,7 +618,7 @@ describe('CanvasEngine', () => {
 			const child = engine.createEntity([
 				[Transform2D, { x: 150, y: 150, width: 100, height: 50, rotation: 0 }],
 				[Widget, { surface: 'dom', type: 'debug' }],
-				[Parent, { id: container }],
+				[ParentFrame, { id: container }],
 				[ZIndex, { value: 0 }],
 				[Selectable],
 				[Draggable],
@@ -698,20 +648,10 @@ describe('CanvasEngine', () => {
 			engine.world.addTag(e, Selected);
 			engine.tick();
 
-			const handleSet = engine.get(e, HandleSet);
-			let seId: number | null = null;
-			for (const id of handleSet?.ids ?? []) {
-				const role = engine.get(id, InteractionRole);
-				if (role?.role.type === 'resize' && role.role.handle === 'se') {
-					seId = id;
-					break;
-				}
-			}
-			if (seId === null) throw new Error('SE handle not found');
-			const wb = engine.get(seId, WorldBounds);
-			if (!wb) throw new Error('SE handle WorldBounds missing');
-			const cx = wb.worldX + wb.worldWidth / 2;
-			const cy = wb.worldY + wb.worldHeight / 2;
+			const start = engine.get(e, Transform2D);
+			if (!start) throw new Error('widget Transform2D missing');
+			const cx = start.x + start.width; // SE corner world coords
+			const cy = start.y + start.height;
 
 			const downDirective = engine.handlePointerDown(cx, cy, 0, mods);
 			expect(downDirective.action).toBe('capture-resize');
@@ -810,21 +750,11 @@ describe('CanvasEngine', () => {
 			engine.world.addTag(e, Selected);
 			engine.tick();
 
-			// Find the SE handle.
-			const handleSet = engine.get(e, HandleSet);
-			let seId: number | null = null;
-			for (const id of handleSet?.ids ?? []) {
-				const role = engine.get(id, InteractionRole);
-				if (role?.role.type === 'resize' && role.role.handle === 'se') {
-					seId = id;
-					break;
-				}
-			}
-			if (seId === null) throw new Error('SE handle not found');
-			const wb = engine.get(seId, WorldBounds);
-			if (!wb) throw new Error('SE handle WorldBounds missing');
-			const cx = wb.worldX + wb.worldWidth / 2;
-			const cy = wb.worldY + wb.worldHeight / 2;
+			// RFC-005: SE hotspot sits on the widget's bottom-right corner.
+			const t = engine.get(e, Transform2D);
+			if (!t) throw new Error('widget Transform2D missing');
+			const cx = t.x + t.width;
+			const cy = t.y + t.height;
 
 			engine.handlePointerDown(cx, cy, 0, mods);
 			engine.tick();
@@ -845,30 +775,17 @@ describe('CanvasEngine', () => {
 			engine.world.addTag(e, Selected);
 			engine.tick();
 
-			const handleSet = engine.get(e, HandleSet);
-			let seId: number | null = null;
-			for (const id of handleSet?.ids ?? []) {
-				const role = engine.get(id, InteractionRole);
-				if (role?.role.type === 'resize' && role.role.handle === 'se') {
-					seId = id;
-					break;
-				}
-			}
-			if (seId === null) throw new Error('SE handle not found');
-			const wb = engine.get(seId, WorldBounds);
-			if (!wb) throw new Error('SE handle WorldBounds missing');
-			const cx = wb.worldX + wb.worldWidth / 2;
-			const cy = wb.worldY + wb.worldHeight / 2;
+			// RFC-005: SE hotspot sits on the widget's bottom-right corner;
+			// the inline hit returns the widget with `role.handle === 'se'`.
+			const t = engine.get(e, Transform2D);
+			if (!t) throw new Error('widget Transform2D missing');
+			const cx = t.x + t.width;
+			const cy = t.y + t.height;
 
-			// Sanity: the handle has the se-resize hint set by spawnResizeHandles.
-			expect(engine.get(seId, CursorHint)?.hover).toBe('se-resize');
-
-			// Hover (no press). Hover-to-parent was reverted in Phase 7, so the
-			// raw handle id becomes hoveredEntity and cursorSystem reads its hint.
 			engine.handlePointerMove(cx, cy, mods);
 			engine.tick();
 
-			expect(engine.getHoveredEntity()).toBe(seId);
+			expect(engine.getHoveredEntity()).toBe(e);
 			expect(engine.world.getResource(CursorResource).cursor).toBe('se-resize');
 		});
 	});
@@ -968,30 +885,9 @@ describe('CanvasEngine', () => {
 			expect(engine.has(e, CursorHint)).toBe(false);
 		});
 
-		it('handle entities with resize role are not touched by the observer', () => {
-			// Regression guard: handleSyncSystem spawns handles with InteractionRole
-			// { role: resize }. If the observer clobbered those, resize would break
-			// whenever Draggable/Selectable tags are toggled on the parent.
-			const engine = createTestEngine();
-			const e = createWidget(engine, 100, 100, 200, 150);
-			engine.world.addTag(e, Selected);
-			engine.tick();
-
-			const handleSet = engine.get(e, HandleSet);
-			const seHandle = handleSet?.ids.find(
-				(id) => engine.get(id, InteractionRole)?.role.type === 'resize',
-			);
-			expect(seHandle).toBeDefined();
-			if (seHandle === undefined) return;
-
-			const beforeRole = engine.get(seHandle, InteractionRole);
-			// Toggle parent tags — should not touch handle roles.
-			engine.world.removeTag(e, Draggable);
-			engine.world.addTag(e, Draggable);
-			const afterRole = engine.get(seHandle, InteractionRole);
-			expect(afterRole?.role.type).toBe('resize');
-			expect(afterRole?.layer).toBe(beforeRole?.layer);
-		});
+		// (RFC-005 removed: "handle entities with resize role are not
+		// touched by the observer" — handles are no longer ECS entities,
+		// so the auto-attach observer has nothing to potentially clobber.)
 	});
 
 	describe('archetype.interactive shape', () => {

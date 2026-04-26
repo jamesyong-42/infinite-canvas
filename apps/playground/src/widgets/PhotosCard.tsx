@@ -121,4 +121,5 @@ export const PhotosCard = createCardWidget<PhotosData>({
 		hue: 18,
 	},
 	render: PhotosRender,
+	provides: ['widget'],
 });

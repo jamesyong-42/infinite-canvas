@@ -69,4 +69,5 @@ export const BatteryCard = createCardWidget<BatteryData>({
 	schema,
 	defaultData: { phone: 82, watch: 47, airpods: 91 },
 	render: BatteryRender,
+	provides: ['widget'],
 });

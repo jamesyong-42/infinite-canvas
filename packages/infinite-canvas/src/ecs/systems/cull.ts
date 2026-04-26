@@ -1,7 +1,7 @@
 import type { EntityId, World } from '@jamesyong42/reactive-ecs';
 import { defineSystem } from '@jamesyong42/reactive-ecs';
-import { Active, Culled, Visible, WorldBounds } from '../components.js';
-import { intersectsAABB, worldBoundsToAABB } from '../math.js';
+import { Active, Culled, Transform2D, Visible } from '../components.js';
+import { intersectsAABB, rectToAABB } from '../math.js';
 import { CameraResource, SpatialIndexResource, ViewportResource } from '../resources.js';
 
 /**
@@ -48,8 +48,8 @@ export const cullSystem = defineSystem({
 			}
 		} else {
 			for (const entity of world.queryTagged(Active)) {
-				const wb = world.getComponent(entity, WorldBounds);
-				if (wb && intersectsAABB(worldBoundsToAABB(wb), vpWorldAABB)) {
+				const t = world.getComponent(entity, Transform2D);
+				if (t && intersectsAABB(rectToAABB(t), vpWorldAABB)) {
 					world.addTag(entity, Visible);
 					visibleIds.add(entity);
 				}

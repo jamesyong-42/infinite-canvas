@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { HANDLE_VISUAL_SIZE_PX } from '../../ecs/interaction-constants.js';
-import type { EqualSpacingIndicator, SnapGuide } from '../../ecs/spatial/snap.js';
 
 // === Public config (Figma-style defaults) ===
 
@@ -66,17 +65,10 @@ uniform float u_dpr;
 
 // Selection data
 uniform int u_count;
-uniform vec4 u_bounds[${MAX_ENTITIES}];   // (worldX, worldY, width, height)
+uniform vec4 u_bounds[${MAX_ENTITIES}];   // (x, y, width, height) — frame-local Transform2D
 uniform int u_hoverIdx;                   // -1 = none
 uniform vec4 u_groupBounds;              // group bbox (0 if count <= 1)
 uniform int u_hasGroup;
-
-// Snap guides
-uniform int u_guideCount;
-uniform vec4 u_guides[16];               // (axis: 0=x/1=y, position, 0, 0)
-uniform int u_spacingCount;
-uniform vec4 u_spacings[8];              // equal-spacing segments: (axis, from, to, perpPos)
-uniform vec3 u_guideColor;
 
 // Style
 uniform vec3 u_outlineColor;
@@ -211,59 +203,6 @@ void main() {
 		color = max(color, vec4(u_outlineColor, lineAlpha * 0.5));
 	}
 
-	// --- Snap guide lines ---
-	for (int i = 0; i < 16; i++) {
-		if (i >= u_guideCount) break;
-		vec4 g = u_guides[i];
-		float guideWidth = 0.5 * pxToWorld;
-		float dist;
-		if (g.x < 0.5) {
-			// Vertical line (x-axis alignment)
-			dist = abs(worldPos.x - g.y);
-		} else {
-			// Horizontal line (y-axis alignment)
-			dist = abs(worldPos.y - g.y);
-		}
-		float guideAlpha = 1.0 - smoothstep(guideWidth - pxToWorld * 0.3, guideWidth + pxToWorld * 0.3, dist);
-		color = max(color, vec4(u_guideColor, guideAlpha * 0.8));
-	}
-
-	// --- Equal spacing indicators ---
-	for (int i = 0; i < 8; i++) {
-		if (i >= u_spacingCount) break;
-		vec4 s = u_spacings[i];
-		float lineWidth = 0.5 * pxToWorld;
-		float segAlpha = 0.0;
-		if (s.x < 0.5) {
-			// Horizontal segment (x-axis gap)
-			float yDist = abs(worldPos.y - s.w);
-			float xInRange = step(s.y, worldPos.x) * step(worldPos.x, s.z);
-			// Center line
-			segAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, yDist)) * xInRange;
-			// End bars (perpendicular marks at from and to)
-			float barHeight = 4.0 * pxToWorld;
-			float barFromDist = abs(worldPos.x - s.y);
-			float barFromAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, barFromDist))
-				* (1.0 - smoothstep(barHeight, barHeight + pxToWorld, abs(worldPos.y - s.w)));
-			float barToDist = abs(worldPos.x - s.z);
-			float barToAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, barToDist))
-				* (1.0 - smoothstep(barHeight, barHeight + pxToWorld, abs(worldPos.y - s.w)));
-			segAlpha = max(segAlpha, max(barFromAlpha, barToAlpha));
-		} else {
-			// Vertical segment (y-axis gap)
-			float xDist = abs(worldPos.x - s.w);
-			float yInRange = step(s.y, worldPos.y) * step(worldPos.y, s.z);
-			segAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, xDist)) * yInRange;
-			float barWidth = 4.0 * pxToWorld;
-			float barFromAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, abs(worldPos.y - s.y)))
-				* (1.0 - smoothstep(barWidth, barWidth + pxToWorld, abs(worldPos.x - s.w)));
-			float barToAlpha = (1.0 - smoothstep(lineWidth, lineWidth + pxToWorld, abs(worldPos.y - s.z)))
-				* (1.0 - smoothstep(barWidth, barWidth + pxToWorld, abs(worldPos.x - s.w)));
-			segAlpha = max(segAlpha, max(barFromAlpha, barToAlpha));
-		}
-		color = max(color, vec4(u_guideColor, segAlpha * 0.7));
-	}
-
 	if (color.a < 0.01) discard;
 	gl_FragColor = color;
 }
@@ -272,11 +211,13 @@ void main() {
 // === Renderer class ===
 
 /**
- * Draws selection outlines, 8 resize handles, group-bbox, hover outline,
- * snap guides and equal-spacing indicators in a single SDF-based shader pass.
- * The `THREE.WebGLRenderer` is owned by the parent ({@link WebGLManager}) and
- * passed to each render call so grid + selection can share a single GL
- * context and accumulate `renderer.info` counters for the same tick.
+ * Draws selection outlines, 8 resize handles, group-bbox, and the hover
+ * outline in a single SDF-based shader pass. Snap guides and equal-
+ * spacing indicators are a separate concern — see {@link SnapGuideRenderer}.
+ *
+ * The `THREE.WebGLRenderer` is owned by the parent ({@link WebGLManager})
+ * and passed to each render call so grid + selection can share a single
+ * GL context and accumulate `renderer.info` counters for the same tick.
  */
 export class SelectionRenderer {
 	private material: THREE.ShaderMaterial;
@@ -316,12 +257,6 @@ export class SelectionRenderer {
 				u_handleBorder: { value: new THREE.Vector3(...DEFAULT_SELECTION_CONFIG.handleBorder) },
 				u_handleBorderWidth: { value: DEFAULT_SELECTION_CONFIG.handleBorderWidth },
 				u_groupDash: { value: DEFAULT_SELECTION_CONFIG.groupDash },
-				// Snap guides
-				u_guideCount: { value: 0 },
-				u_guides: { value: Array.from({ length: 16 }, () => new THREE.Vector4(0, 0, 0, 0)) },
-				u_spacingCount: { value: 0 },
-				u_spacings: { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0)) },
-				u_guideColor: { value: new THREE.Vector3(1.0, 0.0, 0.55) }, // magenta/pink
 			},
 			transparent: true,
 			depthTest: false,
@@ -362,8 +297,6 @@ export class SelectionRenderer {
 		zoom: number,
 		selected: SelectionBounds[],
 		hovered: SelectionBounds | null,
-		guides: SnapGuide[] = [],
-		spacings: EqualSpacingIndicator[] = [],
 	) {
 		const u = this.material.uniforms;
 		u.u_camera.value.set(cameraX, cameraY);
@@ -415,25 +348,6 @@ export class SelectionRenderer {
 		} else {
 			u.u_hasGroup.value = 0;
 		}
-
-		// Upload snap guides
-		const gCount = Math.min(guides.length, 16);
-		u.u_guideCount.value = gCount;
-		for (let i = 0; i < gCount; i++) {
-			const g = guides[i];
-			u.u_guides.value[i].set(g.axis === 'x' ? 0 : 1, g.position, 0, 0);
-		}
-
-		// Upload equal spacing segments
-		let sIdx = 0;
-		for (const sp of spacings) {
-			for (const seg of sp.segments) {
-				if (sIdx >= 8) break;
-				u.u_spacings.value[sIdx].set(sp.axis === 'x' ? 0 : 1, seg.from, seg.to, sp.perpPosition);
-				sIdx++;
-			}
-		}
-		u.u_spacingCount.value = sIdx;
 
 		// Render without clearing (composites on top of grid)
 		const prevAutoClear = renderer.autoClear;
