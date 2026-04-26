@@ -6,54 +6,63 @@ export type {
 	ResourceType,
 	TagType,
 	Unsubscribe,
+	World,
 } from '@jamesyong42/reactive-ecs';
 
 // === ECS core ===
 
 export type { Archetype, ArchetypeRegistry, SpawnOptions } from './ecs/archetype.js';
 export { createArchetypeRegistry } from './ecs/archetype.js';
-export type { Command } from './ecs/commands.js';
+export type { Command, EntitySnapshot } from './ecs/commands.js';
 export {
 	CommandBuffer,
+	ConsumeCommand,
 	MoveCommand,
 	ResizeCommand,
+	rehydrateEntity,
 	SetComponentCommand,
+	snapshotEntity,
 } from './ecs/commands.js';
 export type {
 	CardPreset,
 	CSSCursor,
 	CursorHintData,
-	HandleSetData,
 	InteractionRoleData,
 	InteractionRoleType,
 	LayerData,
 	LayerName,
+	TweenEasing,
 } from './ecs/components.js';
 export {
 	Active,
 	Card,
+	CardOverlapHotPoint,
 	Children,
 	Container,
+	ContainerCamera,
+	ContainerChildren,
 	Culled,
 	CursorHint,
 	Draggable,
 	Dragging,
-	HandleSet,
-	Hitbox,
 	InteractionRole,
 	Layer,
 	Locked,
-	Parent,
+	OverlapCandidate,
+	OverlapTarget,
+	ParentFrame,
 	Resizable,
 	Selectable,
 	Selected,
 	SelectionFrame,
+	SnapSource,
+	SnapTarget,
 	Transform2D,
+	TransformTween,
 	Visible,
 	Widget,
 	WidgetBreakpoint,
 	WidgetData,
-	WorldBounds,
 	ZIndex,
 } from './ecs/components.js';
 
@@ -74,13 +83,18 @@ export { createLayoutEngine } from './ecs/engine/index.js';
 
 export type { AABB, Rect, Vec2 } from './ecs/math.js';
 export {
+	aabbToRect,
 	clamp,
 	intersectsAABB,
 	pointInAABB,
+	rectToAABB,
 	screenToWorld,
-	worldBoundsToAABB,
 	worldToScreen,
 } from './ecs/math.js';
+
+// === Hierarchy helpers ===
+
+export { isFrameAncestorOf } from './ecs/hierarchy.js';
 
 // === Profiler types (commonly needed) ===
 
@@ -101,6 +115,7 @@ export type {
 export type {
 	Breakpoint,
 	CursorResourceData,
+	FrameCameraState,
 	LayerOrderData,
 	NavigationFrame,
 } from './ecs/resources.js';
@@ -111,6 +126,7 @@ export {
 	CursorResource,
 	LayerOrderResource,
 	NavigationStackResource,
+	RootCameraResource,
 	ViewportResource,
 	ZoomConfigResource,
 } from './ecs/resources.js';
@@ -163,6 +179,7 @@ export type {
 	R3FWidget,
 	R3FWidgetProps,
 	Widget as WidgetDef,
+	WidgetInteractionHandlers,
 	WidgetRegistry,
 	WidgetSurface,
 } from './react/widgets/registry.js';
@@ -201,6 +218,8 @@ export {
 
 // === Grid + selection config (needed for InfiniteCanvas props) ===
 
+export type { OverlapGlowConfig } from './react/widgets/overlap-glow.js';
+export { DEFAULT_OVERLAP_GLOW_CONFIG } from './react/widgets/overlap-glow.js';
 export type { GridConfig } from './webgl/renderers/GridRenderer.js';
 export { DEFAULT_GRID_CONFIG } from './webgl/renderers/GridRenderer.js';
 export type {
@@ -208,3 +227,5 @@ export type {
 	SelectionConfig,
 } from './webgl/renderers/SelectionRenderer.js';
 export { DEFAULT_SELECTION_CONFIG } from './webgl/renderers/SelectionRenderer.js';
+export type { SnapGuideConfig } from './webgl/renderers/SnapGuideRenderer.js';
+export { DEFAULT_SNAP_GUIDE_CONFIG } from './webgl/renderers/SnapGuideRenderer.js';
