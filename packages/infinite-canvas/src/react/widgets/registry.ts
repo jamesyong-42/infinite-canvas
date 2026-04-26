@@ -1,22 +1,54 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import type {
 	WidgetBinding,
+	WidgetInteractionHandlers,
 	WidgetRegistry,
 	WidgetSurface,
 } from '../../ecs/engine/widget-binding.js';
 import { createWidgetRegistry } from '../../ecs/engine/widget-binding.js';
 
-export type { WidgetRegistry, WidgetSurface };
+export type { WidgetInteractionHandlers, WidgetRegistry, WidgetSurface };
 export { createWidgetRegistry };
 
 // === Widget Prop Contracts ===
 
-/** Props passed to every DOM widget component. */
+/**
+ * Props passed to every DOM widget component. The component is mounted
+ * inside a sized `WidgetSlot` div — size via CSS or layout — and renders
+ * normal React/HTML.
+ *
+ * Pointer events work natively (RFC-006): `onClick`, `onPointerOver`,
+ * focus, native form inputs, contenteditable, drag-and-drop API — all
+ * dispatched by the browser's event path and reach widget children
+ * before they bubble to the canvas-level `PointerEventBus`.
+ *
+ * To opt out of engine routing (drag / select / resize) for an event,
+ * call `e.stopPropagation()` from inside the widget. `<button>`,
+ * `<input>`, `<textarea>`, `<select>`, and `[contenteditable]` opt out
+ * automatically — the bus skips engine routing when the event target
+ * matches one of those native interactive selectors.
+ */
 export interface DomWidgetProps {
 	entityId: EntityId;
 }
 
-/** Props passed to every R3F widget component. Rendered in local coords. */
+/**
+ * Props passed to every R3F widget component. Rendered in widget-local
+ * coords — the origin is the widget centre, X right, Y up — and the
+ * component declares its own Three.js scene through R3F primitives.
+ *
+ * Pointer events on `<mesh>` / `<group>` work natively (RFC-006):
+ * `onClick`, `onPointerOver`, `onPointerOut`, `onPointerEnter`,
+ * `onPointerLeave`, `onPointerMove`, `onPointerDown`, `onPointerUp`,
+ * `onPointerMissed`, `event.point` / `event.uv` / `event.intersections`,
+ * R3F's `event.stopPropagation()` and `setPointerCapture` — all
+ * dispatched by a custom EventManager that raycasts the widget's
+ * own scene with widget-local coords.
+ *
+ * To opt out of engine routing (drag / select / resize) for an event,
+ * additionally call `event.nativeEvent.stopPropagation()` to prevent
+ * the canvas-container `PointerEventBus` from receiving it.
+ */
 export interface R3FWidgetProps {
 	entityId: EntityId;
 	/** Widget width in world units. */

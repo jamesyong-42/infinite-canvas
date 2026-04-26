@@ -16,34 +16,37 @@ import type { InteractionRoleType } from '../components.js';
 import {
 	Active,
 	Card,
-	Children,
 	Container,
+	ContainerCamera,
+	ContainerChildren,
 	CursorHint,
 	Draggable,
 	Dragging,
-	HandleSet,
 	InteractionRole,
 	Layer,
-	Parent,
+	ParentFrame,
 	PreDragLayer,
 	Resizable,
 	Selectable,
 	Selected,
 	SelectionFrame,
+	SnapSource,
+	SnapTarget,
 	Transform2D,
+	TransformTween,
 	Visible,
 	WidgetBreakpoint,
 	Widget as WidgetComp,
 	WidgetData,
-	WorldBounds,
 	ZIndex,
 } from '../components.js';
-import { clamp, screenToWorld, worldBoundsToAABB } from '../math.js';
+import { clamp, rectToAABB, screenToWorld } from '../math.js';
 import {
 	BreakpointConfigResource,
 	CameraResource,
 	CardPresetsResource,
 	NavigationStackResource,
+	RootCameraResource,
 	SpatialIndexResource,
 	ViewportResource,
 	ZoomConfigResource,
@@ -54,11 +57,10 @@ import {
 	breakpointSystem,
 	cardSystem,
 	cullSystem,
-	handleSyncSystem,
-	hitboxWorldBoundsSystem,
 	navigationFilterSystem,
+	reconcileEntityActive,
 	sortSystem,
-	transformPropagateSystem,
+	transformTweenSystem,
 } from '../systems/index.js';
 import { createInteractionRuntime } from './interaction.js';
 import type {
@@ -110,12 +112,11 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 
 	let snapEnabled = config?.snap?.enabled ?? true;
 	let snapThreshold = config?.snap?.threshold ?? 5;
+	let snapGuidesVisible = config?.snap?.guidesVisible ?? true;
 
 	// Register built-in systems.
 	scheduler.register(cardSystem);
-	scheduler.register(transformPropagateSystem);
-	scheduler.register(handleSyncSystem);
-	scheduler.register(hitboxWorldBoundsSystem);
+	scheduler.register(transformTweenSystem);
 	scheduler.register(navigationFilterSystem);
 	scheduler.register(cullSystem);
 	scheduler.register(breakpointSystem);
@@ -124,10 +125,12 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	const unsubscribers: Unsubscribe[] = [];
 
 	// Wire spatial index reactively via observer instead of per-frame scan.
+	// Post-RFC-004 Phase 0b: Transform2D is the single source of truth for
+	// entity bounds — no more WorldBounds shadow.
 	unsubscribers.push(
-		world.onComponentChanged(WorldBounds, (entityId, _prev, wb) => {
-			if (wb) {
-				spatialIndex.upsert(entityId, worldBoundsToAABB(wb));
+		world.onComponentChanged(Transform2D, (entityId, _prev, t) => {
+			if (t) {
+				spatialIndex.upsert(entityId, rectToAABB(t));
 			}
 		}),
 	);
@@ -138,9 +141,39 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		}),
 	);
 
+	// Auto-attach ContainerCamera on Container-tag add, so every container
+	// entity has a usable camera component from birth (serialization round-
+	// trips cleanly; enterContainer can read without falling back). The
+	// prev === undefined guard scopes this to component *adds* only —
+	// updates of an existing Container value do not re-stamp a fresh camera.
+	unsubscribers.push(
+		world.onComponentChanged(Container, (entityId, prev, next) => {
+			if (prev === undefined && next !== undefined) {
+				if (!world.hasComponent(entityId, ContainerCamera)) {
+					world.addComponent(entityId, ContainerCamera, { x: 0, y: 0, zoom: 1 });
+				}
+			}
+		}),
+	);
+
+	// RFC-004 § Phase 5 — keep `Active` in sync with mid-session
+	// ParentFrame mutations. Covers the consume path (child gets
+	// `ParentFrame`, should leave the current frame), re-parent (id
+	// changes), and undo (ParentFrame removed, child returns to root).
+	// Without this, a consumed card retains `Active` at root until the
+	// next nav-stack change and renders visibly on top of its own
+	// container. The nav-stack-change branch of `navigationFilterSystem`
+	// still handles the full refilter when the user navigates.
+	unsubscribers.push(
+		world.onComponentChanged(ParentFrame, (entityId) => {
+			reconcileEntityActive(world, entityId);
+			markDirtyInternal();
+		}),
+	);
+
 	// Auto-attach InteractionRole and CursorHint based on Draggable/Selectable
-	// tag presence. Entities with an explicit resize/rotate/connect role (e.g.
-	// spawned handles) are left alone so this never fights handleSyncSystem.
+	// tag presence. Entities with an explicit non-drag/non-select role
+	// (rotate/connect/etc.) are left alone.
 	function refreshInteractionRole(entity: EntityId): void {
 		const current = world.getComponent(entity, InteractionRole);
 		if (
@@ -234,6 +267,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	let frameChanges: FrameChanges = {
 		positionsChanged: [],
 		breakpointsChanged: [],
+		zIndicesChanged: [],
 		entered: [],
 		exited: [],
 		cameraChanged: false,
@@ -257,6 +291,11 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		},
 		getSnapEnabled: () => snapEnabled,
 		getSnapThreshold: () => snapThreshold,
+		// RFC-004 § Phase 3 — the overlap pass consults the parent widget
+		// type's `canAccept` gate (when present) before flagging
+		// `OverlapTarget`. Non-card / unregistered widgets fall through
+		// to "no gate, static contract check only."
+		getWidgetInteraction: (type: string) => widgetRegistry.get(type)?.interaction,
 	});
 
 	const engine: LayoutEngine<W> = {
@@ -316,7 +355,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			}
 
 			if (opts.parent !== undefined) {
-				inits.push([Parent, { id: opts.parent }]);
+				inits.push([ParentFrame, { id: opts.parent }]);
 			}
 
 			// Interactive defaults — boolean or per-cap object.
@@ -328,6 +367,8 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 							draggable: false,
 							resizable: false,
 							selectionFrame: false,
+							snapSource: false,
+							snapTarget: false,
 						}
 					: interactiveConfig === undefined || interactiveConfig === true
 						? {
@@ -335,6 +376,8 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 								draggable: true,
 								resizable: true,
 								selectionFrame: true,
+								snapSource: true,
+								snapTarget: true,
 							}
 						: (() => {
 								const selectable = interactiveConfig.selectable ?? false;
@@ -343,18 +386,41 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 									draggable: interactiveConfig.draggable ?? false,
 									resizable: interactiveConfig.resizable ?? false,
 									selectionFrame: interactiveConfig.selectionFrame ?? selectable,
+									snapSource: interactiveConfig.snapSource ?? false,
+									snapTarget: interactiveConfig.snapTarget ?? false,
 								};
 							})();
 			if (caps.selectable) inits.push([Selectable]);
 			if (caps.draggable) inits.push([Draggable]);
 			if (caps.resizable) inits.push([Resizable]);
 			if (caps.selectionFrame) inits.push([SelectionFrame]);
+			if (caps.snapSource) inits.push([SnapSource]);
+			if (caps.snapTarget) inits.push([SnapTarget]);
 
 			if (archetype?.tags) {
 				for (const tag of archetype.tags) inits.push([tag]);
 			}
 
-			return engine.createEntity(inits);
+			const entity = engine.createEntity(inits);
+
+			// RFC-004 § Phase 5 open question 7 — a runtime spawn inside a
+			// container must push onto the parent's `ContainerChildren.ids`
+			// so the two-way ParentFrame ↔ ContainerChildren invariant is
+			// upheld on the spawn path (consume already does this via
+			// `applyMutation`). Only touches a container that actually has
+			// the component attached — widgets outside the Phase 5 pattern
+			// use `ParentFrame` without `ContainerChildren` and are left
+			// alone.
+			if (opts.parent !== undefined && world.hasComponent(opts.parent, ContainerChildren)) {
+				const current = world.getComponent(opts.parent, ContainerChildren);
+				if (current && !current.ids.includes(entity)) {
+					world.setComponent(opts.parent, ContainerChildren, {
+						ids: [...current.ids, entity],
+					});
+				}
+			}
+
+			return entity;
 		},
 
 		spawnAtCameraCenter(id: string, opts: Omit<SpawnOptions, 'at'> = {}): EntityId {
@@ -394,15 +460,6 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		},
 
 		destroyEntity(id: EntityId) {
-			const set = world.getComponent(id, HandleSet);
-			if (set) {
-				for (const handleId of set.ids) {
-					if (world.entityExists(handleId)) {
-						spatialIndex.remove(handleId);
-						world.destroyEntity(handleId);
-					}
-				}
-			}
 			spatialIndex.remove(id);
 			world.destroyEntity(id);
 			markDirtyInternal();
@@ -534,12 +591,12 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			let maxX = Number.NEGATIVE_INFINITY;
 			let maxY = Number.NEGATIVE_INFINITY;
 			for (const e of entities) {
-				const wb = world.getComponent(e, WorldBounds);
-				if (!wb) continue;
-				minX = Math.min(minX, wb.worldX);
-				minY = Math.min(minY, wb.worldY);
-				maxX = Math.max(maxX, wb.worldX + wb.worldWidth);
-				maxY = Math.max(maxY, wb.worldY + wb.worldHeight);
+				const t = world.getComponent(e, Transform2D);
+				if (!t) continue;
+				minX = Math.min(minX, t.x);
+				minY = Math.min(minY, t.y);
+				maxX = Math.max(maxX, t.x + t.width);
+				maxY = Math.max(maxY, t.y + t.height);
 			}
 			if (!Number.isFinite(minX)) return;
 
@@ -625,6 +682,10 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			interaction.handlePointerCancel();
 		},
 
+		pickAt(screenX: number, screenY: number): EntityId | null {
+			return interaction.pickAt(screenX, screenY);
+		},
+
 		// === Selection ===
 
 		getSelectedEntities(): EntityId[] {
@@ -647,31 +708,68 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 
 		setSnapEnabled(on: boolean) {
 			snapEnabled = on;
+			markDirtyInternal();
 		},
 
 		setSnapThreshold(worldPx: number) {
 			snapThreshold = worldPx;
+			markDirtyInternal();
+		},
+
+		getSnapGuidesVisible() {
+			return snapGuidesVisible;
+		},
+
+		setSnapGuidesVisible(on: boolean) {
+			snapGuidesVisible = on;
+			markDirtyInternal();
 		},
 
 		// === Navigation ===
 
 		enterContainer(entity: EntityId) {
+			// Only Container-tagged entities are enterable. An empty container
+			// (no Children component yet) is still allowed — you enter it and
+			// see an empty sub-canvas, which is consistent with a just-created
+			// container that will be populated later.
 			if (!world.hasComponent(entity, Container)) return;
-			if (!world.hasComponent(entity, Children)) return;
 
 			const navStack = world.getResource(NavigationStackResource);
 			const camera = world.getResource(CameraResource);
 
-			const currentFrame = navStack.frames[navStack.frames.length - 1];
-			currentFrame.camera = { x: camera.x, y: camera.y, zoom: camera.zoom };
+			// Snapshot the outgoing frame's camera to its home so navigating
+			// back restores the same view.
+			const outgoing = navStack.frames[navStack.frames.length - 1].containerId;
+			if (outgoing === null) {
+				world.setResource(RootCameraResource, {
+					x: camera.x,
+					y: camera.y,
+					zoom: camera.zoom,
+				});
+			} else {
+				world.setComponent(outgoing, ContainerCamera, {
+					x: camera.x,
+					y: camera.y,
+					zoom: camera.zoom,
+				});
+			}
 
-			navStack.frames.push({
-				containerId: entity,
-				camera: { x: camera.x, y: camera.y, zoom: camera.zoom },
-			});
+			navStack.frames.push({ containerId: entity });
 			navStack.changed = true;
 
+			// Restore the incoming container's camera (default to origin +
+			// 1× if the container has never been entered before).
+			const incoming = world.getComponent(entity, ContainerCamera) ?? {
+				x: 0,
+				y: 0,
+				zoom: 1,
+			};
+			camera.x = incoming.x;
+			camera.y = incoming.y;
+			camera.zoom = incoming.zoom;
+
 			interaction.clearSelection();
+			cameraChangedThisTick = true;
 			markDirtyInternal();
 		},
 
@@ -679,14 +777,31 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			const navStack = world.getResource(NavigationStackResource);
 			if (navStack.frames.length <= 1) return;
 
+			const camera = world.getResource(CameraResource);
+
+			// Snapshot the outgoing container's camera so re-entering later
+			// restores the view.
+			const outgoing = navStack.frames[navStack.frames.length - 1].containerId;
+			if (outgoing !== null) {
+				world.setComponent(outgoing, ContainerCamera, {
+					x: camera.x,
+					y: camera.y,
+					zoom: camera.zoom,
+				});
+			}
+
 			navStack.frames.pop();
 			navStack.changed = true;
 
-			const parentFrame = navStack.frames[navStack.frames.length - 1];
-			const camera = world.getResource(CameraResource);
-			camera.x = parentFrame.camera.x;
-			camera.y = parentFrame.camera.y;
-			camera.zoom = parentFrame.camera.zoom;
+			// Load the newly-current frame's camera (parent container or root).
+			const parent = navStack.frames[navStack.frames.length - 1].containerId;
+			const incoming =
+				parent === null
+					? world.getResource(RootCameraResource)
+					: (world.getComponent(parent, ContainerCamera) ?? { x: 0, y: 0, zoom: 1 });
+			camera.x = incoming.x;
+			camera.y = incoming.y;
+			camera.zoom = incoming.zoom;
 
 			interaction.clearSelection();
 			cameraChangedThisTick = true;
@@ -713,12 +828,23 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		tick() {
 			profiler.beginFrame(world.currentTick);
 
-			// Fix #4: Capture navigation changed flag before systems clear it
+			// INVARIANT (RFC-004 Phase 0c): capture `navStack.changed` into a
+			// local `const` BEFORE `scheduler.execute` runs. `navigationFilter`
+			// mutates `navStack.changed = false` mid-tick as its reset signal;
+			// reading the flag after systems execute would always see false
+			// and this-tick navigation pushes/pops would silently miss their
+			// FrameChanges.navigationChanged notification. Do not reorder.
 			const navStackPreTick = world.getResource(NavigationStackResource);
 			const navigationChangedThisTick = navStackPreTick?.changed ?? false;
 
 			// Run all systems
 			scheduler.execute(world);
+
+			// RFC-004 § Phase 4 — fly-back completion poll. Runs after the
+			// tween system so an in-flight tween has had a chance to
+			// remove itself this tick; if it's gone and we're still in
+			// `flyingBack` mode, finalize (remove Dragging, restore ZIndex).
+			interaction.runFlyBackSystem();
 
 			// Derive cursor from interaction state + hover.
 			interaction.runCursorSystem();
@@ -729,19 +855,19 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			const newVisibleSet = new Set<EntityId>();
 
 			for (const entity of world.query(WidgetComp, Visible)) {
-				const wb = world.getComponent(entity, WorldBounds);
+				const t = world.getComponent(entity, Transform2D);
 				const widget = world.getComponent(entity, WidgetComp);
 				const bp = world.getComponent(entity, WidgetBreakpoint);
 				const zIdx = world.getComponent(entity, ZIndex);
-				if (!wb || !widget) continue;
+				if (!t || !widget) continue;
 
 				newVisibleSet.add(entity);
 				newVisible.push({
 					entityId: entity,
-					worldX: wb.worldX,
-					worldY: wb.worldY,
-					worldWidth: wb.worldWidth,
-					worldHeight: wb.worldHeight,
+					x: t.x,
+					y: t.y,
+					width: t.width,
+					height: t.height,
 					breakpoint: bp?.current ?? 'normal',
 					zIndex: zIdx?.value ?? 0,
 					surface: widget.surface,
@@ -762,8 +888,9 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			}
 
 			frameChanges = {
-				positionsChanged: world.queryChanged(WorldBounds),
+				positionsChanged: world.queryChanged(Transform2D),
 				breakpointsChanged: world.queryChanged(WidgetBreakpoint),
+				zIndicesChanged: world.queryChanged(ZIndex),
 				entered,
 				exited,
 				cameraChanged: cameraChangedThisTick,
@@ -784,6 +911,18 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			world.emitFrame();
 
 			dirty = false;
+
+			// RFC-004 § Phase 2/4 — keep the rAF loop alive while any
+			// `TransformTween` is still running. The `Transform2D` reactive
+			// observer deliberately skips `markDirty` (it only refreshes the
+			// spatial index), so a tween's own Transform2D writes don't
+			// re-dirty the engine. Without this post-reset re-dirty, the
+			// engine would tick once into the animation and then freeze the
+			// card mid-fly-back. Cheap: bails after one iteration.
+			for (const _ of world.query(TransformTween)) {
+				dirty = true;
+				break;
+			}
 		},
 
 		flushIfDirty(): boolean {

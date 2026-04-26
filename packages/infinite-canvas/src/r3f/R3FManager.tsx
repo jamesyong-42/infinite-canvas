@@ -1,13 +1,17 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { Canvas } from '@react-three/fiber';
+import type * as React from 'react';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { LayoutEngine } from '../ecs/engine/index.js';
+import { useContainerRef } from '../react/context/container-ref-context.js';
 import { EngineProvider } from '../react/context/engine-context.js';
 import type { ResolvedWidget } from '../react/context/widget-resolver-context.js';
 import type { R3FWidgetProps } from '../react/widgets/registry.js';
 import { Compositor } from './compositor/Compositor.js';
+import { createCompositorEventManager } from './compositor/EventRouter.js';
 import { VirtualWidget } from './compositor/VirtualWidget.js';
+import { WidgetRegistry } from './compositor/WidgetRegistry.js';
 import { WidgetStateMachine } from './compositor/WidgetStateMachine.js';
 import { EngineInvalidator } from './EngineInvalidator.js';
 import { ProfilerProbe } from './ProfilerProbe.js';
@@ -16,6 +20,15 @@ interface R3FManagerProps {
 	engine: LayoutEngine;
 	entities: EntityId[];
 	resolve: (entityId: EntityId) => ResolvedWidget | null;
+	/**
+	 * Optional R3F nodes mounted at the Canvas root as siblings of the
+	 * Compositor (so they live in the Canvas's default scene, not inside
+	 * any widget portal). Canonical use: drei's `<Environment>` — the
+	 * Compositor's `sharedEnv` propagation logic checks the root scene
+	 * before iterating widget scenes, so a root-level env stays alive
+	 * across widget navigation (RFC-004 Phase 5 follow-up).
+	 */
+	r3fRoot?: React.ReactNode;
 }
 
 /**
@@ -26,8 +39,13 @@ interface R3FManagerProps {
  * via {@link VirtualWidget} and a final composition pass samples those
  * textures into the visible canvas (RFC-002 Phase 4).
  */
-export function R3FManager({ engine, entities, resolve }: R3FManagerProps) {
+export function R3FManager({ engine, entities, resolve, r3fRoot }: R3FManagerProps) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
+	// Route R3F's native pointer listeners onto the canvas container, not
+	// the canvas DOM element. Lets us keep `pointer-events: none` on the
+	// canvas (so it never occludes DOM widgets stacked underneath at lower
+	// z-indices) while still feeding R3F every event the bus sees.
+	const containerRef = useContainerRef();
 
 	// R3F needs an initial camera; the Compositor swaps in its own world-space
 	// ortho camera as the canvas default once mounted.
@@ -36,6 +54,20 @@ export function R3FManager({ engine, entities, resolve }: R3FManagerProps) {
 		cam.position.set(0, 0, 1000);
 		return cam;
 	}, []);
+
+	// Stable per-canvas registry (RFC-006). The Compositor populates it
+	// as VirtualWidget instances mount/unmount; the EventRouter reads it
+	// at intersect time to pick the right scene + camera for raycasting.
+	const widgetRegistry = useMemo(() => new WidgetRegistry(), []);
+
+	// Custom R3F event manager — same dispatch machinery as the default
+	// (bubbling, hover diff, click synthesis, capture, stopPropagation),
+	// but the intersection step targets per-widget scenes instead of
+	// the canvas's composition scene full of fullscreen quads.
+	const eventManager = useMemo(
+		() => createCompositorEventManager(engine, widgetRegistry),
+		[engine, widgetRegistry],
+	);
 
 	const widgetEntries = useMemo(() => {
 		const result: {
@@ -56,10 +88,23 @@ export function R3FManager({ engine, entities, resolve }: R3FManagerProps) {
 			ref={canvasRef}
 			camera={initialCamera}
 			frameloop="demand"
+			events={eventManager}
+			eventSource={
+				// Cast: R3F's `eventSource` is typed `RefObject<HTMLElement>`
+				// (non-null current), but our shared container ref is
+				// `RefObject<HTMLDivElement | null>` because the div mounts
+				// after first render. R3F reads `.current` lazily on first
+				// event, by which point the ref is populated.
+				(containerRef ?? undefined) as React.RefObject<HTMLElement> | undefined
+			}
 			gl={{ alpha: true, antialias: true }}
 			style={{
 				position: 'absolute',
 				inset: 0,
+				// Canvas itself never receives events — R3F listens on the
+				// canvas container via `eventSource`, so the canvas can stay
+				// transparent to pointers without losing widget interactions.
+				// Keeps DOM widgets at lower z-indices clickable.
 				pointerEvents: 'none',
 				zIndex: 1,
 				display: widgetEntries.length === 0 ? 'none' : 'block',
@@ -69,7 +114,8 @@ export function R3FManager({ engine, entities, resolve }: R3FManagerProps) {
 				<EngineInvalidator engine={engine} />
 				<WidgetStateMachine engine={engine} />
 				<ProfilerProbe engine={engine} widgetCount={widgetEntries.length} />
-				<Compositor engine={engine}>
+				{r3fRoot}
+				<Compositor engine={engine} widgetRegistry={widgetRegistry}>
 					{widgetEntries.map(({ entityId, component }) => (
 						<VirtualWidget key={entityId} entityId={entityId} component={component} />
 					))}

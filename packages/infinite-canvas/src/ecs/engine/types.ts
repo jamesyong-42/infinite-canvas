@@ -42,13 +42,19 @@ export interface Modifiers {
 	meta: boolean;
 }
 
-/** A visible entity with its computed world-space bounds and display metadata. */
+/**
+ * A visible entity with its computed frame-local bounds and display metadata.
+ *
+ * Bounds are copied from the entity's `Transform2D` — post-RFC-004 Phase 0b,
+ * every entity's Transform2D is already in its frame's local coord system,
+ * so there is no distinct "world" space to translate into.
+ */
 export interface VisibleEntity {
 	entityId: EntityId;
-	worldX: number;
-	worldY: number;
-	worldWidth: number;
-	worldHeight: number;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
 	breakpoint: Breakpoint;
 	zIndex: number;
 	surface: string;
@@ -59,6 +65,16 @@ export interface VisibleEntity {
 export interface FrameChanges {
 	positionsChanged: EntityId[];
 	breakpointsChanged: EntityId[];
+	/**
+	 * Entities whose `ZIndex` component value changed during the last
+	 * tick. Consumed by `<InfiniteCanvas>` to write `el.style.zIndex` on
+	 * each slot so R3F cards (which intentionally skip the `Layer`
+	 * re-bucket path during drag) still stack correctly when their
+	 * `ZIndex` is bumped — without this, a dragged R3F card's CSS chrome
+	 * retains its drag-start DOM order and hides beneath sibling
+	 * chromes whose intrinsic ZIndex was lower.
+	 */
+	zIndicesChanged: EntityId[];
 	entered: EntityId[];
 	exited: EntityId[];
 	cameraChanged: boolean;
@@ -83,8 +99,17 @@ export interface LayoutEngineConfig<W extends WidgetBinding = Widget> {
 	breakpoints?: { micro: number; compact: number; normal: number; expanded: number };
 	/** Snap alignment configuration. */
 	snap?: {
+		/** Run alignment-snap math during drag. Default true. */
 		enabled?: boolean;
+		/** Threshold in world pixels. Default 5. Zoom-corrected at use site. */
 		threshold?: number;
+		/**
+		 * Render the magenta guide lines and equal-spacing indicators while
+		 * snap math is active. Default true. Independent of `enabled` —
+		 * you can run snap math without showing chrome (e.g. screenshot
+		 * mode) or vice versa for demos.
+		 */
+		guidesVisible?: boolean;
 	};
 	/** Widget definitions available to `spawn()`. */
 	widgets?: W[];
@@ -165,6 +190,13 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 	handlePointerMove(screenX: number, screenY: number, modifiers: Modifiers): PointerDirective;
 	handlePointerUp(): PointerDirective;
 	handlePointerCancel(): void;
+	/**
+	 * Topmost interactable entity at a screen-space point. Same hit-test
+	 * the pointer state machine uses, exposed for callers that need to
+	 * resolve coords without firing pointer side-effects — RFC-006's
+	 * `PointerEventBus` (double-click) and the R3F `EventRouter`.
+	 */
+	pickAt(screenX: number, screenY: number): EntityId | null;
 
 	// Selection & Hover
 
@@ -209,6 +241,8 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 	getEqualSpacing(): EqualSpacingIndicator[];
 	setSnapEnabled(on: boolean): void;
 	setSnapThreshold(worldPx: number): void;
+	getSnapGuidesVisible(): boolean;
+	setSnapGuidesVisible(on: boolean): void;
 
 	// Performance profiling
 

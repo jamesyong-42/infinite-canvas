@@ -2,13 +2,22 @@ import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Mesh, OrthographicCamera, PlaneGeometry, type Scene } from 'three';
-import { Card, Dragging, Widget, WorldBounds } from '../../ecs/components.js';
+import {
+	Card,
+	CardOverlapHotPoint,
+	Dragging,
+	OverlapCandidate,
+	OverlapTarget,
+	Transform2D,
+	Widget,
+} from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
 import { CompositionMaterial } from './CompositionMaterial.js';
 import { CompositorContext, type CompositorWidgetEntry } from './CompositorContext.js';
 import { type EvictionCandidate, selectEvictions } from './eviction.js';
 import { ResourceRegistry } from './ResourceRegistry.js';
 import { R3FRenderBudget, R3FRenderState } from './state.js';
+import type { WidgetRegistry } from './WidgetRegistry.js';
 import { WidgetRenderTargetPool } from './WidgetRenderTargetPool.js';
 import { isOutOfBand, selectBand } from './ZoomBands.js';
 
@@ -30,17 +39,22 @@ import { isOutOfBand, selectBand } from './ZoomBands.js';
  */
 export function Compositor({
 	engine,
+	widgetRegistry,
 	children,
 }: {
 	engine: LayoutEngine;
+	/**
+	 * Stable per-canvas widget registry created in `R3FManager`. Shared
+	 * with the R3F event factory so the EventRouter (RFC-006) can resolve
+	 * which widget owns a pointer event without a separate registration
+	 * path. The Compositor populates it on `register` / unregister; reads
+	 * it back during the paint + composition loop.
+	 */
+	widgetRegistry: WidgetRegistry;
 	children: React.ReactNode;
 }) {
 	const { gl, size, scene: defaultScene, set } = useThree();
 	const invalidate = useThree((s) => s.invalidate);
-
-	// Per-widget registry, kept outside React state so registration/dirty
-	// tracking does not trigger re-renders.
-	const widgetsRef = useRef(new Map<EntityId, CompositorWidgetEntry>());
 
 	// Pool + registry are created lazily and re-created if a previous instance
 	// was disposed (React StrictMode mounts → cleanup → remount; the cleanup
@@ -96,7 +110,7 @@ export function Compositor({
 
 	const register = useCallback(
 		(entityId: EntityId, entry: CompositorWidgetEntry) => {
-			widgetsRef.current.set(entityId, entry);
+			const unregisterFromRegistry = widgetRegistry.register(entityId, entry);
 
 			// Spawn a composition quad for this widget. CompositionMaterial
 			// is a minimal sample-and-write shader (no tone mapping — FBO
@@ -113,7 +127,7 @@ export function Compositor({
 			entry.requestRepaint();
 
 			return () => {
-				widgetsRef.current.delete(entityId);
+				unregisterFromRegistry();
 				const m = quadsRef.current.get(entityId);
 				if (m) {
 					defaultScene.remove(m);
@@ -124,7 +138,7 @@ export function Compositor({
 				pool.release(entityId);
 			};
 		},
-		[defaultScene, pool, quadGeometry],
+		[defaultScene, pool, quadGeometry, widgetRegistry],
 	);
 
 	const ctxValue = useMemo(() => ({ pool, registry, register }), [pool, registry, register]);
@@ -170,15 +184,27 @@ export function Compositor({
 		// sees only its own env; PBR materials in other widgets (especially
 		// metallic ones) would render unlit. Propagate the first env we find
 		// to every widget scene so global IBL behaviour is preserved.
+		//
+		// Root-scene fallback (RFC-004 Phase 5 follow-up): also look at the
+		// Canvas's default scene for an environment. Mounting <Environment>
+		// as a sibling of <Compositor> (i.e. directly in R3FManager's Canvas
+		// tree, not inside any VirtualWidget) gives a canvas-level IBL
+		// provider that survives widget navigation — consuming an env-
+		// bearing card into a folder no longer kills every other card's
+		// lighting when the user returns to root.
 		let sharedEnv = null as Scene['environment'];
-		for (const [, entry] of widgetsRef.current) {
-			if (entry.scene.environment) {
-				sharedEnv = entry.scene.environment;
-				break;
+		if (defaultScene.environment) {
+			sharedEnv = defaultScene.environment;
+		} else {
+			for (const [, entry] of widgetRegistry.all()) {
+				if (entry.scene.environment) {
+					sharedEnv = entry.scene.environment;
+					break;
+				}
 			}
 		}
 		if (sharedEnv) {
-			for (const [eid, entry] of widgetsRef.current) {
+			for (const [eid, entry] of widgetRegistry.all()) {
 				if (entry.scene.environment === sharedEnv) continue;
 				entry.scene.environment = sharedEnv;
 				// Re-render so the new IBL is reflected in this widget's FBO.
@@ -199,9 +225,9 @@ export function Compositor({
 		const band = selectBand(cam.zoom);
 		const effectiveDpr = dpr * band;
 		let widgetsRepainted = 0;
-		for (const [entityId, entry] of widgetsRef.current) {
-			const wb = world.getComponent(entityId, WorldBounds);
-			if (!wb) continue;
+		for (const [entityId, entry] of widgetRegistry.all()) {
+			const wt = world.getComponent(entityId, Transform2D);
+			if (!wt) continue;
 			const state = world.getComponent(entityId, R3FRenderState);
 			if (!state) continue;
 
@@ -222,7 +248,7 @@ export function Compositor({
 				continue;
 			}
 
-			const fbo = pool.acquire(entityId, wb.worldWidth, wb.worldHeight, effectiveDpr);
+			const fbo = pool.acquire(entityId, wt.width, wt.height, effectiveDpr);
 			gl.setRenderTarget(fbo);
 			try {
 				gl.setClearColor(0x000000, 0);
@@ -239,8 +265,8 @@ export function Compositor({
 				...state,
 				fboGeneration: state.paintGeneration,
 				paintedAt: {
-					width: wb.worldWidth,
-					height: wb.worldHeight,
+					width: wt.width,
+					height: wt.height,
 					dpr: effectiveDpr,
 					zoom: band,
 				},
@@ -299,7 +325,7 @@ export function Compositor({
 		let draggedRectMaxX = 0;
 		let draggedRectMaxY = 0;
 		const canvasHeightPx = size.height * dpr;
-		for (const entityId of widgetsRef.current.keys()) {
+		for (const entityId of widgetRegistry.keys()) {
 			if (!world.hasTag(entityId, Dragging)) continue;
 			const w = world.getComponent(entityId, Widget);
 			if (w?.surface !== 'webgl') continue;
@@ -308,15 +334,15 @@ export function Compositor({
 			// leave the rect at zero, which the shader treats as "no
 			// discard" while still respecting renderOrder.
 			if (!world.hasComponent(entityId, Card)) break;
-			const wb = world.getComponent(entityId, WorldBounds);
-			if (!wb) break;
+			const dt = world.getComponent(entityId, Transform2D);
+			if (!dt) break;
 			// Use the live lift scale so the discard rect tracks the lifted
 			// chrome bounds (1.05× during drag).
 			const lift = liftScaleRef.current.get(entityId) ?? 1;
-			const cx = wb.worldX + wb.worldWidth / 2;
-			const cy = wb.worldY + wb.worldHeight / 2;
-			const halfW = (wb.worldWidth * lift) / 2;
-			const halfH = (wb.worldHeight * lift) / 2;
+			const cx = dt.x + dt.width / 2;
+			const cy = dt.y + dt.height / 2;
+			const halfW = (dt.width * lift) / 2;
+			const halfH = (dt.height * lift) / 2;
 			const minWx = cx - halfW;
 			const maxWx = cx + halfW;
 			const minWy = cy - halfH;
@@ -345,10 +371,10 @@ export function Compositor({
 		// enough that the user perceives them as one moving element.
 		let liftSettling = false;
 		for (const [entityId, mesh] of quadsRef.current) {
-			const wb = world.getComponent(entityId, WorldBounds);
+			const qt = world.getComponent(entityId, Transform2D);
 			const state = world.getComponent(entityId, R3FRenderState);
 			const fbo = pool.get(entityId);
-			if (!wb || !fbo || !state || state.fboGeneration < 0) {
+			if (!qt || !fbo || !state || state.fboGeneration < 0) {
 				mesh.visible = false;
 				continue;
 			}
@@ -369,8 +395,8 @@ export function Compositor({
 			liftScaleRef.current.set(entityId, scale);
 
 			mesh.visible = true;
-			mesh.position.set(wb.worldX + wb.worldWidth / 2, -(wb.worldY + wb.worldHeight / 2), 0);
-			mesh.scale.set(wb.worldWidth * scale, wb.worldHeight * scale, 1);
+			mesh.position.set(qt.x + qt.width / 2, -(qt.y + qt.height / 2), 0);
+			mesh.scale.set(qt.width * scale, qt.height * scale, 1);
 			// renderOrder bump: dragged R3F quad draws last in the
 			// composition pass (case C — even without chrome it sits on
 			// top of every other R3F widget it overlaps).
@@ -379,6 +405,20 @@ export function Compositor({
 			material.setMap(fbo.texture);
 			material.setIsDragged(entityId === draggedEntityId);
 			material.setDraggedRect(draggedRectMinX, draggedRectMinY, draggedRectMaxX, draggedRectMaxY);
+
+			// RFC-004 § Phase 3 — overlap glow + match rim.
+			// CardOverlapHotPoint.{x,y} are in [0..1] with (0,0) at the
+			// card's top-left (Y-down world convention). The quad's vUv has
+			// (0,0) at bottom-left (Three's default PlaneGeometry UVs), so
+			// flip Y when translating to uv space.
+			const hot = world.getComponent(entityId, CardOverlapHotPoint);
+			if (hot && world.hasTag(entityId, OverlapCandidate)) {
+				material.setHotPoint(hot.x, 1 - hot.y);
+				material.setHotStrength(hot.strength);
+			} else {
+				material.setHotStrength(0);
+			}
+			material.setIsOverlapTarget(world.hasTag(entityId, OverlapTarget));
 		}
 
 		// Composition pass to the canvas backbuffer. Explicit setRenderTarget
@@ -398,7 +438,7 @@ export function Compositor({
 		// toward its target. invalidate() inside a useFrame sets
 		// internal.frames to 2, so the loop keeps spinning.
 		let anyHot = false;
-		for (const eid of widgetsRef.current.keys()) {
+		for (const eid of widgetRegistry.keys()) {
 			const s = world.getComponent(eid, R3FRenderState);
 			if (s?.phase === 'Hot') {
 				anyHot = true;

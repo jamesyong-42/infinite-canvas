@@ -352,6 +352,71 @@ engine.spawn('my-3d', { at: { x: 100, y: 100 } });
 
 WebGL widgets get a transparent R3F canvas layered between the grid and DOM layers. The R3F camera is synced with the engine camera every frame.
 
+## Pointer Events
+
+Both DOM and R3F widgets dispatch pointer events naturally — write `onClick`, `onPointerOver`, `onPointerEnter` etc. the way you would in any React or R3F app. The canvas's engine state machine (drag, select, resize, marquee, double-click navigation) runs on the same event after your handlers, so the two layers compose without you wiring anything.
+
+To opt a specific event out of engine semantics — e.g. a button inside a widget that should not start a drag — call `stopPropagation()` from your handler. Native HTML interactives (`<button>`, `<input>`, `<textarea>`, `<select>`, `[contenteditable]`) opt out automatically.
+
+### DOM widget
+
+```tsx
+function MyDomWidget({ entityId }: DomWidgetProps) {
+  return (
+    <div>
+      <span>drag me anywhere — engine handles it</span>
+
+      <button onClick={(e) => { e.stopPropagation(); doThing(); }}>
+        clicking me runs doThing(), no drag
+      </button>
+    </div>
+  );
+}
+```
+
+`e.stopPropagation()` on the React synthetic event halts both widget-internal bubbling and the canvas-level engine call.
+
+### R3F widget
+
+```tsx
+function MyR3FWidget({ entityId, width, height }: R3FWidgetProps) {
+  const [hover, setHover] = useState(false);
+  return (
+    <group>
+      {/* Drag handle: no stopPropagation — engine starts a drag normally. */}
+      <mesh
+        onPointerOver={() => setHover(true)}
+        onPointerOut={() => setHover(false)}>
+        <planeGeometry args={[width, height]} />
+        <meshBasicMaterial color={hover ? 'lightblue' : 'white'} />
+      </mesh>
+
+      {/* Button mesh: stopPropagation halts R3F bubble + nativeEvent halts engine. */}
+      <mesh
+        position={[0, 0, 1]}
+        onClick={(e) => {
+          e.stopPropagation();              // halts R3F bubble within widget
+          e.nativeEvent.stopPropagation();  // halts engine drag/select
+          doThing();
+        }}>
+        <boxGeometry args={[40, 20, 5]} />
+        <meshStandardMaterial color="orange" />
+      </mesh>
+    </group>
+  );
+}
+```
+
+R3F's `event.stopPropagation()` only halts further dispatch within the widget's own scene. To prevent the canvas-level engine routing from firing too — for example, a clickable mesh that should never start a drag — additionally call `event.nativeEvent.stopPropagation()`. The standard DOM idiom: stop the native event, the bus never sees it.
+
+`event.point`, `event.uv`, `event.face`, `event.intersections` are populated by a widget-local raycast against the widget's own scene with widget-local coordinates — `event.point.x = 0` is the widget centre, not the canvas centre.
+
+### Hover and capture
+
+Cross-widget hover transitions (cursor moves from widget A's mesh into widget B's mesh) fire `onPointerLeave` on A's last hit and `onPointerEnter` on B's first hit automatically. Within a widget, R3F handles enter/leave between meshes natively.
+
+When the engine takes a drag (`capture-drag`), `capture-resize`, or `passthrough-track-drag` directive, the bus calls `setPointerCapture` on the canvas container. While captured, R3F's mesh-level events suspend — the engine owns the pointer until release. This matches the native browser pointer-capture model, so existing R3F patterns like `setPointerCapture` on a mesh continue to work for widget-internal drags that don't conflict with engine semantics.
+
 ## Configuration
 
 ### Grid
