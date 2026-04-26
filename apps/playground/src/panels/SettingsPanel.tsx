@@ -1,4 +1,4 @@
-import type { GridConfig, LayoutEngine } from '@jamesyong42/infinite-canvas';
+import type { GridConfig, LayoutEngine, OverlapGlowConfig } from '@jamesyong42/infinite-canvas';
 import {
 	BreakpointConfigResource,
 	Draggable,
@@ -11,12 +11,38 @@ import {
 	ZoomConfigResource,
 } from '@jamesyong42/infinite-canvas';
 import { useState } from 'react';
+import type { OverlapGlowThemeColors, ThemeColors } from '../App.js';
 
 interface SettingsPanelProps {
 	engine: LayoutEngine;
 	gridConfig: GridConfig;
 	onGridChange: (config: GridConfig) => void;
+	themeColors: ThemeColors;
+	onThemeColorsChange: (colors: ThemeColors) => void;
+	overlapGlow: OverlapGlowConfig;
+	onOverlapGlowChange: (config: OverlapGlowConfig) => void;
+	overlapGlowThemeColors: OverlapGlowThemeColors;
+	onOverlapGlowThemeColorsChange: (colors: OverlapGlowThemeColors) => void;
 	onClose: () => void;
+}
+
+function rgb01ToHex(rgb: [number, number, number]): string {
+	return `#${rgb
+		.map((v) =>
+			Math.round(v * 255)
+				.toString(16)
+				.padStart(2, '0'),
+		)
+		.join('')}`;
+}
+
+function hexToRgb01(hex: string): [number, number, number] {
+	const s = hex.replace('#', '').padEnd(6, '0').slice(0, 6);
+	return [
+		Number.parseInt(s.slice(0, 2), 16) / 255,
+		Number.parseInt(s.slice(2, 4), 16) / 255,
+		Number.parseInt(s.slice(4, 6), 16) / 255,
+	];
 }
 
 const inputCls =
@@ -27,7 +53,18 @@ const borderCls = 'border-t border-neutral-100 pt-2 dark:border-neutral-700';
 const btnCls =
 	'flex-1 rounded bg-neutral-100 py-1 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700';
 
-export function SettingsPanel({ engine, gridConfig, onGridChange, onClose }: SettingsPanelProps) {
+export function SettingsPanel({
+	engine,
+	gridConfig,
+	onGridChange,
+	themeColors,
+	onThemeColorsChange,
+	overlapGlow,
+	onOverlapGlowChange,
+	overlapGlowThemeColors,
+	onOverlapGlowThemeColorsChange,
+	onClose,
+}: SettingsPanelProps) {
 	const zoomConfig = engine.world.getResource(ZoomConfigResource);
 	const bpConfig = engine.world.getResource(BreakpointConfigResource);
 
@@ -37,6 +74,16 @@ export function SettingsPanel({ engine, gridConfig, onGridChange, onClose }: Set
 	const [bpCompact, setBpCompact] = useState(bpConfig.compact);
 	const [bpNormal, setBpNormal] = useState(bpConfig.normal);
 	const [bpExpanded, setBpExpanded] = useState(bpConfig.expanded);
+	const [glowOpen, setGlowOpen] = useState(false);
+
+	function setGlow<K extends keyof OverlapGlowConfig>(key: K, value: OverlapGlowConfig[K]) {
+		onOverlapGlowChange({ ...overlapGlow, [key]: value });
+	}
+	function setGlowTuple<K extends keyof OverlapGlowConfig>(key: K, index: number, value: number) {
+		const arr = [...(overlapGlow[key] as number[])];
+		arr[index] = value;
+		onOverlapGlowChange({ ...overlapGlow, [key]: arr });
+	}
 
 	const applyEngine = () => {
 		engine.world.setResource(ZoomConfigResource, { min: minZoom, max: maxZoom });
@@ -152,39 +199,75 @@ export function SettingsPanel({ engine, gridConfig, onGridChange, onClose }: Set
 				{/* Grid: Dot Appearance */}
 				<div>
 					<div className={sectionCls}>Dot Appearance</div>
-					<div className="grid grid-cols-2 gap-1.5">
-						<label className="flex items-center gap-1">
+					<div className="space-y-1.5">
+						<label className="flex items-center gap-2">
+							<span className={`w-10 ${labelCls}`}>size</span>
+							<input
+								type="range"
+								min="0"
+								max="3"
+								step="0.05"
+								className="flex-1 accent-neutral-600 dark:accent-neutral-300"
+								value={gridConfig.dotRadius[0]}
+								onChange={(e) => {
+									const v = Number(e.target.value);
+									// Lock min and max together — Freeform/FigJam use
+									// constant-size dots. Advanced users can still set
+									// them independently via the `grid` prop on
+									// InfiniteCanvas.
+									onGridChange({ ...gridConfig, dotRadius: [v, v] });
+								}}
+							/>
+							<span className="w-10 text-right tabular-nums text-neutral-500 dark:text-neutral-400">
+								{gridConfig.dotRadius[0].toFixed(2)}
+							</span>
+						</label>
+						<label className="flex items-center gap-2">
 							<span className={`w-10 ${labelCls}`}>alpha</span>
 							<input
-								type="number"
-								step="0.01"
+								type="range"
 								min="0"
 								max="1"
-								className={inputCls}
+								step="0.01"
+								className="flex-1 accent-neutral-600 dark:accent-neutral-300"
 								value={gridConfig.dotAlpha}
 								onChange={(e) => setGrid('dotAlpha', Number(e.target.value))}
 							/>
+							<span className="w-10 text-right tabular-nums text-neutral-500 dark:text-neutral-400">
+								{gridConfig.dotAlpha.toFixed(2)}
+							</span>
 						</label>
-						<label className="flex items-center gap-1">
-							<span className={`w-10 ${labelCls}`}>r min</span>
-							<input
-								type="number"
-								step="0.1"
-								className={inputCls}
-								value={gridConfig.dotRadius[0]}
-								onChange={(e) => setGridTuple('dotRadius', 0, Number(e.target.value))}
-							/>
-						</label>
-						<label className="flex items-center gap-1">
-							<span className={`w-10 ${labelCls}`}>r max</span>
-							<input
-								type="number"
-								step="0.1"
-								className={inputCls}
-								value={gridConfig.dotRadius[1]}
-								onChange={(e) => setGridTuple('dotRadius', 1, Number(e.target.value))}
-							/>
-						</label>
+					</div>
+				</div>
+
+				{/* Theme colors — dot + bg, split per theme */}
+				<div className={borderCls}>
+					<div className={sectionCls}>Theme Colors</div>
+					<div className="grid grid-cols-2 gap-1.5">
+						{(
+							[
+								['dot · light', 'dotLight'],
+								['dot · dark', 'dotDark'],
+								['bg · light', 'bgLight'],
+								['bg · dark', 'bgDark'],
+							] as const
+						).map(([label, key]) => (
+							<label
+								key={key}
+								className="flex items-center gap-1.5 rounded border border-neutral-200 bg-neutral-50 px-1.5 py-1 dark:border-neutral-600 dark:bg-neutral-800"
+							>
+								<input
+									type="color"
+									className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
+									value={themeColors[key]}
+									onChange={(e) => onThemeColorsChange({ ...themeColors, [key]: e.target.value })}
+								/>
+								<span className={`flex-1 ${labelCls}`}>{label}</span>
+								<span className="tabular-nums text-neutral-500 dark:text-neutral-400">
+									{themeColors[key].toUpperCase()}
+								</span>
+							</label>
+						))}
 					</div>
 				</div>
 
@@ -260,6 +343,177 @@ export function SettingsPanel({ engine, gridConfig, onGridChange, onClose }: Set
 							/>
 						</label>
 					</div>
+				</div>
+
+				{/* Overlap Glow — togglable */}
+				<div className={borderCls}>
+					<button
+						type="button"
+						onClick={() => setGlowOpen((v) => !v)}
+						className="flex w-full items-center justify-between text-left text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+						aria-expanded={glowOpen}
+					>
+						<span>Overlap Glow {glowOpen ? '▾' : '▸'}</span>
+						<span className="text-neutral-400 dark:text-neutral-600">
+							{glowOpen ? 'collapse' : 'expand'}
+						</span>
+					</button>
+					{glowOpen && (
+						<div className="mt-2 space-y-3">
+							{/* Theme-aware colors — 4 pickers */}
+							<div className="grid grid-cols-2 gap-1.5">
+								{(
+									[
+										['glow · light', 'glowLight'],
+										['glow · dark', 'glowDark'],
+										['rim · light', 'rimLight'],
+										['rim · dark', 'rimDark'],
+									] as const
+								).map(([label, key]) => (
+									<label
+										key={key}
+										className="flex items-center gap-1.5 rounded border border-neutral-200 bg-neutral-50 px-1.5 py-1 dark:border-neutral-600 dark:bg-neutral-800"
+									>
+										<input
+											type="color"
+											className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
+											value={overlapGlowThemeColors[key]}
+											onChange={(e) =>
+												onOverlapGlowThemeColorsChange({
+													...overlapGlowThemeColors,
+													[key]: e.target.value,
+												})
+											}
+										/>
+										<span className={`flex-1 ${labelCls}`}>{label}</span>
+										<span className="tabular-nums text-neutral-500 dark:text-neutral-400">
+											{overlapGlowThemeColors[key].toUpperCase()}
+										</span>
+									</label>
+								))}
+							</div>
+
+							{/* Glow + rim params (candidate vs target). Glow alpha /
+							    falloff control the inner radial; rim alpha controls
+							    the edge highlight; rim width is shared. */}
+							<div className="grid grid-cols-[auto_1fr_1fr] items-center gap-x-2 gap-y-1.5">
+								<span className={`w-16 ${labelCls}`} />
+								<span className={`text-center ${labelCls}`}>candidate</span>
+								<span className={`text-center ${labelCls}`}>target</span>
+
+								<span className={`w-16 ${labelCls}`}>glow α</span>
+								<input
+									type="number"
+									min={0}
+									max={1}
+									step={0.02}
+									className={inputCls}
+									value={overlapGlow.glowAlpha[0]}
+									onChange={(e) => setGlowTuple('glowAlpha', 0, Number(e.target.value))}
+								/>
+								<input
+									type="number"
+									min={0}
+									max={1}
+									step={0.02}
+									className={inputCls}
+									value={overlapGlow.glowAlpha[1]}
+									onChange={(e) => setGlowTuple('glowAlpha', 1, Number(e.target.value))}
+								/>
+
+								<span className={`w-16 ${labelCls}`}>size px</span>
+								<input
+									type="number"
+									min={0}
+									max={200}
+									step={2}
+									className={inputCls}
+									value={overlapGlow.glowSize[0]}
+									onChange={(e) => setGlowTuple('glowSize', 0, Number(e.target.value))}
+								/>
+								<input
+									type="number"
+									min={0}
+									max={200}
+									step={2}
+									className={inputCls}
+									value={overlapGlow.glowSize[1]}
+									onChange={(e) => setGlowTuple('glowSize', 1, Number(e.target.value))}
+								/>
+
+								<span className={`w-16 ${labelCls}`}>rim α</span>
+								<input
+									type="number"
+									min={0}
+									max={1}
+									step={0.02}
+									className={inputCls}
+									value={overlapGlow.rimAlpha[0]}
+									onChange={(e) => setGlowTuple('rimAlpha', 0, Number(e.target.value))}
+								/>
+								<input
+									type="number"
+									min={0}
+									max={1}
+									step={0.02}
+									className={inputCls}
+									value={overlapGlow.rimAlpha[1]}
+									onChange={(e) => setGlowTuple('rimAlpha', 1, Number(e.target.value))}
+								/>
+							</div>
+
+							<div className="flex gap-2">
+								<label className="flex flex-1 items-center gap-1">
+									<span className={`w-16 ${labelCls}`}>rim width</span>
+									<input
+										type="number"
+										min={0}
+										max={6}
+										step={0.1}
+										className={inputCls}
+										value={overlapGlow.rimWidth}
+										onChange={(e) => setGlow('rimWidth', Number(e.target.value))}
+									/>
+								</label>
+								<label className="flex flex-1 items-center gap-1">
+									<span className={`w-16 ${labelCls}`}>rim radius</span>
+									<input
+										type="number"
+										min={50}
+										max={2000}
+										step={20}
+										className={inputCls}
+										value={overlapGlow.rimRadius}
+										onChange={(e) => setGlow('rimRadius', Number(e.target.value))}
+									/>
+								</label>
+							</div>
+
+							<button
+								type="button"
+								className={btnCls}
+								onClick={() => {
+									onOverlapGlowChange({
+										glowColor: [0.5, 0.5, 0.5],
+										glowAlpha: [0.25, 0.45],
+										glowSize: [60, 80],
+										rimColor: [0.5, 0.5, 0.5],
+										rimWidth: 1.5,
+										rimAlpha: [0.55, 0.85],
+										rimRadius: 600,
+									});
+									onOverlapGlowThemeColorsChange({
+										glowLight: '#808080',
+										glowDark: '#FFFFFF',
+										rimLight: '#808080',
+										rimDark: '#FFFFFF',
+									});
+								}}
+							>
+								Reset to defaults
+							</button>
+						</div>
+					)}
 				</div>
 
 				{/* Actions */}
