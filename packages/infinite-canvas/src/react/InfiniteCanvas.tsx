@@ -10,7 +10,6 @@ import React, {
 } from 'react';
 import { Layer, SelectionFrame, Transform2D, Widget, ZIndex } from '../ecs/components.js';
 import type { LayoutEngine } from '../ecs/engine/index.js';
-import { DEAD_ZONE_TOUCH_PX } from '../ecs/interaction-constants.js';
 import { CursorResource, NavigationStackResource } from '../ecs/resources.js';
 import { R3FManager } from '../r3f/R3FManager.js';
 import type { GridConfig } from '../webgl/renderers/GridRenderer.js';
@@ -22,6 +21,7 @@ import { EngineProvider } from './context/engine-context.js';
 import { useWidgetResolver } from './context/widget-resolver-context.js';
 import { SelectionOverlaySlot } from './overlays/SelectionOverlaySlot.js';
 import { PointerEventBus } from './PointerEventBus.js';
+import { TouchEventBus } from './TouchEventBus.js';
 import {
 	applyOverlapGlowShaderUniforms,
 	applyOverlapGlowVars,
@@ -286,299 +286,26 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			};
 		}, [engine]);
 
-		// Touch gesture handler — iOS Freeform-style interactions
+		// Touch gesture handler — iOS Freeform-style interactions, owned
+		// by `TouchEventBus` (RFC-007). The bus is the sole `engine.handlePointer*`
+		// invoker on the touch path; routing decisions use `engine.pickAt`
+		// so both DOM widgets and R3F widgets are classified correctly.
 		useEffect(() => {
 			const container = containerRef.current;
 			if (!container) return;
 
-			type TouchGesture =
-				| { type: 'idle' }
-				| { type: 'pending-pan'; x: number; y: number; time: number }
-				| { type: 'panning'; lastX: number; lastY: number }
-				| { type: 'pending-entity'; x: number; y: number; time: number }
-				| { type: 'entity-dragging' }
-				| { type: 'pinching'; lastDist: number; lastCx: number; lastCy: number };
-
-			let gesture: TouchGesture = { type: 'idle' };
-			let lastTapTime = 0;
-			let lastTapX = 0;
-			let lastTapY = 0;
-			const DOUBLE_TAP_MS = 300;
-			const DOUBLE_TAP_DIST = 30;
-
-			function isOnWidget(target: EventTarget | null): boolean {
-				let el = target as HTMLElement | null;
-				while (el && el !== container) {
-					if (el.hasAttribute('data-widget-slot')) return true;
-					el = el.parentElement;
-				}
-				return false;
-			}
-
-			function isInteractive(target: EventTarget | null): boolean {
-				const el = target as HTMLElement | null;
-				if (!el) return false;
-				const tag = el.tagName;
-				return (
-					tag === 'INPUT' ||
-					tag === 'TEXTAREA' ||
-					tag === 'BUTTON' ||
-					tag === 'SELECT' ||
-					el.isContentEditable ||
-					el.closest('button') !== null
-				);
-			}
-
-			function getRect() {
-				return container?.getBoundingClientRect() ?? new DOMRect();
-			}
-
-			function touchDist(t1: Touch, t2: Touch) {
-				const dx = t1.clientX - t2.clientX;
-				const dy = t1.clientY - t2.clientY;
-				return Math.sqrt(dx * dx + dy * dy);
-			}
-
-			function touchCenter(t1: Touch, t2: Touch, rect: DOMRect) {
-				return {
-					x: (t1.clientX + t2.clientX) / 2 - rect.left,
-					y: (t1.clientY + t2.clientY) / 2 - rect.top,
-				};
-			}
-
-			function cancelEngineGesture() {
-				if (gesture.type === 'pending-entity' || gesture.type === 'entity-dragging') {
-					engine.handlePointerUp();
-				}
-			}
-
-			const noMods = { shift: false, ctrl: false, alt: false, meta: false };
-
-			function onTouchStart(e: TouchEvent) {
-				const rect = getRect();
-				const touches = e.touches;
-
-				if (touches.length >= 2) {
-					e.preventDefault();
-					cancelEngineGesture();
-					const dist = touchDist(touches[0], touches[1]);
-					const center = touchCenter(touches[0], touches[1], rect);
-					gesture = { type: 'pinching', lastDist: dist, lastCx: center.x, lastCy: center.y };
-					return;
-				}
-
-				const touch = touches[0];
-				const x = touch.clientX - rect.left;
-				const y = touch.clientY - rect.top;
-
-				if (isInteractive(e.target)) return;
-
-				e.preventDefault();
-
-				const now = Date.now();
-				if (
-					now - lastTapTime < DOUBLE_TAP_MS &&
-					Math.abs(x - lastTapX) < DOUBLE_TAP_DIST &&
-					Math.abs(y - lastTapY) < DOUBLE_TAP_DIST
-				) {
-					lastTapTime = 0;
-					const directive = engine.handlePointerDown(x, y, 0, noMods);
-					try {
-						if (directive.action === 'passthrough-track-drag') {
-							const selected = engine.getSelectedEntities();
-							if (selected.length === 1) {
-								engine.enterContainer(selected[0]);
-							}
-						} else {
-							const camera = engine.getCamera();
-							const target = camera.zoom < 0.9 ? 1 : camera.zoom < 1.8 ? 2 : 1;
-							engine.zoomAtPoint(x, y, (target - camera.zoom) / camera.zoom);
-						}
-					} finally {
-						engine.handlePointerUp();
-						engine.markDirty();
-					}
-					gesture = { type: 'idle' };
-					return;
-				}
-
-				if (isOnWidget(e.target)) {
-					engine.handlePointerDown(x, y, 0, noMods);
-					gesture = { type: 'pending-entity', x, y, time: now };
-				} else {
-					gesture = { type: 'pending-pan', x, y, time: now };
-				}
-			}
-
-			function onTouchMove(e: TouchEvent) {
-				e.preventDefault();
-				const rect = getRect();
-				const touches = e.touches;
-
-				if (gesture.type === 'pinching' && touches.length >= 2) {
-					const dist = touchDist(touches[0], touches[1]);
-					const center = touchCenter(touches[0], touches[1], rect);
-					const scale = dist / gesture.lastDist;
-					engine.zoomAtPoint(center.x, center.y, scale - 1);
-					engine.panBy(center.x - gesture.lastCx, center.y - gesture.lastCy);
-					gesture.lastDist = dist;
-					gesture.lastCx = center.x;
-					gesture.lastCy = center.y;
-					return;
-				}
-
-				if (touches.length >= 2) {
-					cancelEngineGesture();
-					const dist = touchDist(touches[0], touches[1]);
-					const center = touchCenter(touches[0], touches[1], rect);
-					gesture = { type: 'pinching', lastDist: dist, lastCx: center.x, lastCy: center.y };
-					return;
-				}
-
-				if (touches.length < 1) return;
-				const touch = touches[0];
-				const x = touch.clientX - rect.left;
-				const y = touch.clientY - rect.top;
-
-				if (gesture.type === 'pending-pan') {
-					if (
-						Math.abs(x - gesture.x) > DEAD_ZONE_TOUCH_PX ||
-						Math.abs(y - gesture.y) > DEAD_ZONE_TOUCH_PX
-					) {
-						gesture = { type: 'panning', lastX: x, lastY: y };
-					}
-					return;
-				}
-
-				if (gesture.type === 'panning') {
-					engine.panBy(x - gesture.lastX, y - gesture.lastY);
-					gesture.lastX = x;
-					gesture.lastY = y;
-					return;
-				}
-
-				if (gesture.type === 'pending-entity' || gesture.type === 'entity-dragging') {
-					engine.handlePointerMove(x, y, noMods);
-					if (gesture.type === 'pending-entity') {
-						if (
-							Math.abs(x - gesture.x) > DEAD_ZONE_TOUCH_PX ||
-							Math.abs(y - gesture.y) > DEAD_ZONE_TOUCH_PX
-						) {
-							gesture = { type: 'entity-dragging' };
-						}
-					}
-				}
-			}
-
-			function onTouchEnd(e: TouchEvent) {
-				e.preventDefault();
-				const remaining = e.touches.length;
-				const rect = getRect();
-
-				if (gesture.type === 'pinching') {
-					if (remaining === 1) {
-						const t = e.touches[0];
-						gesture = {
-							type: 'panning',
-							lastX: t.clientX - rect.left,
-							lastY: t.clientY - rect.top,
-						};
-					} else if (remaining === 0) {
-						gesture = { type: 'idle' };
-					}
-					return;
-				}
-
-				if (remaining > 0) return;
-
-				if (gesture.type === 'pending-pan') {
-					engine.handlePointerDown(gesture.x, gesture.y, 0, noMods);
-					engine.handlePointerUp();
-					engine.markDirty();
-					lastTapTime = Date.now();
-					lastTapX = gesture.x;
-					lastTapY = gesture.y;
-				}
-
-				if (gesture.type === 'pending-entity') {
-					engine.handlePointerUp();
-					engine.markDirty();
-					lastTapTime = Date.now();
-					lastTapX = gesture.x;
-					lastTapY = gesture.y;
-				}
-
-				if (gesture.type === 'entity-dragging') {
-					engine.handlePointerUp();
-					engine.markDirty();
-				}
-
-				gesture = { type: 'idle' };
-			}
-
-			function onTouchCancel(_e: TouchEvent) {
-				gesture = { type: 'idle' };
-				engine.handlePointerCancel();
-			}
-
-			// View-manipulation gestures (pinch / two-finger pan) toggle the
-			// engine's gesturing flag so render layers can defer expensive
-			// work. Sync after each touch event — setGesturing is idempotent.
-			//
-			// `false` is debounced with the same idle window as the wheel
-			// handler so rapid pinch cycles don't trigger a band-repaint
-			// storm between gestures. `true` is set immediately so the
-			// deferral takes effect on the very first frame of a new gesture.
-			let touchGestureClearTimer: ReturnType<typeof setTimeout> | null = null;
-			const TOUCH_GESTURE_IDLE_MS = 200;
-			function syncGesturing() {
-				const isView = gesture.type === 'pinching' || gesture.type === 'panning';
-				if (isView) {
-					if (touchGestureClearTimer !== null) {
-						clearTimeout(touchGestureClearTimer);
-						touchGestureClearTimer = null;
-					}
-					engine.setGesturing(true);
-				} else if (touchGestureClearTimer === null) {
-					touchGestureClearTimer = setTimeout(() => {
-						engine.setGesturing(false);
-						touchGestureClearTimer = null;
-					}, TOUCH_GESTURE_IDLE_MS);
-				}
-			}
-			function wrap<T extends (e: TouchEvent) => void>(fn: T): T {
-				// try/finally guarantees syncGesturing fires even if the
-				// inner handler throws — without it, a thrown handler would
-				// leave the gesturing flag stuck on its previous value.
-				return ((e: TouchEvent) => {
-					try {
-						fn(e);
-					} finally {
-						syncGesturing();
-					}
-				}) as T;
-			}
-
-			const touchStart = wrap(onTouchStart);
-			const touchMove = wrap(onTouchMove);
-			const touchEnd = wrap(onTouchEnd);
-			const touchCancel = wrap(onTouchCancel);
-
-			container.addEventListener('touchstart', touchStart, { passive: false });
-			container.addEventListener('touchmove', touchMove, { passive: false });
-			container.addEventListener('touchend', touchEnd, { passive: false });
-			container.addEventListener('touchcancel', touchCancel, { passive: true });
+			const bus = new TouchEventBus(engine, () => containerRef.current);
+			container.addEventListener('touchstart', bus.onTouchStart, { passive: false });
+			container.addEventListener('touchmove', bus.onTouchMove, { passive: false });
+			container.addEventListener('touchend', bus.onTouchEnd, { passive: false });
+			container.addEventListener('touchcancel', bus.onTouchCancel, { passive: true });
 
 			return () => {
-				container.removeEventListener('touchstart', touchStart);
-				container.removeEventListener('touchmove', touchMove);
-				container.removeEventListener('touchend', touchEnd);
-				container.removeEventListener('touchcancel', touchCancel);
-				if (touchGestureClearTimer !== null) {
-					clearTimeout(touchGestureClearTimer);
-					touchGestureClearTimer = null;
-				}
-				engine.setGesturing(false);
+				container.removeEventListener('touchstart', bus.onTouchStart);
+				container.removeEventListener('touchmove', bus.onTouchMove);
+				container.removeEventListener('touchend', bus.onTouchEnd);
+				container.removeEventListener('touchcancel', bus.onTouchCancel);
+				bus.dispose();
 			};
 		}, [engine]);
 
