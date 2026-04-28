@@ -686,6 +686,44 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			return interaction.pickAt(screenX, screenY);
 		},
 
+		// === RFC-008 Phase 3b — engine input API ===
+
+		beginDrag(entity, worldX, worldY) {
+			interaction.beginDrag(entity, worldX, worldY);
+		},
+		updateDrag(entity, worldX, worldY) {
+			interaction.updateDrag(entity, worldX, worldY);
+		},
+		endDrag(entity, opts) {
+			interaction.endDrag(entity, opts);
+		},
+		getDraggingEntity() {
+			return interaction.getDraggingEntity();
+		},
+
+		beginResize(entity, handle, worldX, worldY) {
+			return interaction.beginResize(entity, handle, worldX, worldY);
+		},
+		updateResize(entity, worldX, worldY) {
+			interaction.updateResize(entity, worldX, worldY);
+		},
+		endResize(entity, opts) {
+			interaction.endResize(entity, opts);
+		},
+
+		beginMarquee(worldX, worldY) {
+			interaction.beginMarquee(worldX, worldY);
+		},
+		updateMarquee(worldX, worldY) {
+			interaction.updateMarquee(worldX, worldY);
+		},
+		endMarquee() {
+			interaction.endMarquee();
+		},
+		isMarqueeActive() {
+			return interaction.isMarqueeActive();
+		},
+
 		// === Selection ===
 
 		getSelectedEntities(): EntityId[] {
@@ -694,6 +732,10 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 
 		getHoveredEntity(): EntityId | null {
 			return interaction.getHoveredEntity();
+		},
+
+		setHoveredEntity(entity: EntityId | null): void {
+			interaction.setHoveredEntity(entity);
 		},
 
 		// === Snap Guides ===

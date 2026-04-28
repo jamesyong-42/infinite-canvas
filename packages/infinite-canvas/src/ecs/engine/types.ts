@@ -198,10 +198,30 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 	 */
 	pickAt(screenX: number, screenY: number): EntityId | null;
 
+	// RFC-008 Phase 3b — Engine entry points for the InputManager pipeline.
+	// World-coord variants of the legacy handlePointer* state transitions.
+	// `entity` arguments document intent; the engine drags/resizes whatever
+	// is currently `Selected` (drag) or the named entity (resize).
+
+	beginDrag(entity: EntityId, worldX: number, worldY: number): void;
+	updateDrag(entity: EntityId, worldX: number, worldY: number): void;
+	endDrag(entity: EntityId, opts: { cancelled: boolean }): void;
+	getDraggingEntity(): EntityId | null;
+
+	beginResize(entity: EntityId, handle: ResizeHandlePos, worldX: number, worldY: number): boolean;
+	updateResize(entity: EntityId, worldX: number, worldY: number): void;
+	endResize(entity: EntityId, opts: { cancelled: boolean }): void;
+
+	beginMarquee(worldX: number, worldY: number): void;
+	updateMarquee(worldX: number, worldY: number): void;
+	endMarquee(): void;
+	isMarqueeActive(): boolean;
+
 	// Selection & Hover
 
 	getSelectedEntities(): EntityId[];
 	getHoveredEntity(): EntityId | null;
+	setHoveredEntity(entity: EntityId | null): void;
 
 	// Navigation
 

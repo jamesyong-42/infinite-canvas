@@ -155,12 +155,12 @@ function cursorForHandle(handle: ResizeHandlePos): CSSCursor {
 
 type InputState =
 	| { mode: 'idle' }
-	| { mode: 'tracking'; entityId: EntityId; startX: number; startY: number }
+	| { mode: 'tracking'; entityId: EntityId; startScreenX: number; startScreenY: number }
 	| {
 			mode: 'dragging';
 			entityId: EntityId;
-			startScreenX: number;
-			startScreenY: number;
+			startWorldX: number;
+			startWorldY: number;
 			startPositions: Map<EntityId, { x: number; y: number }>;
 			originalZIndices: Map<EntityId, number>;
 	  }
@@ -168,8 +168,8 @@ type InputState =
 			mode: 'resizing';
 			entityId: EntityId;
 			handle: ResizeHandlePos;
-			startX: number;
-			startY: number;
+			startWorldX: number;
+			startWorldY: number;
 			startBounds: { x: number; y: number; width: number; height: number };
 	  }
 	| {
@@ -186,7 +186,7 @@ type InputState =
 			startPositions: Map<EntityId, { x: number; y: number }>;
 			originalZIndices: Map<EntityId, number>;
 	  }
-	| { mode: 'marquee'; startX: number; startY: number };
+	| { mode: 'marquee'; startWorldX: number; startWorldY: number };
 
 export interface InteractionContext {
 	world: World;
@@ -544,12 +544,415 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		world.setResource(CursorResource, { cursor });
 	}
 
+	// ------------------------------------------------------------------
+	// RFC-008 Phase 3b — internal helpers operating in world coordinates.
+	// Both legacy `handlePointer*` entry points and the new public
+	// `beginDrag` / `beginResize` / `beginMarquee` API funnel through these
+	// so the state machine has one implementation per branch.
+	// ------------------------------------------------------------------
+
+	/**
+	 * Transition to `dragging` mode. Snapshots ZIndex + Transform2D for every
+	 * `Selected` entity, elevates them to `maxZ + 1`, tags `Dragging`, opens a
+	 * command group. Caller is responsible for `Selected` set being correct.
+	 */
+	function _beginDrag(entity: EntityId, startWorldX: number, startWorldY: number): void {
+		const originalZIndices = new Map<EntityId, number>();
+		let maxZ = 0;
+		for (const e of world.queryTagged(Active)) {
+			const z = world.getComponent(e, ZIndex);
+			if (z && z.value > maxZ) maxZ = z.value;
+		}
+		for (const e of world.queryTagged(Selected)) {
+			const z = world.getComponent(e, ZIndex);
+			originalZIndices.set(e, z?.value ?? 0);
+			world.setComponent(e, ZIndex, { value: maxZ + 1 });
+		}
+
+		const startPositions = new Map<EntityId, { x: number; y: number }>();
+		for (const e of world.queryTagged(Selected)) {
+			const t = world.getComponent(e, Transform2D);
+			if (t) startPositions.set(e, { x: t.x, y: t.y });
+		}
+		for (const e of startPositions.keys()) {
+			world.addTag(e, Dragging);
+		}
+
+		commandBuffer.beginGroup();
+		inputState = {
+			mode: 'dragging',
+			entityId: entity,
+			startWorldX,
+			startWorldY,
+			startPositions,
+			originalZIndices,
+		};
+		markDirty();
+	}
+
+	/** Apply drag math + snap + overlap update for the current cursor world position. */
+	function _updateDrag(worldX: number, worldY: number): void {
+		if (inputState.mode !== 'dragging') return;
+		const camera = world.getResource(CameraResource);
+		const totalDx = worldX - inputState.startWorldX;
+		const totalDy = worldY - inputState.startWorldY;
+
+		// Snap math runs only when:
+		//   - the engine has snap globally enabled, AND
+		//   - the primary dragged entity carries `SnapSource` (the
+		//     leader's geometry drives the calculation; followers in a
+		//     multi-select drag inherit the same correction).
+		// References are restricted to `SnapTarget` entities, so a
+		// widget can serve as a snap reference without ever snapping
+		// itself (the asymmetry cards rely on).
+		const firstId = inputState.startPositions.keys().next().value as EntityId | undefined;
+		if (ctx.getSnapEnabled() && firstId !== undefined && world.hasTag(firstId, SnapSource)) {
+			const draggedIds = new Set(inputState.startPositions.keys());
+			const firstStart = inputState.startPositions.get(firstId);
+			const firstT = world.getComponent(firstId, Transform2D);
+			if (firstT && firstStart) {
+				const draggedBounds = {
+					x: firstStart.x + totalDx,
+					y: firstStart.y + totalDy,
+					width: firstT.width,
+					height: firstT.height,
+				};
+
+				const refs = [];
+				for (const entity of world.queryTagged(SnapTarget)) {
+					if (draggedIds.has(entity)) continue;
+					if (!world.hasTag(entity, Active)) continue;
+					const rt = world.getComponent(entity, Transform2D);
+					if (rt) {
+						refs.push({
+							x: rt.x,
+							y: rt.y,
+							width: rt.width,
+							height: rt.height,
+						});
+					}
+				}
+
+				currentSnap = computeSnapGuides(draggedBounds, refs, ctx.getSnapThreshold() / camera.zoom);
+			}
+		} else {
+			currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
+		}
+
+		const finalDx = totalDx + currentSnap.snapDx;
+		const finalDy = totalDy + currentSnap.snapDy;
+		for (const [e, start] of inputState.startPositions) {
+			world.setComponent(e, Transform2D, {
+				x: start.x + finalDx,
+				y: start.y + finalDy,
+			});
+		}
+
+		updateCardOverlap(inputState.entityId);
+		markDirty();
+	}
+
+	/**
+	 * End an active drag. `cancelled: false` runs the commit/fly-back/consume
+	 * decision tree (RFC-004 § Phase 4); `cancelled: true` rolls back state
+	 * and discards the open command group.
+	 */
+	function _endDrag(cancelled: boolean): void {
+		const prevState = inputState;
+		if (prevState.mode !== 'dragging') return;
+
+		if (cancelled) {
+			// Roll Transform2D back to the pre-drag positions so a cancelled
+			// drag leaves no visible trace. Mirrors `_endResize(true)`.
+			for (const [e, start] of prevState.startPositions) {
+				if (world.entityExists(e)) {
+					world.setComponent(e, Transform2D, { x: start.x, y: start.y });
+				}
+			}
+			commandBuffer.endGroup();
+			for (const e of prevState.startPositions.keys()) {
+				if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
+			}
+			for (const [entity, originalZ] of prevState.originalZIndices) {
+				if (world.entityExists(entity)) {
+					world.setComponent(entity, ZIndex, { value: originalZ });
+				}
+			}
+			clearOverlapState();
+			currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
+			inputState = { mode: 'idle' };
+			markDirty();
+			return;
+		}
+
+		// RFC-004 § Phase 4 decision tree:
+		//   has Card + OverlapTarget  → consume
+		//   has Card + overlap but no target  → fly-back
+		//   otherwise                → normal move
+		const draggedId = prevState.entityId;
+		const draggedHasCard = world.hasComponent(draggedId, Card);
+		const hadOverlap = overlapCandidates.size > 0;
+		const target = overlapTarget;
+		const shouldConsume = draggedHasCard && target !== null;
+		const shouldFlyBack = draggedHasCard && hadOverlap && target === null;
+
+		if (shouldFlyBack) {
+			const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+			for (const [e, start] of prevState.startPositions) {
+				const cur = world.getComponent(e, Transform2D);
+				if (!cur) continue;
+				world.addComponent(e, TransformTween, {
+					fromX: cur.x,
+					fromY: cur.y,
+					toX: start.x,
+					toY: start.y,
+					startMs: nowMs,
+					durationMs: 250,
+					easing: 'ease-out',
+					kind: 'flyback',
+				});
+			}
+			commandBuffer.endGroup();
+			currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
+			clearOverlapState();
+			inputState = {
+				mode: 'flyingBack',
+				entityId: draggedId,
+				startPositions: prevState.startPositions,
+				originalZIndices: prevState.originalZIndices,
+			};
+			markDirty();
+			return;
+		}
+
+		// Commit / consume path.
+		for (const e of prevState.startPositions.keys()) {
+			if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
+		}
+		for (const [entity, originalZ] of prevState.originalZIndices) {
+			world.setComponent(entity, ZIndex, { value: originalZ });
+		}
+
+		const entityIds = [...prevState.startPositions.keys()];
+		let totalDx = 0;
+		let totalDy = 0;
+		let movedSomething = false;
+		if (entityIds.length > 0) {
+			const firstId = entityIds[0];
+			const start = prevState.startPositions.get(firstId);
+			const current = world.getComponent(firstId, Transform2D);
+			if (current && start) {
+				totalDx = current.x - start.x;
+				totalDy = current.y - start.y;
+				if (totalDx !== 0 || totalDy !== 0) {
+					// Rewind Transform2Ds so MoveCommand's first-execute
+					// `beforePositions` snapshot captures the pre-drag state.
+					for (const [e, s] of prevState.startPositions) {
+						world.setComponent(e, Transform2D, { x: s.x, y: s.y });
+					}
+					movedSomething = true;
+				}
+			}
+		}
+
+		let consumeSnapshot: EntitySnapshot | undefined;
+		let consumeHandlers: ReturnType<NonNullable<typeof ctx.getWidgetInteraction>> | undefined;
+		let consumeMutation: unknown;
+		let shouldEmitConsume = false;
+		if (shouldConsume && target !== null) {
+			const parentType = world.getComponent(target, Widget)?.type ?? '';
+			consumeHandlers = ctx.getWidgetInteraction?.(parentType);
+			const result = consumeHandlers?.onReceiveChild?.({
+				parent: target,
+				child: draggedId,
+				world,
+			}) ?? { consume: true };
+			if (result.consume) {
+				consumeSnapshot = snapshotEntity(world, draggedId);
+				consumeMutation = result.mutation;
+				shouldEmitConsume = true;
+			}
+		}
+
+		if (movedSomething) {
+			commandBuffer.execute(new MoveCommand(entityIds, totalDx, totalDy, Transform2D), world);
+		}
+
+		if (shouldEmitConsume && target !== null && consumeSnapshot) {
+			commandBuffer.execute(
+				new ConsumeCommand(
+					target,
+					draggedId,
+					consumeSnapshot,
+					consumeMutation,
+					consumeHandlers?.applyMutation,
+					consumeHandlers?.revertMutation,
+				),
+				world,
+			);
+			if (world.hasTag(draggedId, Selected)) {
+				world.removeTag(draggedId, Selected);
+				notifySelectionChanged();
+			}
+		}
+
+		commandBuffer.endGroup();
+		currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
+		clearOverlapState();
+		inputState = { mode: 'idle' };
+		markDirty();
+	}
+
+	function _beginResize(
+		entity: EntityId,
+		handle: ResizeHandlePos,
+		startWorldX: number,
+		startWorldY: number,
+	): boolean {
+		const t = world.getComponent(entity, Transform2D);
+		if (!t) return false;
+		commandBuffer.beginGroup();
+		inputState = {
+			mode: 'resizing',
+			entityId: entity,
+			handle,
+			startWorldX,
+			startWorldY,
+			startBounds: { x: t.x, y: t.y, width: t.width, height: t.height },
+		};
+		markDirty();
+		return true;
+	}
+
+	function _updateResize(worldX: number, worldY: number): void {
+		if (inputState.mode !== 'resizing') return;
+		const dx = worldX - inputState.startWorldX;
+		const dy = worldY - inputState.startWorldY;
+		const { x, y, width: w, height: h } = inputState.startBounds;
+		const handle = inputState.handle;
+
+		let newX = x;
+		let newY = y;
+		let newW = w;
+		let newH = h;
+
+		if (handle.includes('e')) {
+			newW = Math.max(MIN_WIDGET_SIZE, w + dx);
+		}
+		if (handle.includes('w')) {
+			const clampedW = Math.max(MIN_WIDGET_SIZE, w - dx);
+			newX = x + w - clampedW;
+			newW = clampedW;
+		}
+		if (handle.includes('s')) {
+			newH = Math.max(MIN_WIDGET_SIZE, h + dy);
+		}
+		if (handle.includes('n')) {
+			const clampedH = Math.max(MIN_WIDGET_SIZE, h - dy);
+			newY = y + h - clampedH;
+			newH = clampedH;
+		}
+
+		world.setComponent(inputState.entityId, Transform2D, {
+			x: newX,
+			y: newY,
+			width: newW,
+			height: newH,
+		});
+		markDirty();
+	}
+
+	function _endResize(cancelled: boolean): void {
+		const prevState = inputState;
+		if (prevState.mode !== 'resizing') return;
+
+		if (cancelled) {
+			// Roll the widget back to its starting bounds and discard the
+			// open command group. Mirrors `_endDrag` cancel symmetry.
+			world.setComponent(prevState.entityId, Transform2D, prevState.startBounds);
+			commandBuffer.endGroup();
+			inputState = { mode: 'idle' };
+			markDirty();
+			return;
+		}
+
+		const t = world.getComponent(prevState.entityId, Transform2D);
+		if (t) {
+			const finalBounds = { x: t.x, y: t.y, width: t.width, height: t.height };
+			const sb = prevState.startBounds;
+			world.setComponent(prevState.entityId, Transform2D, sb);
+			commandBuffer.execute(
+				new ResizeCommand(prevState.entityId, sb, finalBounds, Transform2D),
+				world,
+			);
+		}
+		commandBuffer.endGroup();
+		inputState = { mode: 'idle' };
+		markDirty();
+	}
+
+	function _beginMarquee(startWorldX: number, startWorldY: number): void {
+		inputState = { mode: 'marquee', startWorldX, startWorldY };
+		markDirty();
+	}
+
+	function _updateMarquee(_worldX: number, _worldY: number): void {
+		// Marquee box visuals are not yet implemented — placeholder for the
+		// new public API to drive when the marquee rect lands.
+	}
+
+	function _endMarquee(): void {
+		if (inputState.mode !== 'marquee') return;
+		inputState = { mode: 'idle' };
+		markDirty();
+	}
+
+	/**
+	 * Cancel any active drag/resize/flyingBack state. Used by both the
+	 * legacy `handlePointerCancel` and as the implementation of the
+	 * new public `endDrag(_, { cancelled: true })` / `endResize(_, …)`.
+	 */
+	function _cancelAll(): void {
+		if (inputState.mode === 'dragging') {
+			_endDrag(true);
+		} else if (inputState.mode === 'resizing') {
+			_endResize(true);
+		} else if (inputState.mode === 'flyingBack') {
+			// RFC-004 § Phase 4 — cancel during fly-back animation: kill
+			// the tween, remove Dragging, restore original ZIndex.
+			for (const e of inputState.startPositions.keys()) {
+				if (!world.entityExists(e)) continue;
+				if (world.hasComponent(e, TransformTween)) world.removeComponent(e, TransformTween);
+				if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
+			}
+			for (const [entity, originalZ] of inputState.originalZIndices) {
+				if (!world.entityExists(entity)) continue;
+				world.setComponent(entity, ZIndex, { value: originalZ });
+			}
+			currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
+			inputState = { mode: 'idle' };
+			markDirty();
+		} else if (inputState.mode === 'marquee') {
+			_endMarquee();
+		} else if (inputState.mode === 'tracking') {
+			inputState = { mode: 'idle' };
+			markDirty();
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Legacy entry points (RFC-008 Phase 3d will retire these).
+	// ------------------------------------------------------------------
+
 	function handlePointerDown(
 		screenX: number,
 		screenY: number,
 		_button: number,
 		modifiers: Modifiers,
 	): PointerDirective {
+		const camera = world.getResource(CameraResource);
+		const startWorld = screenToWorld(screenX, screenY, camera);
+
 		// RFC-004 § Phase 4 — fly-back interruption. If a pointerdown
 		// lands on (or near) the flying entity, cancel the tween and
 		// resume dragging from the CURRENT animated position. Keep
@@ -559,57 +962,38 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 			const target = hit?.entityId === inputState.entityId ? hit.entityId : null;
 			if (target !== null) {
 				world.removeComponent(target, TransformTween);
-				// Re-snapshot start positions from the current (animated)
-				// position so a non-completing drag still flies back to
-				// where the user grabbed it, not the original pre-drag spot.
 				const newStartPositions = new Map<EntityId, { x: number; y: number }>();
 				for (const e of inputState.startPositions.keys()) {
 					const cur = world.getComponent(e, Transform2D);
 					if (cur) newStartPositions.set(e, { x: cur.x, y: cur.y });
-					// Ensure any sibling tweens are cancelled too.
 					if (world.hasComponent(e, TransformTween)) world.removeComponent(e, TransformTween);
 				}
 				commandBuffer.beginGroup();
 				inputState = {
 					mode: 'dragging',
 					entityId: target,
-					startScreenX: screenX,
-					startScreenY: screenY,
+					startWorldX: startWorld.x,
+					startWorldY: startWorld.y,
 					startPositions: newStartPositions,
 					originalZIndices: inputState.originalZIndices,
 				};
 				markDirty();
 				return { action: 'capture-drag' };
 			}
-			// Pointer-down missed the flying entity — let the fly-back
-			// continue and fall through to the normal hit-test path.
 		}
 
 		const hit = hitTest(screenX, screenY);
 
 		if (!hit) {
 			clearSelection();
-			inputState = { mode: 'marquee', startX: screenX, startY: screenY };
-			markDirty();
+			_beginMarquee(startWorld.x, startWorld.y);
 			return { action: 'capture-marquee' };
 		}
 
 		switch (hit.role.role.type) {
 			case 'resize': {
-				// RFC-005: the inline resize hit returns the widget directly;
-				// no handle sub-entity to dereference.
-				const t = world.getComponent(hit.entityId, Transform2D);
-				if (!t) return { action: 'passthrough' };
-				commandBuffer.beginGroup();
-				inputState = {
-					mode: 'resizing',
-					entityId: hit.entityId,
-					handle: hit.role.role.handle,
-					startX: screenX,
-					startY: screenY,
-					startBounds: { x: t.x, y: t.y, width: t.width, height: t.height },
-				};
-				markDirty();
+				const ok = _beginResize(hit.entityId, hit.role.role.handle, startWorld.x, startWorld.y);
+				if (!ok) return { action: 'passthrough' };
 				return { action: 'capture-resize', handle: hit.role.role.handle };
 			}
 
@@ -619,8 +1003,8 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 					inputState = {
 						mode: 'tracking',
 						entityId: hit.entityId,
-						startX: screenX,
-						startY: screenY,
+						startScreenX: screenX,
+						startScreenY: screenY,
 					};
 				}
 				markDirty();
@@ -643,172 +1027,41 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		screenY: number,
 		_modifiers: Modifiers,
 	): PointerDirective {
+		const camera = world.getResource(CameraResource);
+		const w = screenToWorld(screenX, screenY, camera);
+
 		if (inputState.mode === 'tracking') {
-			const dx = screenX - inputState.startX;
-			const dy = screenY - inputState.startY;
+			const dx = screenX - inputState.startScreenX;
+			const dy = screenY - inputState.startScreenY;
 			if (Math.abs(dx) > DEAD_ZONE_MOUSE_PX || Math.abs(dy) > DEAD_ZONE_MOUSE_PX) {
-				// Fix #5: Save original z-indices, temporarily bring to top
-				const originalZIndices = new Map<EntityId, number>();
-				let maxZ = 0;
-				for (const e of world.queryTagged(Active)) {
-					const z = world.getComponent(e, ZIndex);
-					if (z && z.value > maxZ) maxZ = z.value;
-				}
-				for (const e of world.queryTagged(Selected)) {
-					const z = world.getComponent(e, ZIndex);
-					originalZIndices.set(e, z?.value ?? 0);
-					world.setComponent(e, ZIndex, { value: maxZ + 1 });
-				}
-
-				const startPositions = new Map<EntityId, { x: number; y: number }>();
-				for (const e of world.queryTagged(Selected)) {
-					const t = world.getComponent(e, Transform2D);
-					if (t) startPositions.set(e, { x: t.x, y: t.y });
-				}
-
-				for (const e of startPositions.keys()) {
-					world.addTag(e, Dragging);
-				}
-
-				commandBuffer.beginGroup();
-
-				inputState = {
-					mode: 'dragging',
-					entityId: inputState.entityId,
-					startScreenX: screenX,
-					startScreenY: screenY,
-					startPositions,
-					originalZIndices,
-				};
-				markDirty();
+				// Drag origin is the dead-zone-crossing pointer position, not
+				// the original pointer-down position. Matches the v1 behaviour
+				// snap tests assert against (delta is measured from dead-zone
+				// exit, not from down). No Transform2D mutation on this frame.
+				_beginDrag(inputState.entityId, w.x, w.y);
 				return { action: 'capture-drag' };
 			}
 			return { action: 'passthrough' };
 		}
 
 		if (inputState.mode === 'dragging') {
-			const camera = world.getResource(CameraResource);
-			const totalDx = (screenX - inputState.startScreenX) / camera.zoom;
-			const totalDy = (screenY - inputState.startScreenY) / camera.zoom;
-
-			// Snap math runs only when:
-			//   - the engine has snap globally enabled, AND
-			//   - the primary dragged entity carries `SnapSource` (the
-			//     leader's geometry drives the calculation; followers in a
-			//     multi-select drag inherit the same correction).
-			// References are restricted to `SnapTarget` entities, so a
-			// widget can serve as a snap reference without ever snapping
-			// itself (the asymmetry cards rely on).
-			const firstId = inputState.startPositions.keys().next().value as EntityId | undefined;
-			if (ctx.getSnapEnabled() && firstId !== undefined && world.hasTag(firstId, SnapSource)) {
-				const draggedIds = new Set(inputState.startPositions.keys());
-				const firstStart = inputState.startPositions.get(firstId);
-				const firstT = world.getComponent(firstId, Transform2D);
-				if (firstT && firstStart) {
-					const draggedBounds = {
-						x: firstStart.x + totalDx,
-						y: firstStart.y + totalDy,
-						width: firstT.width,
-						height: firstT.height,
-					};
-
-					// Restrict references to entities that are both `SnapTarget`
-					// (opted in to participate as a reference) AND `Active`
-					// (in the current navigation frame). Without the `Active`
-					// filter, snap would pull in entities from other
-					// containers' sub-canvases that aren't visible.
-					const refs = [];
-					for (const entity of world.queryTagged(SnapTarget)) {
-						if (draggedIds.has(entity)) continue;
-						if (!world.hasTag(entity, Active)) continue;
-						const rt = world.getComponent(entity, Transform2D);
-						if (rt) {
-							refs.push({
-								x: rt.x,
-								y: rt.y,
-								width: rt.width,
-								height: rt.height,
-							});
-						}
-					}
-
-					currentSnap = computeSnapGuides(
-						draggedBounds,
-						refs,
-						ctx.getSnapThreshold() / camera.zoom,
-					);
-				}
-			} else {
-				currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
-			}
-
-			const finalDx = totalDx + currentSnap.snapDx;
-			const finalDy = totalDy + currentSnap.snapDy;
-			for (const [e, start] of inputState.startPositions) {
-				world.setComponent(e, Transform2D, {
-					x: start.x + finalDx,
-					y: start.y + finalDy,
-				});
-			}
-
-			// RFC-004 § Phase 3 — update overlap state for the primary
-			// dragged card. No-op for non-Card drags; cheap (O(k) with
-			// k = overlapping cards, typically ≤ 5).
-			updateCardOverlap(inputState.entityId);
-
-			markDirty();
+			_updateDrag(w.x, w.y);
 			return { action: 'capture-drag' };
 		}
 
 		if (inputState.mode === 'resizing') {
-			const camera = world.getResource(CameraResource);
-			const dx = (screenX - inputState.startX) / camera.zoom;
-			const dy = (screenY - inputState.startY) / camera.zoom;
-			const { x, y, width: w, height: h } = inputState.startBounds;
 			const handle = inputState.handle;
-
-			let newX = x;
-			let newY = y;
-			let newW = w;
-			let newH = h;
-
-			if (handle.includes('e')) {
-				newW = Math.max(MIN_WIDGET_SIZE, w + dx);
-			}
-			if (handle.includes('w')) {
-				const clampedW = Math.max(MIN_WIDGET_SIZE, w - dx);
-				newX = x + w - clampedW;
-				newW = clampedW;
-			}
-			if (handle.includes('s')) {
-				newH = Math.max(MIN_WIDGET_SIZE, h + dy);
-			}
-			if (handle.includes('n')) {
-				const clampedH = Math.max(MIN_WIDGET_SIZE, h - dy);
-				newY = y + h - clampedH;
-				newH = clampedH;
-			}
-
-			world.setComponent(inputState.entityId, Transform2D, {
-				x: newX,
-				y: newY,
-				width: newW,
-				height: newH,
-			});
-			markDirty();
-			return { action: 'capture-resize', handle: inputState.handle };
+			_updateResize(w.x, w.y);
+			return { action: 'capture-resize', handle };
 		}
 
 		if (inputState.mode === 'marquee') {
+			_updateMarquee(w.x, w.y);
 			return { action: 'capture-marquee' };
 		}
 
 		if (inputState.mode === 'idle') {
 			const hit = hitTest(screenX, screenY);
-			// RFC-005: resize hits return the widget directly, with the
-			// handle position carried on the role. Cache that handle so
-			// `runCursorSystem` can pick the directional cursor without
-			// looking up a sub-entity `CursorHint`.
 			const hoverTarget: EntityId | null = hit ? hit.entityId : null;
 			const hoverHandle: ResizeHandlePos | null =
 				hit?.role.role.type === 'resize' ? hit.role.role.handle : null;
@@ -823,212 +1076,86 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 	}
 
 	function handlePointerUp(): PointerDirective {
-		const prevState = inputState;
-
-		if (prevState.mode === 'dragging') {
-			// RFC-004 § Phase 4 decision tree:
-			//   has Card + OverlapTarget  → consume
-			//   has Card + overlap but no target  → fly-back
-			//   otherwise                → normal move
-			const draggedId = prevState.entityId;
-			const draggedHasCard = world.hasComponent(draggedId, Card);
-			const hadOverlap = overlapCandidates.size > 0;
-			const target = overlapTarget;
-			const shouldConsume = draggedHasCard && target !== null;
-			const shouldFlyBack = draggedHasCard && hadOverlap && target === null;
-
-			if (shouldFlyBack) {
-				// Transition to `flyingBack` — keep Dragging / ZIndex /
-				// overlay layer in place so the card remains visually on
-				// top for the full animation. Kick off a `TransformTween`
-				// per dragged entity from the current position back to
-				// the starting position.
-				const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
-				for (const [e, start] of prevState.startPositions) {
-					const cur = world.getComponent(e, Transform2D);
-					if (!cur) continue;
-					world.addComponent(e, TransformTween, {
-						fromX: cur.x,
-						fromY: cur.y,
-						toX: start.x,
-						toY: start.y,
-						startMs: nowMs,
-						durationMs: 250,
-						easing: 'ease-out',
-						kind: 'flyback',
-					});
-				}
-				// Abandon any open command group — we're not committing a move.
-				commandBuffer.endGroup();
-				currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
-				clearOverlapState();
-				inputState = {
-					mode: 'flyingBack',
-					entityId: draggedId,
-					startPositions: prevState.startPositions,
-					originalZIndices: prevState.originalZIndices,
-				};
-				markDirty();
-				return { action: 'passthrough' };
-			}
-
-			// Remove Dragging tag + restore ZIndex for both consume and
-			// normal-move paths.
-			for (const e of prevState.startPositions.keys()) {
-				if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
-			}
-			for (const [entity, originalZ] of prevState.originalZIndices) {
-				world.setComponent(entity, ZIndex, { value: originalZ });
-			}
-
-			const entityIds = [...prevState.startPositions.keys()];
-			let totalDx = 0;
-			let totalDy = 0;
-			let movedSomething = false;
-			if (entityIds.length > 0) {
-				const firstId = entityIds[0];
-				const start = prevState.startPositions.get(firstId);
-				const current = world.getComponent(firstId, Transform2D);
-				if (current && start) {
-					totalDx = current.x - start.x;
-					totalDy = current.y - start.y;
-					if (totalDx !== 0 || totalDy !== 0) {
-						// Rewind Transform2Ds so MoveCommand's first-execute
-						// `beforePositions` snapshot captures the pre-drag
-						// state. Leaves the dragged entity at the pre-drag
-						// position — we take the snapshot here too so
-						// ConsumeCommand.undo rehydrates into the correct
-						// spot even after MoveCommand is run.
-						for (const [e, s] of prevState.startPositions) {
-							world.setComponent(e, Transform2D, { x: s.x, y: s.y });
-						}
-						movedSomething = true;
-					}
-				}
-			}
-
-			// RFC-004 § Phase 4 — snapshot the consumed child at PRE-DRAG
-			// Transform2D so undo restores the original position. Must
-			// happen before MoveCommand.execute moves the entity away
-			// from its start position (and certainly before ConsumeCommand
-			// destroys it).
-			let consumeSnapshot: EntitySnapshot | undefined;
-			let consumeHandlers: ReturnType<NonNullable<typeof ctx.getWidgetInteraction>> | undefined;
-			let consumeMutation: unknown;
-			let shouldEmitConsume = false;
-			if (shouldConsume && target !== null) {
-				const parentType = world.getComponent(target, Widget)?.type ?? '';
-				consumeHandlers = ctx.getWidgetInteraction?.(parentType);
-				// If the parent widget type has no `onReceiveChild`, the
-				// default behaviour is still to consume — contract match
-				// alone is the opt-in. ConsumeCommand's destroy-on-
-				// missing-applyMutation default handles "trash bin"
-				// widgets without a registered handler.
-				const result = consumeHandlers?.onReceiveChild?.({
-					parent: target,
-					child: draggedId,
-					world,
-				}) ?? { consume: true };
-				if (result.consume) {
-					consumeSnapshot = snapshotEntity(world, draggedId);
-					consumeMutation = result.mutation;
-					shouldEmitConsume = true;
-				}
-			}
-
-			// Commit MoveCommand after the snapshot, so the snapshot
-			// carries the pre-drag Transform2D.
-			if (movedSomething) {
-				commandBuffer.execute(new MoveCommand(entityIds, totalDx, totalDy, Transform2D), world);
-			}
-
-			if (shouldEmitConsume && target !== null && consumeSnapshot) {
-				commandBuffer.execute(
-					new ConsumeCommand(
-						target,
-						draggedId,
-						consumeSnapshot,
-						consumeMutation,
-						consumeHandlers?.applyMutation,
-						consumeHandlers?.revertMutation,
-					),
-					world,
-				);
-				// Clear Selected on the consumed child so its selection
-				// overlay doesn't render over the now-invisible card that
-				// has left the current nav frame. Undo restores the child
-				// (and its `Active`) but leaves `Selected` cleared — a fresh
-				// click re-selects. Tag isn't command-bufferable so we
-				// side-effect it here rather than wrap it in a command.
-				if (world.hasTag(draggedId, Selected)) {
-					world.removeTag(draggedId, Selected);
-					notifySelectionChanged();
-				}
-			}
-
-			commandBuffer.endGroup();
-			currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
-			clearOverlapState();
+		const mode = inputState.mode;
+		if (mode === 'dragging') {
+			_endDrag(false);
+		} else if (mode === 'resizing') {
+			_endResize(false);
+		} else if (mode === 'marquee') {
+			_endMarquee();
+		} else if (mode === 'tracking') {
+			inputState = { mode: 'idle' };
 		}
-
-		if (prevState.mode === 'resizing') {
-			const t = world.getComponent(prevState.entityId, Transform2D);
-			if (t) {
-				const finalBounds = { x: t.x, y: t.y, width: t.width, height: t.height };
-				const sb = prevState.startBounds;
-				world.setComponent(prevState.entityId, Transform2D, sb);
-				commandBuffer.execute(
-					new ResizeCommand(prevState.entityId, sb, finalBounds, Transform2D),
-					world,
-				);
-			}
-			commandBuffer.endGroup();
-		}
-
-		inputState = { mode: 'idle' };
-
-		if (prevState.mode === 'dragging' || prevState.mode === 'resizing') {
-			markDirty();
-		}
-
 		return { action: 'passthrough' };
 	}
 
 	function handlePointerCancel(): void {
-		if (inputState.mode === 'dragging' || inputState.mode === 'resizing') {
-			commandBuffer.endGroup();
-		}
-		if (inputState.mode === 'dragging') {
-			// Clear transient Dragging state tag.
-			for (const e of inputState.startPositions.keys()) {
-				if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
-			}
-			// Restore the z-indices that handlePointerMove elevated on drag start.
-			// Without this, a mid-drag cancel (system dialog, touch interrupt) leaves
-			// every participating entity permanently at maxZ+1.
-			for (const [entity, originalZ] of inputState.originalZIndices) {
-				world.setComponent(entity, ZIndex, { value: originalZ });
-			}
-			// RFC-004 § Phase 3 — drag cancelled mid-flight; drop overlap
-			// state so no stale candidate glow survives.
-			clearOverlapState();
-		}
-		if (inputState.mode === 'flyingBack') {
-			// RFC-004 § Phase 4 — cancel during fly-back animation: kill
-			// the tween, remove Dragging, restore original ZIndex. Without
-			// this the card would stay visually elevated forever.
-			for (const e of inputState.startPositions.keys()) {
-				if (!world.entityExists(e)) continue;
-				if (world.hasComponent(e, TransformTween)) world.removeComponent(e, TransformTween);
-				if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
-			}
-			for (const [entity, originalZ] of inputState.originalZIndices) {
-				if (!world.entityExists(entity)) continue;
-				world.setComponent(entity, ZIndex, { value: originalZ });
-			}
-		}
-		currentSnap = { snapDx: 0, snapDy: 0, guides: [], spacings: [] };
-		inputState = { mode: 'idle' };
+		_cancelAll();
+	}
+
+	// ------------------------------------------------------------------
+	// RFC-008 Phase 3b — public input API. Wraps the world-coord helpers
+	// above so callers can drive the state machine without going through
+	// the legacy screen-coord `handlePointer*` entry points.
+	// ------------------------------------------------------------------
+
+	function beginDrag(_entity: EntityId, worldX: number, worldY: number): void {
+		// `_entity` documents intent; the state machine drags whatever's
+		// `Selected` (multi-select preserved). Caller manages selection.
+		_beginDrag(_entity, worldX, worldY);
+	}
+
+	function updateDrag(_entity: EntityId, worldX: number, worldY: number): void {
+		_updateDrag(worldX, worldY);
+	}
+
+	function endDrag(_entity: EntityId, opts: { cancelled: boolean }): void {
+		_endDrag(opts.cancelled);
+	}
+
+	function beginResize(
+		entity: EntityId,
+		handle: ResizeHandlePos,
+		worldX: number,
+		worldY: number,
+	): boolean {
+		return _beginResize(entity, handle, worldX, worldY);
+	}
+
+	function updateResize(_entity: EntityId, worldX: number, worldY: number): void {
+		_updateResize(worldX, worldY);
+	}
+
+	function endResize(_entity: EntityId, opts: { cancelled: boolean }): void {
+		_endResize(opts.cancelled);
+	}
+
+	function beginMarquee(worldX: number, worldY: number): void {
+		_beginMarquee(worldX, worldY);
+	}
+
+	function updateMarquee(worldX: number, worldY: number): void {
+		_updateMarquee(worldX, worldY);
+	}
+
+	function endMarquee(): void {
+		_endMarquee();
+	}
+
+	function isMarqueeActive(): boolean {
+		return inputState.mode === 'marquee';
+	}
+
+	function getDraggingEntity(): EntityId | null {
+		return inputState.mode === 'dragging' ? inputState.entityId : null;
+	}
+
+	function setHoveredEntity(entity: EntityId | null): void {
+		if (entity === hoveredEntity) return;
+		hoveredEntity = entity;
+		// Hover-handle cache is only valid when hover came via `hitTest`;
+		// an external setHoveredEntity path doesn't know about handles.
+		hoveredHandle = null;
 		markDirty();
 	}
 
@@ -1042,6 +1169,7 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		selectEntity,
 		clearSelection,
 		getHoveredEntity: () => hoveredEntity,
+		setHoveredEntity,
 		getSnapGuides: () => currentSnap.guides,
 		getEqualSpacing: () => currentSnap.spacings,
 		/**
@@ -1054,5 +1182,17 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		 */
 		pickAt: (screenX: number, screenY: number): EntityId | null =>
 			hitTest(screenX, screenY)?.entityId ?? null,
+		// RFC-008 Phase 3b — new public API.
+		beginDrag,
+		updateDrag,
+		endDrag,
+		beginResize,
+		updateResize,
+		endResize,
+		beginMarquee,
+		updateMarquee,
+		endMarquee,
+		isMarqueeActive,
+		getDraggingEntity,
 	};
 }
