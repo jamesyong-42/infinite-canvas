@@ -19,6 +19,9 @@ import { WebGLManager } from '../webgl/WebGLManager.js';
 import { ContainerRefProvider } from './context/container-ref-context.js';
 import { EngineProvider } from './context/engine-context.js';
 import { useWidgetResolver } from './context/widget-resolver-context.js';
+import { WheelAdapter } from './input/adapters/WheelAdapter.js';
+import { WHEEL_ZOOM_FACTOR } from './input/constants.js';
+import { InputManager } from './input/InputManager.js';
 import { SelectionOverlaySlot } from './overlays/SelectionOverlaySlot.js';
 import { PointerEventBus } from './PointerEventBus.js';
 import { TouchEventBus } from './TouchEventBus.js';
@@ -252,37 +255,31 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			engine.markDirty();
 		}, [engine, overlapGlow]);
 
-		// Wheel handler — pan/zoom (always active)
+		// InputManager (RFC-008 Phase 2). Currently owns wheel only; pointer
+		// and touch continue through PointerEventBus and TouchEventBus until
+		// Phase 3 collapses the rest. Single `manager.notifyGesturing()`
+		// debouncer replaces the wheel `useEffect`'s own timer.
 		useEffect(() => {
 			const container = containerRef.current;
 			if (!container) return;
 
-			let wheelGestureTimer: ReturnType<typeof setTimeout> | null = null;
-			const WHEEL_GESTURE_IDLE_MS = 200;
-			const onWheel = (e: WheelEvent) => {
-				e.preventDefault();
-				if (e.ctrlKey || e.metaKey) {
-					const rect = container.getBoundingClientRect();
-					engine.zoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, -e.deltaY * 0.01);
-				} else {
-					engine.panBy(-e.deltaX, -e.deltaY);
-				}
-				// Wheel events are discrete; debounce them into a continuous
-				// "gesturing" window so render layers can defer expensive work
-				// (zoom-band repaints, etc.) until the user stops scrolling.
-				engine.setGesturing(true);
-				if (wheelGestureTimer !== null) clearTimeout(wheelGestureTimer);
-				wheelGestureTimer = setTimeout(() => {
-					engine.setGesturing(false);
-					wheelGestureTimer = null;
-				}, WHEEL_GESTURE_IDLE_MS);
-			};
+			const manager = new InputManager(engine, container, [new WheelAdapter()]);
 
-			container.addEventListener('wheel', onWheel, { passive: false });
+			const offWheel = manager.on('wheel', (e) => {
+				const w = e.wheelDelta;
+				if (!w) return;
+				if (w.pinch) {
+					engine.zoomAtPoint(e.screen.x, e.screen.y, -w.dy * WHEEL_ZOOM_FACTOR);
+				} else {
+					engine.panBy(-w.dx, -w.dy);
+				}
+				manager.notifyGesturing();
+			});
+
+			const detach = manager.attach();
 			return () => {
-				container.removeEventListener('wheel', onWheel);
-				if (wheelGestureTimer !== null) clearTimeout(wheelGestureTimer);
-				engine.setGesturing(false);
+				offWheel();
+				detach();
 			};
 		}, [engine]);
 

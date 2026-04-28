@@ -649,38 +649,68 @@ Three phases, each independently mergeable.
 - InputManager mounts, dispatches, all existing tests pass.
 - R3F spike confirms invokability of R3F handlers from external code, OR documents the fallback.
 
-### Phase 2 — Recognizers + Replace TouchEventBus + wheel useEffect
+### Phase 2 — WheelAdapter (replaces inline wheel useEffect only)
+
+The RFC's original Phase 2 framing combined wheel + touch + recognizers
+into a single phase. Implementation revealed this conflicts with
+`PointerEventBus` during the migration window: synthesised pointer
+events from touch trigger marquee selection in `PointerEventBus` at the
+same time PanRecognizer would emit `pan-update`, producing concurrent
+marquee + camera-pan. Splitting the wheel work out into a small,
+conflict-free step is safer.
 
 - `WheelAdapter`.
-- All six recognizers: `Tap`, `DoubleTap`, `Drag`, `Pinch`, `Pan`, `Hover`.
-- Engine handlers for `wheel`, `pinch-update`, `pan-update`, `tap` (clear-selection branch only — entity-tap stays in PointerEventBus until Phase 3), `double-tap`, `hover-enter`, `hover-leave`.
-- Single `setGesturing` debouncer via `InputManager.notifyGesturing`.
-- Delete `TouchEventBus.ts` and the inline wheel `useEffect`.
-- New playground example: scrollable widget content via `e.stopPropagation()` on wheel.
+- Engine wheel handler at the manager root: ctrl/meta-wheel → zoom,
+  plain wheel → pan, both call `manager.notifyGesturing()`.
+- Wire `InputManager` into `InfiniteCanvas`: instantiate, attach,
+  register the wheel handler. PointerEventBus and TouchEventBus
+  continue handling everything else.
+- Delete the inline wheel `useEffect`.
+- Playground example: scrollable widget content via
+  `e.stopPropagation()` on wheel.
 
 **Acceptance**:
-- All RFC-007 mobile + desktop gesture criteria hold.
-- Scrollable widget example works on desktop and mobile.
-- Single `setGesturing` debouncer.
+- Inline wheel `useEffect` deleted.
+- Desktop wheel pan/zoom unchanged.
+- Trackpad pinch (ctrl+wheel) unchanged.
+- Scrollable widget example works.
 
-### Phase 3 — R3FRouter + Replace PointerEventBus + delete PointerDirective
+### Phase 3 — Everything else: replace TouchEventBus + PointerEventBus + EventRouter
 
-- `R3FRouter` and `createR3FEventManager` (replacing today's `EventRouter.ts`).
-- Engine handlers for `drag-start` / `drag-update` / `drag-end` / `cancel` / `tap` (entity-select branch).
+Touch and pointer have to migrate together because PanRecognizer's
+empty-space pan would conflict with PointerEventBus's marquee on
+synthesised pointer events. Combined with the R3FRouter migration
+(option 1 from the v5 brainstorm) and the engine API split, this is
+the single largest phase.
+
+- All five remaining recognizers: `Tap`, `DoubleTap`, `Drag`, `Pinch`,
+  `Pan`, `Hover`.
+- `R3FRouter` and `createR3FEventManager` (replacing today's
+  `EventRouter.ts` parallel-listener architecture).
+- Engine handlers for: `pinch-update`, `pan-update`, `tap`, `double-tap`,
+  `drag-start` / `drag-update` / `drag-end` / `cancel`,
+  `hover-enter` / `hover-leave`.
 - Engine API split as listed in Module Layout.
 - Delete `PointerDirective` enum.
-- Delete `PointerEventBus.ts`. Remove canvas container's `onPointer*` JSX props.
-- New playground example: in-widget drag (slider thumb) via `setPointerCapture`.
+- Delete `PointerEventBus.ts`. Remove canvas container's `onPointer*`
+  JSX props.
+- Delete `TouchEventBus.ts`.
+- Replace `EventRouter.ts` with `createR3FEventManager` + `R3FRouter`.
+- Playground examples: in-widget drag (slider thumb) via
+  `setPointerCapture`; in-widget orbit-control on R3F widget.
 - Update authoring guide.
-- Bump package to 2.0 (breaking engine API change).
+- Bump package to 2.0.
 
 **Acceptance**:
-- `PointerEventBus.ts`, `EventRouter.ts` (RFC-006 file) deleted.
+- `PointerEventBus.ts`, `TouchEventBus.ts`, `EventRouter.ts` (RFC-006
+  file) all deleted.
 - `PointerDirective` enum removed.
 - Engine API split shipped.
 - All existing interaction tests pass via the new flow.
-- Two new playground examples (slider thumb, scrollable widget).
-- DOM widget React handlers and R3F mesh handlers unchanged in any existing widget.
+- Three new playground examples (slider thumb, scrollable widget,
+  R3F orbit-control).
+- DOM widget React handlers and R3F mesh handlers unchanged in any
+  existing widget.
 - Manual QA on iOS Safari 16+ for drag and pinch.
 
 ---
