@@ -17,7 +17,7 @@ import type { Profiler } from '../../profiler/Profiler.js';
 import type { Widget } from '../../react/widgets/registry.js';
 import type { Archetype, SpawnOptions } from '../archetype.js';
 import type { Command } from '../commands.js';
-import type { CardPreset, ResizeHandlePos } from '../components.js';
+import type { CardPreset, InteractionRoleData, ResizeHandlePos } from '../components.js';
 import type { Breakpoint } from '../resources.js';
 import type { StandardSchemaV1 } from '../schema.js';
 import type { SpatialIndex } from '../spatial/SpatialIndex.js';
@@ -207,6 +207,18 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 	 * `PointerEventBus` (double-click) and the R3F `EventRouter`.
 	 */
 	pickAt(screenX: number, screenY: number): EntityId | null;
+	/**
+	 * Rich variant of `pickAt` — returns the topmost interactable entity
+	 * AND its `InteractionRoleData` (role + layer). The role discriminates
+	 * between `'drag'`, `'select'`, `'resize'` (with `handle`), `'rotate'`,
+	 * `'connect'`, `'canvas'` so the InputManager's `drag-start` handler
+	 * can branch into the right engine entry point (`beginResize` for
+	 * resize hotspots, `beginDrag` otherwise). Same hit-test as `pickAt`.
+	 */
+	hitTest(
+		screenX: number,
+		screenY: number,
+	): { entityId: EntityId; role: InteractionRoleData } | null;
 
 	// RFC-008 Phase 3b — Engine entry points for the InputManager pipeline.
 	// World-coord variants of the legacy handlePointer* state transitions.
@@ -228,6 +240,8 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 	beginResize(entity: EntityId, handle: ResizeHandlePos, worldX: number, worldY: number): boolean;
 	updateResize(entity: EntityId, worldX: number, worldY: number): void;
 	endResize(entity: EntityId, opts: { cancelled: boolean }): void;
+	isResizing(): boolean;
+	getResizingEntity(): EntityId | null;
 
 	beginMarquee(worldX: number, worldY: number): void;
 	updateMarquee(worldX: number, worldY: number): void;
@@ -247,6 +261,14 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 	clearSelection(): void;
 	getHoveredEntity(): EntityId | null;
 	setHoveredEntity(entity: EntityId | null): void;
+	/**
+	 * Run the engine's hit-test for a screen-space point and update both
+	 * `hoveredEntity` and the internal resize-handle cursor cache so the
+	 * cursor can switch between the 8 RFC-005 resize hotspots within a
+	 * single selected widget. No-op while a drag / resize / marquee /
+	 * fly-back is in progress.
+	 */
+	updateHover(screenX: number, screenY: number): void;
 
 	// Navigation
 

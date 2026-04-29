@@ -1156,12 +1156,46 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		return inputState.mode === 'dragging' ? inputState.entityId : null;
 	}
 
+	function isResizing(): boolean {
+		return inputState.mode === 'resizing';
+	}
+
+	function getResizingEntity(): EntityId | null {
+		return inputState.mode === 'resizing' ? inputState.entityId : null;
+	}
+
 	function setHoveredEntity(entity: EntityId | null): void {
 		if (entity === hoveredEntity) return;
 		hoveredEntity = entity;
 		// Hover-handle cache is only valid when hover came via `hitTest`;
 		// an external setHoveredEntity path doesn't know about handles.
 		hoveredHandle = null;
+		markDirty();
+	}
+
+	/**
+	 * Update hover state from a screen-space pointer position. Runs the
+	 * full hit-test so both `hoveredEntity` and `hoveredHandle` (RFC-005
+	 * resize hotspot under the cursor, if any) reflect the current pixel.
+	 *
+	 * Gated on `idle` mode — hover doesn't refresh during drag / resize /
+	 * marquee / fly-back (matches the v1 `handlePointerMove` idle branch).
+	 *
+	 * Called from the InputManager pipeline's `move` engine handler on
+	 * every pointermove: HoverRecognizer's `hover-enter` / `hover-leave`
+	 * events only fire on entity transitions, but the cursor needs to
+	 * change between resize handles within the same entity, so this path
+	 * runs the hit-test per move.
+	 */
+	function updateHover(screenX: number, screenY: number): void {
+		if (inputState.mode !== 'idle') return;
+		const hit = hitTest(screenX, screenY);
+		const target: EntityId | null = hit ? hit.entityId : null;
+		const handle: ResizeHandlePos | null =
+			hit?.role.role.type === 'resize' ? hit.role.role.handle : null;
+		if (target === hoveredEntity && handle === hoveredHandle) return;
+		hoveredEntity = target;
+		hoveredHandle = handle;
 		markDirty();
 	}
 
@@ -1187,6 +1221,7 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		clearSelection,
 		getHoveredEntity: () => hoveredEntity,
 		setHoveredEntity,
+		updateHover,
 		getSnapGuides: () => currentSnap.guides,
 		getEqualSpacing: () => currentSnap.spacings,
 		/**
@@ -1207,6 +1242,16 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		beginResize,
 		updateResize,
 		endResize,
+		isResizing,
+		getResizingEntity,
+		/**
+		 * Rich variant of `pickAt` — returns the entity AND its
+		 * `InteractionRoleData` (role + layer) at a screen-space point.
+		 * Used by `installEngineHandlers` to role-branch on `drag-start`
+		 * (resize → `beginResize`, drag → `beginDrag`, etc.). External
+		 * callers that only need the entity id should use `pickAt`.
+		 */
+		hitTest,
 		beginMarquee,
 		updateMarquee,
 		endMarquee,

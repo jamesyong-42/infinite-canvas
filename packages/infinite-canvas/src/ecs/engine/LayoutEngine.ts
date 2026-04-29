@@ -686,6 +686,10 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			return interaction.pickAt(screenX, screenY);
 		},
 
+		hitTest(screenX, screenY) {
+			return interaction.hitTest(screenX, screenY);
+		},
+
 		// === RFC-008 Phase 3b — engine input API ===
 
 		beginDrag(entity, worldX, worldY) {
@@ -713,6 +717,12 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		},
 		endResize(entity, opts) {
 			interaction.endResize(entity, opts);
+		},
+		isResizing() {
+			return interaction.isResizing();
+		},
+		getResizingEntity() {
+			return interaction.getResizingEntity();
 		},
 
 		beginMarquee(worldX, worldY) {
@@ -748,6 +758,10 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 
 		setHoveredEntity(entity: EntityId | null): void {
 			interaction.setHoveredEntity(entity);
+		},
+
+		updateHover(screenX: number, screenY: number): void {
+			interaction.updateHover(screenX, screenY);
 		},
 
 		// === Snap Guides ===

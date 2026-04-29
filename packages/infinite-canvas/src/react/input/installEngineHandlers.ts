@@ -113,12 +113,13 @@ export function installEngineHandlers(
 
 	offs.push(
 		manager.on('drag-start', (e) => {
-			const entity = engine.pickAt(e.screen.x, e.screen.y);
+			const hit = engine.hitTest(e.screen.x, e.screen.y);
 			// Pointer capture anchors the gesture to the container — drag,
-			// marquee, and touch-pan all need pointermove to keep arriving
-			// even if the cursor / finger leaves the container's bounds.
+			// resize, marquee, and touch-pan all need pointermove to keep
+			// arriving even if the cursor / finger leaves the container.
 			container.setPointerCapture(e.pointerId);
-			if (entity === null) {
+
+			if (!hit) {
 				// Empty-space drag-start splits by source: mouse / pen drag a
 				// marquee; touch defers to PanRecognizer's pan-update stream
 				// (iOS Maps semantics — single-finger empty pan, no marquee).
@@ -127,6 +128,16 @@ export function installEngineHandlers(
 				engine.beginMarquee(e.world.x, e.world.y);
 				return;
 			}
+
+			// RFC-005: resize hotspots win over body drags. The `hitTest`
+			// returns the widget directly with the handle position carried
+			// on the role.
+			if (hit.role.role.type === 'resize') {
+				engine.beginResize(hit.entityId, hit.role.role.handle, e.world.x, e.world.y);
+				return;
+			}
+
+			// Body drag (or any future role that uses drag mechanics).
 			// Auto-select the entity under the cursor if it isn't already
 			// in the selection set so the drag carries the picked entity.
 			// `additive` follows the shift modifier — shift-drag of a new
@@ -134,10 +145,10 @@ export function installEngineHandlers(
 			// replaces. Multi-select drags (entity already selected) keep
 			// the full selection set intact.
 			const selected = engine.getSelectedEntities();
-			if (!selected.includes(entity)) {
-				engine.selectEntity(entity, e.modifiers.shift);
+			if (!selected.includes(hit.entityId)) {
+				engine.selectEntity(hit.entityId, e.modifiers.shift);
 			}
-			engine.beginDrag(entity, e.world.x, e.world.y);
+			engine.beginDrag(hit.entityId, e.world.x, e.world.y);
 		}),
 	);
 
@@ -145,6 +156,11 @@ export function installEngineHandlers(
 		manager.on('drag-update', (e) => {
 			if (engine.isMarqueeActive()) {
 				engine.updateMarquee(e.world.x, e.world.y);
+				return;
+			}
+			const resizing = engine.getResizingEntity();
+			if (resizing !== null) {
+				engine.updateResize(resizing, e.world.x, e.world.y);
 				return;
 			}
 			const dragging = engine.getDraggingEntity();
@@ -159,8 +175,13 @@ export function installEngineHandlers(
 			if (engine.isMarqueeActive()) {
 				engine.endMarquee();
 			} else {
-				const dragging = engine.getDraggingEntity();
-				if (dragging !== null) engine.endDrag(dragging, { cancelled: false });
+				const resizing = engine.getResizingEntity();
+				if (resizing !== null) {
+					engine.endResize(resizing, { cancelled: false });
+				} else {
+					const dragging = engine.getDraggingEntity();
+					if (dragging !== null) engine.endDrag(dragging, { cancelled: false });
+				}
 			}
 			if (container.hasPointerCapture(e.pointerId)) {
 				container.releasePointerCapture(e.pointerId);
@@ -184,17 +205,17 @@ export function installEngineHandlers(
 	);
 
 	// --- Hover chrome --------------------------------------------------
+	//
+	// `updateHover` runs the engine's full hit-test so the cursor can
+	// switch between RFC-005 resize hotspots within a single widget —
+	// HoverRecognizer's `hover-enter` / `hover-leave` events only fire on
+	// entity transitions, which is too coarse for handle cursor changes.
+	// Internally gated on `idle` mode so drag / resize / marquee freeze
+	// hover (matches the v1 `handlePointerMove` idle-branch behaviour).
 
 	offs.push(
-		manager.on('hover-enter', (e) => {
-			const g = e.gesture as Extract<GestureDetail, { kind: 'hover' }>;
-			engine.setHoveredEntity(g.entityId);
-		}),
-	);
-
-	offs.push(
-		manager.on('hover-leave', () => {
-			engine.setHoveredEntity(null);
+		manager.on('move', (e) => {
+			engine.updateHover(e.screen.x, e.screen.y);
 		}),
 	);
 
