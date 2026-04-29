@@ -220,6 +220,14 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 	// Selection & Hover
 
 	getSelectedEntities(): EntityId[];
+	/**
+	 * Add `entity` to the selection. `additive=false` clears every other
+	 * `Selected` first; `additive=true` toggles `entity` and leaves the
+	 * rest untouched. Mirrors the legacy click-to-select semantics that
+	 * Phase 3d's `tap` and `drag-start` engine handlers will drive.
+	 */
+	selectEntity(entity: EntityId, additive: boolean): void;
+	clearSelection(): void;
 	getHoveredEntity(): EntityId | null;
 	setHoveredEntity(entity: EntityId | null): void;
 

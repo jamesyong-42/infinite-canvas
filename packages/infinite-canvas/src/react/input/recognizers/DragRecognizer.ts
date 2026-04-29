@@ -32,6 +32,13 @@ export class DragRecognizer implements Recognizer {
 		switch (event.type) {
 			case 'down': {
 				if (event.button !== 0 && event.button !== null) return;
+				// Single-finger only (RFC-008 § Recognizers table). A 2nd
+				// concurrent `down` while a prior pointer is still tracked
+				// would otherwise produce parallel drag states and the
+				// engine's `beginDrag` doesn't model concurrent drags.
+				// PinchRecognizer's synthetic `cancel` will retire the
+				// first pointer cleanly before its `pinch-start` fires.
+				if (this.tracking.size > 0) return;
 				this.tracking.set(event.pointerId, {
 					downAt: { screen: event.screen, world: event.world },
 					last: { screen: event.screen, world: event.world },

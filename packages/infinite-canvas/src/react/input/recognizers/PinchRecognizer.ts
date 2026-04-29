@@ -1,3 +1,4 @@
+import { screenToWorld } from '../../../ecs/math.js';
 import { makeSynthetic } from '../synthetic.js';
 import type { InputEvent, InputManager, Point, Recognizer } from '../types.js';
 
@@ -34,15 +35,20 @@ export class PinchRecognizer implements Recognizer {
 				this.active.set(event.pointerId, event.screen);
 				if (this.state === null && this.active.size === 2) {
 					const ids = [...this.active.keys()] as [number, number];
-					// Cancel any single-finger gesture in progress on either pointer
+					const camera = manager.engine.getCamera();
+					// Cancel any single-finger gesture in progress on either pointer.
+					// World coords are derived from the per-pointer screen position
+					// so HoverRecognizer's `cancel` → `hover-leave` re-dispatch
+					// carries a self-consistent (screen, world) pair.
 					for (const id of ids) {
+						const screen = this.active.get(id)!;
 						manager.dispatch({
 							type: 'cancel',
 							source: 'synthetic',
 							pointerId: id,
 							primary: false,
-							screen: this.active.get(id)!,
-							world: { x: 0, y: 0 }, // unused for cancel cleanup
+							screen,
+							world: screenToWorld(screen.x, screen.y, camera),
 							modifiers: event.modifiers,
 							timestamp: event.timestamp,
 						});

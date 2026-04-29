@@ -171,6 +171,33 @@ describe('engine input API — drag', () => {
 		expect(engine.world.hasTag(parent, OverlapCandidate)).toBe(false);
 	});
 
+	it('handlePointerCancel during fly-back snaps Transform2D to fly-back destination', () => {
+		// Regression for the v1 bug where a cancel during fly-back left the
+		// entity orphaned at its mid-flight position. Fly-back never produces
+		// a command-buffer entry, so without the snap there was no recovery
+		// path.
+		const engine = makeEngine();
+		const child = spawnCard(engine, 0, 0, 100, 100, { provides: ['fruit'] });
+		spawnCard(engine, 200, 0, 200, 200, { accepts: ['vegetable'] });
+		engine.world.addTag(child, Selected);
+		engine.tick();
+
+		engine.beginDrag(child, 50, 50);
+		engine.updateDrag(child, 270, 100);
+		engine.tick();
+		engine.endDrag(child, { cancelled: false });
+		// At this point: flyingBack mode, child is mid-flight at ~(220, 50).
+		expect(engine.get(child, Transform2D)?.x).not.toBe(0);
+
+		engine.handlePointerCancel();
+		// Cancel during fly-back: tween killed, Dragging removed, ZIndex
+		// restored, Transform2D snapped back to start (0, 0).
+		expect(engine.get(child, Transform2D)?.x).toBe(0);
+		expect(engine.get(child, Transform2D)?.y).toBe(0);
+		expect(engine.world.hasTag(child, Dragging)).toBe(false);
+		expect(engine.world.hasComponent(child, TransformTween)).toBe(false);
+	});
+
 	it('Card drop on overlap-without-match enters the fly-back branch', () => {
 		const engine = makeEngine();
 		const child = spawnCard(engine, 0, 0, 100, 100, {

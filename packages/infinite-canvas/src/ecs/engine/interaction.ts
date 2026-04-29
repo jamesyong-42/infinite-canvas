@@ -919,11 +919,17 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 			_endResize(true);
 		} else if (inputState.mode === 'flyingBack') {
 			// RFC-004 § Phase 4 — cancel during fly-back animation: kill
-			// the tween, remove Dragging, restore original ZIndex.
-			for (const e of inputState.startPositions.keys()) {
+			// the tween, remove Dragging, restore original ZIndex, and
+			// snap Transform2D to the fly-back destination (which is the
+			// pre-drag position the tween was already animating toward).
+			// Without the position snap the entity would freeze mid-flight,
+			// orphaned in space — fly-back leaves no command-buffer entry
+			// to undo, so there's no other recovery path.
+			for (const [e, start] of inputState.startPositions) {
 				if (!world.entityExists(e)) continue;
 				if (world.hasComponent(e, TransformTween)) world.removeComponent(e, TransformTween);
 				if (world.hasTag(e, Dragging)) world.removeTag(e, Dragging);
+				world.setComponent(e, Transform2D, { x: start.x, y: start.y });
 			}
 			for (const [entity, originalZ] of inputState.originalZIndices) {
 				if (!world.entityExists(entity)) continue;

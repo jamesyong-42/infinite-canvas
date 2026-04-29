@@ -18,8 +18,15 @@ function makeFakeManager(
 	opts: { pickAt?: (screen: { x: number; y: number }) => EntityId | null } = {},
 ) {
 	const dispatched: InputEvent[] = [];
+	// Stub engine — only `getCamera` is exercised here (PinchRecognizer's
+	// synthetic-cancel world coord). Identity camera (zoom=1, x=0, y=0)
+	// makes `screenToWorld(s) === s`, keeping test setup terse.
+	// biome-ignore lint/suspicious/noExplicitAny: test-only stub.
+	const stubEngine: any = {
+		getCamera: () => ({ x: 0, y: 0, zoom: 1, gesturing: false }),
+	};
 	const manager: InputManager = {
-		engine: undefined as never,
+		engine: stubEngine,
 		attach: () => () => {},
 		on: () => () => {},
 		addRecognizer: () => () => {},
@@ -324,15 +331,21 @@ describe('DragRecognizer', () => {
 		}
 	});
 
-	it('multiple pointers tracked independently', () => {
+	it('single-finger only: 2nd concurrent down is ignored while a pointer is tracked', () => {
+		// RFC-008 § Recognizers: DragRecognizer is single-finger. PinchRecognizer
+		// dispatches a synthetic `cancel` to retire the tracked pointer when a
+		// 2nd finger arrives, so the engine never sees concurrent drag states.
+		// Verify the 2nd `down` is rejected at the recognizer level.
 		const r = new DragRecognizer();
 		const { manager, dispatched } = makeFakeManager();
 		r.observe(makeEvent('down', { pointerId: 1, screen: { x: 0, y: 0 } }), manager);
 		r.observe(makeEvent('down', { pointerId: 2, screen: { x: 100, y: 100 } }), manager);
+		// 1st pointer drags past dead zone — emits drag-start.
 		r.observe(makeEvent('move', { pointerId: 1, screen: { x: 10, y: 0 } }), manager);
+		// 2nd pointer move is silently ignored (was never tracked).
 		r.observe(makeEvent('move', { pointerId: 2, screen: { x: 110, y: 100 } }), manager);
 		expect(dispatched.filter((e) => e.pointerId === 1)).toHaveLength(1);
-		expect(dispatched.filter((e) => e.pointerId === 2)).toHaveLength(1);
+		expect(dispatched.filter((e) => e.pointerId === 2)).toHaveLength(0);
 	});
 });
 

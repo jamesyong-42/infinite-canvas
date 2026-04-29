@@ -52,13 +52,23 @@ export class PointerAdapter implements Adapter {
 		};
 
 		const onDown = (e: PointerEvent) => {
-			lastByPointerId.set(e.pointerId, { x: e.clientX, y: e.clientY });
-			manager.dispatch(make('down', e));
+			// Dispatch BEFORE recording the pointer position so the down
+			// event itself has no `delta` (per RFC-008 § InputEvent: delta
+			// is defined for 'move' / 'drag-update' / 'pan-update' / 'wheel'
+			// only). The next move's delta is correctly computed against
+			// this position.
+			const event = make('down', e);
+			lastByPointerId.set(e.pointerId, { x: event.screen.x, y: event.screen.y });
+			manager.dispatch(event);
 		};
 
 		const onMove = (e: PointerEvent) => {
 			const event = make('move', e);
-			lastByPointerId.set(e.pointerId, { x: e.clientX, y: e.clientY });
+			// Store CONTAINER-relative coords (matching `screen` in `make`),
+			// not raw clientX/Y — otherwise delta on the next move is offset
+			// by the container's left/top whenever the canvas isn't at page
+			// origin.
+			lastByPointerId.set(e.pointerId, { x: event.screen.x, y: event.screen.y });
 			manager.dispatch(event);
 		};
 

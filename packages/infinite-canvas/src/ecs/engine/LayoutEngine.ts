@@ -730,6 +730,14 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			return world.queryTagged(Selected);
 		},
 
+		selectEntity(entity: EntityId, additive: boolean): void {
+			interaction.selectEntity(entity, additive);
+		},
+
+		clearSelection(): void {
+			interaction.clearSelection();
+		},
+
 		getHoveredEntity(): EntityId | null {
 			return interaction.getHoveredEntity();
 		},
