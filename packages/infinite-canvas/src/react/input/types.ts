@@ -171,6 +171,21 @@ export interface WidgetSurfaceRouter {
 	 * gesture before the engine reacts.
 	 */
 	route(event: InputEvent, entityId: EntityId): void;
+
+	/**
+	 * Optional — return `true` while a widget mesh inside this surface holds
+	 * exclusive ownership of `pointerId` (e.g. mesh `onPointerDown` called
+	 * `e.target.setPointerCapture(pointerId)`). The InputManager's dispatch
+	 * loop checks this AFTER `route` runs and skips recognizer observation
+	 * for claimed pointers, so the engine's drag/tap/pan recognizers don't
+	 * react to a gesture the widget is handling itself.
+	 *
+	 * Without this hook, DOM `setPointerCapture` alone is insufficient —
+	 * captured pointer events still bubble up to ancestor listeners
+	 * (PointerAdapter on the canvas container), so the engine drag would
+	 * fire alongside the widget's orbit / pinch / etc.
+	 */
+	isPointerClaimed?(pointerId: number): boolean;
 }
 
 export interface InputManager {

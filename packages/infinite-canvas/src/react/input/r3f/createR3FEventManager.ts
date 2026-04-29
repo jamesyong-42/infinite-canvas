@@ -126,10 +126,26 @@ export function createR3FEventManager(
 		// when the canvas's eventSource changes).
 		let attached: { target: HTMLElement; bindings: Array<[string, EventListener]> } | null = null;
 
+		// R3F populates `internal.capturedMap` synchronously when a mesh
+		// handler calls `e.target.setPointerCapture(pointerId)`. Exposing
+		// this lets `R3FRouter.isPointerClaimed` tell the InputManager to
+		// skip recognizers for claimed pointers — without it, DOM
+		// setPointerCapture alone doesn't shield ancestor listeners
+		// (PointerAdapter on the canvas container) from seeing the
+		// captured events.
+		const isPointerCaptured = (pointerId: number): boolean => {
+			// R3F's store types don't surface `internal` cleanly; the
+			// path is `store.getState().internal.capturedMap`.
+			// biome-ignore lint/suspicious/noExplicitAny: R3F internal field.
+			const state = store.getState() as any;
+			return state.internal?.capturedMap?.has?.(pointerId) ?? false;
+		};
+
 		const manager = {
 			...base,
 			compute,
 			filter,
+			isPointerCaptured,
 			connect: (target: HTMLElement) => {
 				if (attached) return; // idempotent — R3F may double-call.
 				const bindings: Array<[string, EventListener]> = [];

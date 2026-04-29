@@ -18,6 +18,14 @@ interface R3FHandlerMap {
 
 interface R3FEventManagerLike {
 	readonly handlers?: R3FHandlerMap;
+	/**
+	 * Custom probe added by `createR3FEventManager` — returns `true` while
+	 * a mesh inside an R3F widget holds DOM `setPointerCapture` for the
+	 * given pointer ID. Used by the InputManager to skip recognizer
+	 * observation for claimed pointers (so the engine drag doesn't fire
+	 * alongside a widget orbit / pinch / etc.).
+	 */
+	readonly isPointerCaptured?: (pointerId: number) => boolean;
 }
 
 /**
@@ -77,5 +85,15 @@ export class R3FRouter implements WidgetSurfaceRouter {
 		if (!handler) return;
 
 		handler(event.native as PointerEvent);
+	}
+
+	isPointerClaimed(pointerId: number): boolean {
+		// Probes R3F's `internal.capturedMap`. Populated synchronously when
+		// a mesh handler calls `e.target.setPointerCapture(pointerId)`,
+		// cleared on `releasePointerCapture` / `lostpointercapture` /
+		// object removal. The InputManager calls this AFTER `route` runs,
+		// so a setPointerCapture from inside the mesh handler is visible
+		// on the same dispatch tick.
+		return this.getEventManager()?.isPointerCaptured?.(pointerId) ?? false;
 	}
 }

@@ -123,7 +123,27 @@ export class InputManager implements IInputManager {
 			}
 		}
 
-		// 2. Engine and recognizer-subscribed handlers
+		// 1b. Claim check — after routers ran, ask each router whether
+		//     this pointer is now exclusively held by a widget mesh
+		//     (e.g. R3F's `setPointerCapture` populated capturedMap).
+		//     Claimed pointers skip recognizer observation so the engine's
+		//     drag / tap / pan recognizers don't react to a gesture the
+		//     widget is handling itself.
+		let claimed = false;
+		if (event.source !== 'synthetic') {
+			for (const router of this.routers.values()) {
+				if (router.isPointerClaimed?.(event.pointerId)) {
+					claimed = true;
+					break;
+				}
+			}
+		}
+
+		// 2. Engine and recognizer-subscribed handlers — always run. The
+		//    `move` engine handler updates hover; other handlers respond to
+		//    synthetic events (drag-start, tap, etc.) which are gated by
+		//    recognizers, so claimed pointers naturally never produce
+		//    synthetic events.
 		const handlers = this.handlers.get(event.type);
 		if (handlers) {
 			for (const h of handlers) {
@@ -137,12 +157,15 @@ export class InputManager implements IInputManager {
 
 		// 3. Recognizers observe (after handlers, so a handler that captured
 		//    can affect what recognizers see — e.g. `engine.beginDrag` ran
-		//    before DragRecognizer sees the next 'move').
-		for (const r of this.recognizers) {
-			try {
-				r.observe(event, this);
-			} catch (err) {
-				console.error('[InputManager] recognizer threw', err);
+		//    before DragRecognizer sees the next 'move'). Skipped entirely
+		//    when a router claims the pointer.
+		if (!claimed) {
+			for (const r of this.recognizers) {
+				try {
+					r.observe(event, this);
+				} catch (err) {
+					console.error('[InputManager] recognizer threw', err);
+				}
 			}
 		}
 	}
