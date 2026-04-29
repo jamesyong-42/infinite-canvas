@@ -59,6 +59,7 @@ import { FitnessCard } from './widgets/FitnessCard.js';
 import { FloatingCubeWidget } from './widgets/FloatingCubeWidget.js';
 import { GoldKnotCard } from './widgets/GoldKnotCard.js';
 import { MatteSphereCard } from './widgets/MatteSphereCard.js';
+import { OrbitCubeCard } from './widgets/OrbitCubeCard.js';
 import { PhotosCard } from './widgets/PhotosCard.js';
 import { ShapesCard } from './widgets/ShapesCard.js';
 import { StocksCard } from './widgets/StocksCard.js';
@@ -84,6 +85,7 @@ function createDemoScene() {
 		FloatingCubeWidget,
 		GoldKnotCard,
 		ShapesCard,
+		OrbitCubeCard,
 	];
 	const engine = createLayoutEngine({
 		zoom: { min: 0.25, max: 3 },
@@ -181,6 +183,16 @@ function createDemoScene() {
 	engine.spawn('shapes-card', {
 		at: { x: G6X, y: GY + 345 + 19 },
 		zIndex: 41,
+	});
+
+	// RFC-008 § Default coexistence — orbit-controlled cube. Drag the
+	// cube to rotate it (mesh claims drag via setPointerCapture, engine
+	// stays out); drag the card chrome around the cube to move the
+	// widget on canvas; click the cube and it logs while the engine
+	// also selects the widget.
+	engine.spawn('orbit-cube-card', {
+		at: { x: G6X, y: GY + (345 + 19) * 2 },
+		zIndex: 42,
 	});
 
 	return engine;
