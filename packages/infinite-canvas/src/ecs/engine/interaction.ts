@@ -1165,6 +1165,17 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		markDirty();
 	}
 
+	/**
+	 * Cancel any active interaction state (drag / resize / marquee /
+	 * fly-back / tracking). Public surface for the InputManager pipeline's
+	 * `cancel` engine handler — `endDrag(.., {cancelled:true})` only handles
+	 * `dragging`, but a native `pointercancel` can land in any of the other
+	 * mid-gesture modes. `_cancelAll` covers them all.
+	 */
+	function cancelInteraction(): void {
+		_cancelAll();
+	}
+
 	return {
 		handlePointerDown,
 		handlePointerMove,
@@ -1182,9 +1193,9 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		 * Topmost interactable entity under a screen-space point, or null
 		 * if nothing's there. Same hit-test the pointer state machine
 		 * uses, exposed for callers that need to resolve coords to an
-		 * entity without entering the state machine — e.g. RFC-006's
-		 * PointerEventBus (double-click → enterContainer) and the R3F
-		 * EventRouter (which widget owns this pixel).
+		 * entity without entering the state machine — used by
+		 * `installEngineHandlers` (tap, drag-start, double-tap routing) and
+		 * the InputManager dispatch loop (surface routing for R3F widgets).
 		 */
 		pickAt: (screenX: number, screenY: number): EntityId | null =>
 			hitTest(screenX, screenY)?.entityId ?? null,
@@ -1192,6 +1203,7 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		beginDrag,
 		updateDrag,
 		endDrag,
+		cancelInteraction,
 		beginResize,
 		updateResize,
 		endResize,

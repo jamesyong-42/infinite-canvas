@@ -701,6 +701,10 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			return interaction.getDraggingEntity();
 		},
 
+		cancelInteraction() {
+			interaction.cancelInteraction();
+		},
+
 		beginResize(entity, handle, worldX, worldY) {
 			return interaction.beginResize(entity, handle, worldX, worldY);
 		},

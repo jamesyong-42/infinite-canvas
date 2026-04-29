@@ -95,18 +95,17 @@ export class DragRecognizer implements Recognizer {
 				return;
 			}
 			case 'cancel': {
-				const t = this.tracking.get(event.pointerId);
-				if (!t) return;
+				// Only clear tracking state. The native `cancel` propagates
+				// to engine handlers BEFORE recognizers observe (per
+				// InputManager.dispatch ordering), so the engine `cancel`
+				// handler has already rolled back the drag with
+				// `cancelled: true`. Re-emitting a synthetic `drag-end`
+				// here would be carry the wrong intent (`drag-end` →
+				// `cancelled: false` → commit) and is only harmless today
+				// because state is already idle by the time it dispatches.
+				// Keep the recognizer contract clean: `cancel` is `cancel`,
+				// not `drag-end`.
 				this.tracking.delete(event.pointerId);
-				if (t.status !== 'dragging') return;
-				manager.dispatch(
-					makeSynthetic('drag-end', event, {
-						kind: 'drag',
-						phase: 'end',
-						total: { x: event.screen.x - t.downAt.screen.x, y: event.screen.y - t.downAt.screen.y },
-						delta: { x: 0, y: 0 },
-					}),
-				);
 				return;
 			}
 		}

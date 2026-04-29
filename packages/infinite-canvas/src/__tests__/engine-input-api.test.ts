@@ -288,6 +288,63 @@ describe('engine input API — marquee', () => {
 	});
 });
 
+describe('engine input API — cancelInteraction', () => {
+	it('clears flyingBack mode (covers the case getDraggingEntity misses)', () => {
+		// Regression for the v1 swap bug where the cancel engine handler
+		// gated cleanup on `getDraggingEntity()` — null in flyingBack mode
+		// — so a native pointercancel during fly-back left Dragging tags
+		// and elevated ZIndex stranded.
+		const engine = makeEngine();
+		const child = spawnCard(engine, 0, 0, 100, 100, { provides: ['fruit'] });
+		spawnCard(engine, 200, 0, 200, 200, { accepts: ['vegetable'] });
+		engine.world.addTag(child, Selected);
+		engine.tick();
+
+		engine.beginDrag(child, 50, 50);
+		engine.updateDrag(child, 270, 100);
+		engine.tick();
+		engine.endDrag(child, { cancelled: false });
+		// In flyingBack now.
+		expect(engine.world.hasTag(child, Dragging)).toBe(true);
+		expect(engine.getDraggingEntity()).toBeNull();
+
+		engine.cancelInteraction();
+
+		expect(engine.world.hasTag(child, Dragging)).toBe(false);
+		expect(engine.world.hasComponent(child, TransformTween)).toBe(false);
+		expect(engine.get(child, Transform2D)?.x).toBe(0);
+	});
+
+	it('clears active drag', () => {
+		const engine = makeEngine();
+		const e = spawnDraggable(engine, 100, 100);
+		engine.world.addTag(e, Selected);
+		engine.tick();
+
+		engine.beginDrag(e, 150, 150);
+		engine.updateDrag(e, 250, 250);
+		expect(engine.getDraggingEntity()).toBe(e);
+
+		engine.cancelInteraction();
+		expect(engine.getDraggingEntity()).toBeNull();
+		expect(engine.get(e, Transform2D)?.x).toBe(100);
+	});
+
+	it('clears active marquee', () => {
+		const engine = makeEngine();
+		engine.beginMarquee(0, 0);
+		expect(engine.isMarqueeActive()).toBe(true);
+
+		engine.cancelInteraction();
+		expect(engine.isMarqueeActive()).toBe(false);
+	});
+
+	it('is a no-op when idle', () => {
+		const engine = makeEngine();
+		expect(() => engine.cancelInteraction()).not.toThrow();
+	});
+});
+
 describe('engine input API — hover', () => {
 	it('setHoveredEntity / getHoveredEntity round-trip', () => {
 		const engine = makeEngine();

@@ -217,6 +217,13 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 	updateDrag(entity: EntityId, worldX: number, worldY: number): void;
 	endDrag(entity: EntityId, opts: { cancelled: boolean }): void;
 	getDraggingEntity(): EntityId | null;
+	/**
+	 * Cancel whatever interaction is in progress — drag, resize, marquee,
+	 * tracking, or fly-back. Used by the InputManager pipeline's `cancel`
+	 * engine handler so a native `pointercancel` (system dialog, palm
+	 * rejection, etc.) leaves no orphaned state behind.
+	 */
+	cancelInteraction(): void;
 
 	beginResize(entity: EntityId, handle: ResizeHandlePos, worldX: number, worldY: number): boolean;
 	updateResize(entity: EntityId, worldX: number, worldY: number): void;

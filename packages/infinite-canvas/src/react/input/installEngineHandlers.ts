@@ -114,26 +114,30 @@ export function installEngineHandlers(
 	offs.push(
 		manager.on('drag-start', (e) => {
 			const entity = engine.pickAt(e.screen.x, e.screen.y);
+			// Pointer capture anchors the gesture to the container — drag,
+			// marquee, and touch-pan all need pointermove to keep arriving
+			// even if the cursor / finger leaves the container's bounds.
+			container.setPointerCapture(e.pointerId);
 			if (entity === null) {
 				// Empty-space drag-start splits by source: mouse / pen drag a
-				// marquee; touch drag-start is consumed by PanRecognizer's
-				// pan-update path and intentionally does nothing here. iOS
-				// Maps semantics — single-finger empty pan, no marquee.
+				// marquee; touch defers to PanRecognizer's pan-update stream
+				// (iOS Maps semantics — single-finger empty pan, no marquee).
 				if (e.source === 'touch') return;
 				engine.clearSelection();
 				engine.beginMarquee(e.world.x, e.world.y);
-			} else {
-				// Auto-select the entity under the cursor if it isn't already
-				// in the selection set, so the drag carries the picked entity.
-				// Multi-select drags (entity already selected) keep the full
-				// selection set intact.
-				const selected = engine.getSelectedEntities();
-				if (!selected.includes(entity)) {
-					engine.selectEntity(entity, false);
-				}
-				engine.beginDrag(entity, e.world.x, e.world.y);
+				return;
 			}
-			container.setPointerCapture(e.pointerId);
+			// Auto-select the entity under the cursor if it isn't already
+			// in the selection set so the drag carries the picked entity.
+			// `additive` follows the shift modifier — shift-drag of a new
+			// entity adds it to the existing multi-select, no-shift-drag
+			// replaces. Multi-select drags (entity already selected) keep
+			// the full selection set intact.
+			const selected = engine.getSelectedEntities();
+			if (!selected.includes(entity)) {
+				engine.selectEntity(entity, e.modifiers.shift);
+			}
+			engine.beginDrag(entity, e.world.x, e.world.y);
 		}),
 	);
 
@@ -166,12 +170,13 @@ export function installEngineHandlers(
 
 	offs.push(
 		manager.on('cancel', (e) => {
-			if (engine.isMarqueeActive()) {
-				engine.endMarquee();
-			} else {
-				const dragging = engine.getDraggingEntity();
-				if (dragging !== null) engine.endDrag(dragging, { cancelled: true });
-			}
+			// `cancelInteraction` covers every mid-gesture mode (dragging,
+			// resizing, marquee, tracking, flyingBack). `endDrag(.., true)`
+			// only handles `dragging`, and `getDraggingEntity()` returns
+			// null in `flyingBack` — so a native `pointercancel` during the
+			// 250 ms fly-back animation would otherwise leave `Dragging`
+			// tags + elevated `ZIndex` permanently stuck on the entity.
+			engine.cancelInteraction();
 			if (container.hasPointerCapture(e.pointerId)) {
 				container.releasePointerCapture(e.pointerId);
 			}

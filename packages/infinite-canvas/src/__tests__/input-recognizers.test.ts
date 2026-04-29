@@ -290,13 +290,20 @@ describe('DragRecognizer', () => {
 		expect(dispatched).toHaveLength(0);
 	});
 
-	it('emits drag-end on cancel after dragging', () => {
+	it('cancel clears tracking without emitting drag-end (engine cancel handler owns rollback)', () => {
+		// RFC-008 v5: a `cancel` arriving during a drag should NOT produce
+		// a synthetic `drag-end` (which the engine handler would treat as
+		// `cancelled: false` and commit). The InputManager dispatches
+		// engine handlers BEFORE recognizers observe, so the engine
+		// `cancel` handler has already rolled back via `cancelInteraction`
+		// by the time DragRecognizer sees the same event. Recognizer just
+		// clears its own tracking state.
 		const r = new DragRecognizer();
 		const { manager, dispatched } = makeFakeManager();
 		r.observe(makeEvent('down', { screen: { x: 0, y: 0 } }), manager);
 		r.observe(makeEvent('move', { screen: { x: 10, y: 0 } }), manager);
 		r.observe(makeEvent('cancel', { screen: { x: 10, y: 0 } }), manager);
-		expect(dispatched.map((e) => e.type)).toEqual(['drag-start', 'drag-end']);
+		expect(dispatched.map((e) => e.type)).toEqual(['drag-start']);
 	});
 
 	it('uses touch dead zone for touch-source events', () => {

@@ -313,6 +313,12 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				container.removeEventListener('pointerleave', onLeave);
 				offHandlers();
 				detach();
+				// Clear the late-bound R3F manager ref. Without this, an
+				// `<R3FBridge>` unmount (last webgl entity removed) would
+				// leave a stale manager pointer in the ref; a subsequent
+				// pointer event picked up before remount would route into
+				// a dead manager.
+				r3fEventManagerRef.current = null;
 			};
 		}, [engine]);
 

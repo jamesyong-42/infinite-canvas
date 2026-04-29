@@ -68,22 +68,26 @@ export class PointerAdapter implements Adapter {
 		};
 
 		const onDown = (e: PointerEvent) => {
+			const rect = container.getBoundingClientRect();
+			const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+			// Always record the position so the next move's delta has a
+			// sane baseline — even if we skip dispatch for native
+			// interactives (button / input / etc.), a subsequent move on
+			// the canvas should compute delta against this down position.
+			lastByPointerId.set(e.pointerId, screen);
+
 			// Native interactive: let the browser handle activation /
-			// focus / click; canvas stays out. We still record the screen
-			// position so the next move's delta is computed from a sane
-			// baseline if the cursor exits the interactive without a real
-			// pointerdown on the canvas.
+			// focus / click; canvas stays out.
 			const target = e.target as HTMLElement | null;
 			if (target?.closest(NATIVE_INTERACTIVE_SELECTOR)) return;
 
-			// Dispatch BEFORE recording the pointer position so the down
-			// event itself has no `delta` (per RFC-008 § InputEvent: delta
-			// is defined for 'move' / 'drag-update' / 'pan-update' / 'wheel'
-			// only). The next move's delta is correctly computed against
-			// this position.
+			// `make()` reads `lastByPointerId.get(e.pointerId)` and computes
+			// delta as `current - last`. Because we just wrote `screen` to
+			// the map with the same coords as the current event, the down
+			// event's delta is `{0, 0}` (not `undefined` as the RFC's
+			// taxonomy implies). Override to `undefined` for spec-correctness.
 			const event = make('down', e);
-			lastByPointerId.set(e.pointerId, { x: event.screen.x, y: event.screen.y });
-			manager.dispatch(event);
+			manager.dispatch({ ...event, delta: undefined });
 		};
 
 		const onMove = (e: PointerEvent) => {
