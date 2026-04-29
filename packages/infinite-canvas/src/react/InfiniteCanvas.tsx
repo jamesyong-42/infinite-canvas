@@ -19,12 +19,18 @@ import { WebGLManager } from '../webgl/WebGLManager.js';
 import { ContainerRefProvider } from './context/container-ref-context.js';
 import { EngineProvider } from './context/engine-context.js';
 import { useWidgetResolver } from './context/widget-resolver-context.js';
+import { PointerAdapter } from './input/adapters/PointerAdapter.js';
 import { WheelAdapter } from './input/adapters/WheelAdapter.js';
-import { WHEEL_ZOOM_FACTOR } from './input/constants.js';
 import { InputManager } from './input/InputManager.js';
+import { installEngineHandlers } from './input/installEngineHandlers.js';
+import { DoubleTapRecognizer } from './input/recognizers/DoubleTapRecognizer.js';
+import { DragRecognizer } from './input/recognizers/DragRecognizer.js';
+import { HoverRecognizer } from './input/recognizers/HoverRecognizer.js';
+import { PanRecognizer } from './input/recognizers/PanRecognizer.js';
+import { PinchRecognizer } from './input/recognizers/PinchRecognizer.js';
+import { TapRecognizer } from './input/recognizers/TapRecognizer.js';
+import { R3FRouter } from './input/routers/R3FRouter.js';
 import { SelectionOverlaySlot } from './overlays/SelectionOverlaySlot.js';
-import { PointerEventBus } from './PointerEventBus.js';
-import { TouchEventBus } from './TouchEventBus.js';
 import {
 	applyOverlapGlowShaderUniforms,
 	applyOverlapGlowVars,
@@ -255,65 +261,60 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			engine.markDirty();
 		}, [engine, overlapGlow]);
 
-		// InputManager (RFC-008 Phase 2). Currently owns wheel only; pointer
-		// and touch continue through PointerEventBus and TouchEventBus until
-		// Phase 3 collapses the rest. Single `manager.notifyGesturing()`
-		// debouncer replaces the wheel `useEffect`'s own timer.
+		// RFC-008 — late-bound R3F event manager. R3F's `<Canvas events={...}>`
+		// invokes the factory once at canvas mount; the factory writes the
+		// produced manager into this ref so `R3FRouter` can dispatch into
+		// R3F's mesh handlers from the InputManager pipeline.
+		// biome-ignore lint/suspicious/noExplicitAny: R3F's EventManager
+		// type isn't surfaced cleanly through our types; the router only
+		// needs `.handlers.onPointerXxx` and reads it dynamically.
+		const r3fEventManagerRef = useRef<any>(null);
+
+		// RFC-008 Phase 3d — single InputManager owns all pointer + wheel
+		// listeners on the canvas container. Recognizers turn raw events
+		// into synthetic gestures; `installEngineHandlers` wires the engine
+		// to those gestures; `R3FRouter` delivers raw pointer events over
+		// R3F widgets to R3F's mesh-dispatch machinery (replacing
+		// PointerEventBus, TouchEventBus, the inline wheel useEffect, and
+		// the parallel R3F EventRouter listener architecture).
 		useEffect(() => {
 			const container = containerRef.current;
 			if (!container) return;
 
-			const manager = new InputManager(engine, container, [new WheelAdapter()]);
+			const manager = new InputManager(engine, container, [
+				new PointerAdapter(),
+				new WheelAdapter(),
+			]);
 
-			const offWheel = manager.on('wheel', (e) => {
-				const w = e.wheelDelta;
-				if (!w) return;
-				if (w.pinch) {
-					engine.zoomAtPoint(e.screen.x, e.screen.y, -w.dy * WHEEL_ZOOM_FACTOR);
-				} else {
-					engine.panBy(-w.dx, -w.dy);
-				}
-				manager.notifyGesturing();
-			});
+			// Recognizer registration order is observation-only — pairwise
+			// cancellations run via synthetic `cancel` dispatch, not by
+			// observation order. Listed source-of-input first, then derived.
+			manager.addRecognizer(new HoverRecognizer());
+			manager.addRecognizer(new TapRecognizer());
+			manager.addRecognizer(new DoubleTapRecognizer());
+			manager.addRecognizer(new DragRecognizer());
+			manager.addRecognizer(new PinchRecognizer());
+			manager.addRecognizer(new PanRecognizer());
+
+			manager.setRouter(new R3FRouter(() => r3fEventManagerRef.current));
+
+			const offHandlers = installEngineHandlers(manager, engine, container);
+
+			// Hover-leave when the cursor exits the canvas container — no
+			// recognizer covers this case (HoverRecognizer only sees move
+			// events bounded by the container's own pointermove stream).
+			const onLeave = () => {
+				engine.setHoveredEntity(null);
+			};
+			container.addEventListener('pointerleave', onLeave);
 
 			const detach = manager.attach();
 			return () => {
-				offWheel();
+				container.removeEventListener('pointerleave', onLeave);
+				offHandlers();
 				detach();
 			};
 		}, [engine]);
-
-		// Touch gesture handler — iOS Freeform-style interactions, owned
-		// by `TouchEventBus` (RFC-007). The bus is the sole `engine.handlePointer*`
-		// invoker on the touch path; routing decisions use `engine.pickAt`
-		// so both DOM widgets and R3F widgets are classified correctly.
-		useEffect(() => {
-			const container = containerRef.current;
-			if (!container) return;
-
-			const bus = new TouchEventBus(engine, () => containerRef.current);
-			container.addEventListener('touchstart', bus.onTouchStart, { passive: false });
-			container.addEventListener('touchmove', bus.onTouchMove, { passive: false });
-			container.addEventListener('touchend', bus.onTouchEnd, { passive: false });
-			container.addEventListener('touchcancel', bus.onTouchCancel, { passive: true });
-
-			return () => {
-				container.removeEventListener('touchstart', bus.onTouchStart);
-				container.removeEventListener('touchmove', bus.onTouchMove);
-				container.removeEventListener('touchend', bus.onTouchEnd);
-				container.removeEventListener('touchcancel', bus.onTouchCancel);
-				bus.dispose();
-			};
-		}, [engine]);
-
-		// All canvas-container engine pointer-routing flows through the bus
-		// (RFC-006). Slot-level pointer handlers still call the engine in
-		// Phase 1 — the bus only sees events that bubble up unstopped, so
-		// behaviour matches today's container handlers exactly.
-		const pointerBus = useMemo(
-			() => new PointerEventBus(engine, () => containerRef.current),
-			[engine],
-		);
 
 		// rAF tick loop — flushes the engine when dirty, then applies updates.
 		useEffect(() => {
@@ -535,11 +536,6 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 					touchAction: 'none',
 					backgroundColor: 'var(--canvas-bg, #fafafa)',
 				}}
-				onPointerDown={pointerBus.onPointerDown}
-				onPointerMove={pointerBus.onPointerMove}
-				onPointerUp={pointerBus.onPointerUp}
-				onPointerLeave={pointerBus.onPointerLeave}
-				onDoubleClick={pointerBus.onDoubleClick}
 			>
 				{/* Vanilla WebGL layer — dot grid + selection overlays (driven by WebGLManager) */}
 				<canvas ref={webglCanvasRef} className="absolute inset-0 pointer-events-none" />
@@ -564,7 +560,12 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 				    Gated on `containerMounted` so R3F's `eventSource` ref is
 				    populated by the time `<Canvas>` resolves it. */}
 				{containerMounted && webglEntities.length > 0 && (
-					<R3FBridge engine={engine} entities={webglEntities} r3fRoot={r3fRoot} />
+					<R3FBridge
+						engine={engine}
+						entities={webglEntities}
+						r3fRoot={r3fRoot}
+						eventManagerRef={r3fEventManagerRef}
+					/>
 				)}
 
 				<LayerContainer layerRef={overlayLayerRef} zIndex={2}>
@@ -591,10 +592,13 @@ function R3FBridge({
 	engine,
 	entities,
 	r3fRoot,
+	eventManagerRef,
 }: {
 	engine: LayoutEngine;
 	entities: EntityId[];
 	r3fRoot?: React.ReactNode;
+	// biome-ignore lint/suspicious/noExplicitAny: late-bound R3F manager ref.
+	eventManagerRef: React.MutableRefObject<any>;
 }) {
 	const resolver = useWidgetResolver();
 	const resolve = useCallback(
@@ -608,7 +612,15 @@ function R3FBridge({
 
 	if (!resolver) return null;
 
-	return <R3FManager engine={engine} entities={entities} resolve={resolve} r3fRoot={r3fRoot} />;
+	return (
+		<R3FManager
+			engine={engine}
+			entities={entities}
+			resolve={resolve}
+			r3fRoot={r3fRoot}
+			eventManagerRef={eventManagerRef}
+		/>
+	);
 }
 
 /**

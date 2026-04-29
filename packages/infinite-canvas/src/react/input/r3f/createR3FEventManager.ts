@@ -34,7 +34,19 @@ import type { WidgetRegistry } from '../../../r3f/compositor/WidgetRegistry.js';
  * event and read by `filter` for the same event. Single-threaded JS makes
  * this safe.
  */
-export function createR3FEventManager(engine: LayoutEngine, registry: WidgetRegistry) {
+/**
+ * Optional `onCreate` callback fires once R3F's `<Canvas>` invokes the
+ * factory and the manager object is constructed — this is the only way
+ * to surface the live `EventManager` to outside code (e.g. the
+ * `R3FRouter` which needs to call `manager.handlers.onPointerDown(...)`).
+ */
+type R3FManagerLike = ReturnType<typeof createPointerEvents>;
+
+export function createR3FEventManager(
+	engine: LayoutEngine,
+	registry: WidgetRegistry,
+	onCreate?: (manager: R3FManagerLike) => void,
+) {
 	let activeScene: Scene | null = null;
 
 	function skipEvent(state: {
@@ -99,7 +111,7 @@ export function createR3FEventManager(engine: LayoutEngine, registry: WidgetRegi
 			return items.filter((hit) => isDescendantOf(hit.object, scene));
 		};
 
-		return {
+		const manager = {
 			...base,
 			compute,
 			filter,
@@ -113,6 +125,8 @@ export function createR3FEventManager(engine: LayoutEngine, registry: WidgetRegi
 				/* no-op */
 			},
 		};
+		onCreate?.(manager);
+		return manager;
 	};
 }
 

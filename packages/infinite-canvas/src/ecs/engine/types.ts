@@ -181,14 +181,24 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 
 	// Pointer input
 
+	/**
+	 * @deprecated RFC-008 Phase 3d retired the canvas's runtime use of these
+	 * methods — `InputManager` now drives the engine via `beginDrag` /
+	 * `beginResize` / `beginMarquee` etc. Kept as a backwards-compat shim
+	 * for tests and external integrations that still drive the state
+	 * machine via screen coordinates. Will be removed in a future release.
+	 */
 	handlePointerDown(
 		screenX: number,
 		screenY: number,
 		button: number,
 		modifiers: Modifiers,
 	): PointerDirective;
+	/** @deprecated See {@link LayoutEngine.handlePointerDown}. */
 	handlePointerMove(screenX: number, screenY: number, modifiers: Modifiers): PointerDirective;
+	/** @deprecated See {@link LayoutEngine.handlePointerDown}. */
 	handlePointerUp(): PointerDirective;
+	/** @deprecated See {@link LayoutEngine.handlePointerDown}. */
 	handlePointerCancel(): void;
 	/**
 	 * Topmost interactable entity at a screen-space point. Same hit-test
