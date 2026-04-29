@@ -1,4 +1,5 @@
 import { DEAD_ZONE_TOUCH_PX } from '../constants.js';
+import { inputLog } from '../debug.js';
 import { exceedsThreshold, makeSynthetic } from '../synthetic.js';
 import type { InputEvent, InputManager, Point, Recognizer } from '../types.js';
 
@@ -48,6 +49,9 @@ export class PanRecognizer implements Recognizer {
 					if (!exceedsThreshold(event.screen, t.downAt, DEAD_ZONE_TOUCH_PX)) return;
 					t.status = 'panning';
 					t.last = event.screen;
+					inputLog('Recognizer', `PanRecognizer: dead-zone crossed → panning (touch empty-space)`, {
+						pointerId: event.pointerId,
+					});
 					return;
 				}
 				const delta = { x: event.screen.x - t.last.x, y: event.screen.y - t.last.y };

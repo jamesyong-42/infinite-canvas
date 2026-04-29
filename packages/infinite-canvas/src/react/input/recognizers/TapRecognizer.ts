@@ -1,4 +1,5 @@
 import { DEAD_ZONE_MOUSE_PX, DEAD_ZONE_TOUCH_PX, TAP_WINDOW_MS } from '../constants.js';
+import { inputLog } from '../debug.js';
 import { exceedsThreshold, makeSynthetic } from '../synthetic.js';
 import type { InputEvent, InputManager, Point, Recognizer } from '../types.js';
 
@@ -29,6 +30,10 @@ export class TapRecognizer implements Recognizer {
 				const elapsed = event.timestamp - p.time;
 				const dz = event.source === 'touch' ? DEAD_ZONE_TOUCH_PX : DEAD_ZONE_MOUSE_PX;
 				if (elapsed <= TAP_WINDOW_MS && !exceedsThreshold(event.screen, p.downAt, dz)) {
+					inputLog('Recognizer', `TapRecognizer: up within tap window → tap`, {
+						pointerId: event.pointerId,
+						elapsedMs: elapsed,
+					});
 					manager.dispatch(makeSynthetic('tap', event, { kind: 'tap', count: 1 }));
 				}
 				return;

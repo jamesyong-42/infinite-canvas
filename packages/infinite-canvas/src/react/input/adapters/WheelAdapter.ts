@@ -1,4 +1,5 @@
 import { screenToWorld } from '../../../ecs/math.js';
+import { inputLog } from '../debug.js';
 import type { Adapter, InputEvent, InputManager } from '../types.js';
 
 /**
@@ -45,6 +46,13 @@ export class WheelAdapter implements Adapter {
 				timestamp: e.timeStamp,
 				native: e,
 			};
+			inputLog('Adapter', `wheel → InputManager`, {
+				type: 'wheel',
+				screen,
+				dx: e.deltaX,
+				dy: e.deltaY,
+				pinch: e.ctrlKey || e.metaKey,
+			});
 			manager.dispatch(event);
 		};
 

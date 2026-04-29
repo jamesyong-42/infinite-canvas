@@ -1,4 +1,5 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
+import { inputLog } from '../debug.js';
 import { makeSynthetic } from '../synthetic.js';
 import type { InputEvent, InputManager, Recognizer } from '../types.js';
 
@@ -26,6 +27,11 @@ export class HoverRecognizer implements Recognizer {
 				const current = manager.pickAt(event.screen);
 				const prev = this.lastByPointer.get(event.pointerId) ?? null;
 				if (current === prev) return;
+				inputLog('Recognizer', `HoverRecognizer: entity changed ${prev} → ${current}`, {
+					pointerId: event.pointerId,
+					prev,
+					current,
+				});
 				if (prev !== null) {
 					manager.dispatch(makeSynthetic('hover-leave', event, { kind: 'hover', entityId: prev }));
 				}

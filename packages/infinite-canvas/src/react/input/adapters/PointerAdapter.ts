@@ -1,4 +1,5 @@
 import { screenToWorld } from '../../../ecs/math.js';
+import { inputLog } from '../debug.js';
 import type { Adapter, Button, InputEvent, InputManager, InputSource } from '../types.js';
 
 /**
@@ -70,42 +71,55 @@ export class PointerAdapter implements Adapter {
 		const onDown = (e: PointerEvent) => {
 			const rect = container.getBoundingClientRect();
 			const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-			// Always record the position so the next move's delta has a
-			// sane baseline — even if we skip dispatch for native
-			// interactives (button / input / etc.), a subsequent move on
-			// the canvas should compute delta against this down position.
 			lastByPointerId.set(e.pointerId, screen);
 
-			// Native interactive: let the browser handle activation /
-			// focus / click; canvas stays out.
 			const target = e.target as HTMLElement | null;
-			if (target?.closest(NATIVE_INTERACTIVE_SELECTOR)) return;
+			const targetTag = target ? `${target.tagName}${target.id ? `#${target.id}` : ''}` : 'null';
+			if (target?.closest(NATIVE_INTERACTIVE_SELECTOR)) {
+				inputLog('Adapter', `pointerdown → SKIPPED (native interactive)`, {
+					pointerId: e.pointerId,
+					target: targetTag,
+					source: e.pointerType,
+				});
+				return;
+			}
 
-			// `make()` reads `lastByPointerId.get(e.pointerId)` and computes
-			// delta as `current - last`. Because we just wrote `screen` to
-			// the map with the same coords as the current event, the down
-			// event's delta is `{0, 0}` (not `undefined` as the RFC's
-			// taxonomy implies). Override to `undefined` for spec-correctness.
+			inputLog('Adapter', `pointerdown id=${e.pointerId} → InputManager`, {
+				pointerId: e.pointerId,
+				screen,
+				button: e.button,
+				source: e.pointerType,
+				target: targetTag,
+			});
+
 			const event = make('down', e);
 			manager.dispatch({ ...event, delta: undefined });
 		};
 
 		const onMove = (e: PointerEvent) => {
 			const event = make('move', e);
-			// Store CONTAINER-relative coords (matching `screen` in `make`),
-			// not raw clientX/Y — otherwise delta on the next move is offset
-			// by the container's left/top whenever the canvas isn't at page
-			// origin.
 			lastByPointerId.set(e.pointerId, { x: event.screen.x, y: event.screen.y });
+			inputLog('Adapter', `pointermove id=${e.pointerId} → InputManager`, {
+				type: 'move',
+				pointerId: e.pointerId,
+				screen: event.screen,
+			});
 			manager.dispatch(event);
 		};
 
 		const onUp = (e: PointerEvent) => {
+			inputLog('Adapter', `pointerup id=${e.pointerId} → InputManager`, {
+				pointerId: e.pointerId,
+				source: e.pointerType,
+			});
 			manager.dispatch(make('up', e));
 			lastByPointerId.delete(e.pointerId);
 		};
 
 		const onCancel = (e: PointerEvent) => {
+			inputLog('Adapter', `pointercancel id=${e.pointerId} → InputManager`, {
+				pointerId: e.pointerId,
+			});
 			manager.dispatch(make('cancel', e));
 			lastByPointerId.delete(e.pointerId);
 		};

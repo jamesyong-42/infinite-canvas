@@ -2,6 +2,7 @@ import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { Widget } from '../../ecs/components.js';
 import type { LayoutEngine } from '../../ecs/engine/index.js';
 import { GESTURING_IDLE_MS } from './constants.js';
+import { inputGroupStart, inputLog } from './debug.js';
 import type {
 	Adapter,
 	Handler,
@@ -97,6 +98,15 @@ export class InputManager implements IInputManager {
 	}
 
 	dispatch(event: InputEvent): void {
+		const closeGroup = inputGroupStart(`dispatch ${event.type} id=${event.pointerId}`);
+		inputLog('InputManager', `dispatch ${event.type}`, {
+			type: event.type,
+			source: event.source,
+			pointerId: event.pointerId,
+			screen: event.screen,
+			world: event.world,
+		});
+
 		// 1. Surface routing for raw pointer events. Synthetic events
 		//    (recognizer-emitted) bypass routing — they're already at the
 		//    intent layer (drag, pinch, etc.) and don't need re-delivery
@@ -113,6 +123,12 @@ export class InputManager implements IInputManager {
 			if (entityId !== null) {
 				const surface = this.surfaceOf(entityId);
 				const router = surface !== null ? this.routers.get(surface) : undefined;
+				inputLog('InputManager', `routing → ${surface ?? 'none'} entity=${entityId}`, {
+					type: event.type,
+					entityId,
+					surface,
+					hasRouter: !!router,
+				});
 				if (router) {
 					try {
 						router.route(event, entityId);
@@ -120,6 +136,11 @@ export class InputManager implements IInputManager {
 						console.error('[InputManager] router threw', err);
 					}
 				}
+			} else {
+				inputLog('InputManager', `routing → empty space (pickAt null)`, {
+					type: event.type,
+					screen: event.screen,
+				});
 			}
 		}
 
@@ -134,6 +155,11 @@ export class InputManager implements IInputManager {
 			for (const router of this.routers.values()) {
 				if (router.isPointerClaimed?.(event.pointerId)) {
 					claimed = true;
+					inputLog(
+						'InputManager',
+						`claim check → CLAIMED by ${router.surface} router (recognizers will skip)`,
+						{ type: event.type, pointerId: event.pointerId },
+					);
 					break;
 				}
 			}
@@ -145,7 +171,11 @@ export class InputManager implements IInputManager {
 		//    recognizers, so claimed pointers naturally never produce
 		//    synthetic events.
 		const handlers = this.handlers.get(event.type);
-		if (handlers) {
+		if (handlers && handlers.size > 0) {
+			inputLog('InputManager', `handlers for ${event.type}: ${handlers.size} → firing`, {
+				type: event.type,
+				count: handlers.size,
+			});
 			for (const h of handlers) {
 				try {
 					h(event);
@@ -167,7 +197,14 @@ export class InputManager implements IInputManager {
 					console.error('[InputManager] recognizer threw', err);
 				}
 			}
+		} else {
+			inputLog('InputManager', `recognizers skipped (pointer claimed)`, {
+				type: event.type,
+				pointerId: event.pointerId,
+			});
 		}
+
+		closeGroup();
 	}
 
 	pickAt(screen: Point): EntityId | null {

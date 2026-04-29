@@ -3,6 +3,7 @@ import type { Intersection, Object3D, Scene } from 'three';
 import { Transform2D, Widget } from '../../../ecs/components.js';
 import type { LayoutEngine } from '../../../ecs/engine/index.js';
 import type { WidgetRegistry } from '../../../r3f/compositor/WidgetRegistry.js';
+import { inputLog } from '../debug.js';
 
 /**
  * RFC-008 v5 — R3F event-manager factory tailored for the InputManager
@@ -113,6 +114,12 @@ export function createR3FEventManager(
 			state.pointer.set(ndcX, ndcY);
 			state.raycaster.setFromCamera(state.pointer, widget.camera);
 			state.raycaster.camera = widget.camera;
+			inputLog('R3F', `compute: ready raycaster for entity ${entityId}`, {
+				type: event.type,
+				entityId,
+				ndc: { x: ndcX, y: ndcY },
+				sceneChildren: widget.scene.children.length,
+			});
 		};
 
 		const filter = (items: Intersection[]): Intersection[] => {
@@ -160,12 +167,21 @@ export function createR3FEventManager(
 					}
 				}
 				attached = { target, bindings };
+				inputLog(
+					'R3F',
+					`createR3FEventManager.connect: registered ${bindings.length} listeners on container (click/dblclick/contextmenu)`,
+					{
+						target: target.tagName,
+						bindings: bindings.map(([n]) => n),
+					},
+				);
 			},
 			disconnect: () => {
 				if (!attached) return;
 				for (const [eventName, handler] of attached.bindings) {
 					attached.target.removeEventListener(eventName, handler);
 				}
+				inputLog('R3F', `createR3FEventManager.disconnect: removed listeners`);
 				attached = null;
 			},
 		};

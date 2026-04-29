@@ -1,4 +1,5 @@
 import { DOUBLE_TAP_DIST_PX, DOUBLE_TAP_WINDOW_MS } from '../constants.js';
+import { inputLog } from '../debug.js';
 import { exceedsThreshold, makeSynthetic } from '../synthetic.js';
 import type { InputEvent, InputManager, Point, Recognizer } from '../types.js';
 
@@ -27,6 +28,10 @@ export class DoubleTapRecognizer implements Recognizer {
 			now - this.last.time <= DOUBLE_TAP_WINDOW_MS &&
 			!exceedsThreshold(here, this.last.at, DOUBLE_TAP_DIST_PX)
 		) {
+			inputLog('Recognizer', `DoubleTapRecognizer: 2nd tap within window → double-tap`, {
+				pointerId: event.pointerId,
+				dtMs: now - this.last.time,
+			});
 			manager.dispatch(makeSynthetic('double-tap', event, { kind: 'tap', count: 2 }));
 			this.last = null;
 			return;

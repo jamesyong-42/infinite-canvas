@@ -1,4 +1,5 @@
 import { screenToWorld } from '../../../ecs/math.js';
+import { inputLog } from '../debug.js';
 import { makeSynthetic } from '../synthetic.js';
 import type { InputEvent, InputManager, Point, Recognizer } from '../types.js';
 
@@ -60,6 +61,13 @@ export class PinchRecognizer implements Recognizer {
 						pointerIds: ids,
 						last: { dist, center },
 					};
+					inputLog(
+						'Recognizer',
+						`PinchRecognizer: 2nd touch → pinch-start (cancel sent for both)`,
+						{
+							pointerIds: ids,
+						},
+					);
 					manager.dispatch(
 						makeSynthetic('pinch-start', event, {
 							kind: 'pinch',
@@ -95,6 +103,9 @@ export class PinchRecognizer implements Recognizer {
 			case 'cancel': {
 				this.active.delete(event.pointerId);
 				if (this.state !== null && this.active.size < 2) {
+					inputLog('Recognizer', `PinchRecognizer: finger lifted → pinch-end`, {
+						remainingActive: this.active.size,
+					});
 					manager.dispatch(
 						makeSynthetic('pinch-end', event, {
 							kind: 'pinch',

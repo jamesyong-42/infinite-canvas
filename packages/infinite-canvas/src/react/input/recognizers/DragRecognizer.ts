@@ -1,4 +1,5 @@
 import { DEAD_ZONE_MOUSE_PX, DEAD_ZONE_TOUCH_PX } from '../constants.js';
+import { inputLog } from '../debug.js';
 import { exceedsThreshold, makeSynthetic } from '../synthetic.js';
 import type { InputEvent, InputManager, Point, Recognizer } from '../types.js';
 
@@ -53,6 +54,11 @@ export class DragRecognizer implements Recognizer {
 					const dz = event.source === 'touch' ? DEAD_ZONE_TOUCH_PX : DEAD_ZONE_MOUSE_PX;
 					if (!exceedsThreshold(event.screen, t.downAt.screen, dz)) return;
 					t.status = 'dragging';
+					inputLog('Recognizer', `DragRecognizer: dead-zone crossed → drag-start`, {
+						pointerId: event.pointerId,
+						source: event.source,
+						deadZone: dz,
+					});
 					manager.dispatch(
 						makeSynthetic('drag-start', event, {
 							kind: 'drag',
@@ -84,6 +90,9 @@ export class DragRecognizer implements Recognizer {
 				if (!t) return;
 				this.tracking.delete(event.pointerId);
 				if (t.status !== 'dragging') return;
+				inputLog('Recognizer', `DragRecognizer: up after dragging → drag-end`, {
+					pointerId: event.pointerId,
+				});
 				manager.dispatch(
 					makeSynthetic('drag-end', event, {
 						kind: 'drag',

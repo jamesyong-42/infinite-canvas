@@ -5,6 +5,7 @@ import {
 	ZOOM_LOW_THRESHOLD,
 	ZOOM_TARGETS,
 } from './constants.js';
+import { inputLog } from './debug.js';
 import type { GestureDetail, InputManager, Point } from './types.js';
 
 /**
@@ -85,8 +86,13 @@ export function installEngineHandlers(
 			const g = e.gesture as Extract<GestureDetail, { kind: 'tap' }>;
 			if (g.count !== 1) return;
 			const entity = engine.pickAt(e.screen.x, e.screen.y);
-			if (entity !== null) engine.selectEntity(entity, e.modifiers.shift);
-			else engine.clearSelection();
+			if (entity !== null) {
+				inputLog('Engine', `tap on entity ${entity} → selectEntity (shift=${e.modifiers.shift})`);
+				engine.selectEntity(entity, e.modifiers.shift);
+			} else {
+				inputLog('Engine', `tap on empty space → clearSelection`);
+				engine.clearSelection();
+			}
 		}),
 	);
 
@@ -94,10 +100,10 @@ export function installEngineHandlers(
 		manager.on('double-tap', (e) => {
 			const entity = engine.pickAt(e.screen.x, e.screen.y);
 			if (entity !== null) {
+				inputLog('Engine', `double-tap on entity ${entity} → enterContainer`);
 				engine.enterContainer(entity);
 				return;
 			}
-			// Empty-space double-tap → zoom toggle (matches the v1 TouchEventBus).
 			const camera = engine.getCamera();
 			const target =
 				camera.zoom < ZOOM_LOW_THRESHOLD
@@ -105,6 +111,7 @@ export function installEngineHandlers(
 					: camera.zoom < ZOOM_HIGH_THRESHOLD
 						? ZOOM_TARGETS[1]
 						: ZOOM_TARGETS[0];
+			inputLog('Engine', `double-tap on empty → zoomAtPoint target=${target}x`);
 			engine.zoomAtPoint(e.screen.x, e.screen.y, (target - camera.zoom) / camera.zoom);
 		}),
 	);
@@ -114,40 +121,41 @@ export function installEngineHandlers(
 	offs.push(
 		manager.on('drag-start', (e) => {
 			const hit = engine.hitTest(e.screen.x, e.screen.y);
-			// Pointer capture anchors the gesture to the container — drag,
-			// resize, marquee, and touch-pan all need pointermove to keep
-			// arriving even if the cursor / finger leaves the container.
 			container.setPointerCapture(e.pointerId);
 
 			if (!hit) {
-				// Empty-space drag-start splits by source: mouse / pen drag a
-				// marquee; touch defers to PanRecognizer's pan-update stream
-				// (iOS Maps semantics — single-finger empty pan, no marquee).
-				if (e.source === 'touch') return;
+				if (e.source === 'touch') {
+					inputLog('Engine', `drag-start on empty (touch) → defer to PanRecognizer`, {
+						pointerId: e.pointerId,
+					});
+					return;
+				}
+				inputLog('Engine', `drag-start on empty (mouse/pen) → beginMarquee`, {
+					pointerId: e.pointerId,
+				});
 				engine.clearSelection();
 				engine.beginMarquee(e.world.x, e.world.y);
 				return;
 			}
 
-			// RFC-005: resize hotspots win over body drags. The `hitTest`
-			// returns the widget directly with the handle position carried
-			// on the role.
 			if (hit.role.role.type === 'resize') {
+				inputLog('Engine', `drag-start on resize handle → beginResize ${hit.role.role.handle}`, {
+					entityId: hit.entityId,
+					handle: hit.role.role.handle,
+				});
 				engine.beginResize(hit.entityId, hit.role.role.handle, e.world.x, e.world.y);
 				return;
 			}
 
-			// Body drag (or any future role that uses drag mechanics).
-			// Auto-select the entity under the cursor if it isn't already
-			// in the selection set so the drag carries the picked entity.
-			// `additive` follows the shift modifier — shift-drag of a new
-			// entity adds it to the existing multi-select, no-shift-drag
-			// replaces. Multi-select drags (entity already selected) keep
-			// the full selection set intact.
 			const selected = engine.getSelectedEntities();
 			if (!selected.includes(hit.entityId)) {
 				engine.selectEntity(hit.entityId, e.modifiers.shift);
 			}
+			inputLog('Engine', `drag-start on entity → beginDrag ${hit.entityId}`, {
+				entityId: hit.entityId,
+				role: hit.role.role.type,
+				shift: e.modifiers.shift,
+			});
 			engine.beginDrag(hit.entityId, e.world.x, e.world.y);
 		}),
 	);
@@ -173,14 +181,19 @@ export function installEngineHandlers(
 	offs.push(
 		manager.on('drag-end', (e) => {
 			if (engine.isMarqueeActive()) {
+				inputLog('Engine', `drag-end → endMarquee`);
 				engine.endMarquee();
 			} else {
 				const resizing = engine.getResizingEntity();
 				if (resizing !== null) {
+					inputLog('Engine', `drag-end → endResize ${resizing} (commit)`);
 					engine.endResize(resizing, { cancelled: false });
 				} else {
 					const dragging = engine.getDraggingEntity();
-					if (dragging !== null) engine.endDrag(dragging, { cancelled: false });
+					if (dragging !== null) {
+						inputLog('Engine', `drag-end → endDrag ${dragging} (commit)`);
+						engine.endDrag(dragging, { cancelled: false });
+					}
 				}
 			}
 			if (container.hasPointerCapture(e.pointerId)) {
@@ -191,12 +204,9 @@ export function installEngineHandlers(
 
 	offs.push(
 		manager.on('cancel', (e) => {
-			// `cancelInteraction` covers every mid-gesture mode (dragging,
-			// resizing, marquee, tracking, flyingBack). `endDrag(.., true)`
-			// only handles `dragging`, and `getDraggingEntity()` returns
-			// null in `flyingBack` — so a native `pointercancel` during the
-			// 250 ms fly-back animation would otherwise leave `Dragging`
-			// tags + elevated `ZIndex` permanently stuck on the entity.
+			inputLog('Engine', `cancel → cancelInteraction (covers all mid-gesture modes)`, {
+				pointerId: e.pointerId,
+			});
 			engine.cancelInteraction();
 			if (container.hasPointerCapture(e.pointerId)) {
 				container.releasePointerCapture(e.pointerId);

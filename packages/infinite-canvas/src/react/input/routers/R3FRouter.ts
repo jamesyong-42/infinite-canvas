@@ -1,4 +1,5 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
+import { inputLog } from '../debug.js';
 import type { InputEvent, InputEventType, Surface, WidgetSurfaceRouter } from '../types.js';
 
 /**
@@ -71,29 +72,36 @@ export class R3FRouter implements WidgetSurfaceRouter {
 	 */
 	constructor(private readonly getEventManager: () => R3FEventManagerLike | null | undefined) {}
 
-	route(event: InputEvent, _entityId: EntityId): void {
-		// Synthetic events (recognizer-emitted) never have a `native` event,
-		// and the InputManager pre-filters those before reaching us anyway —
-		// belt-and-suspenders.
+	route(event: InputEvent, entityId: EntityId): void {
 		if (!event.native) return;
-
 		const handlerName = HANDLER_BY_TYPE[event.type];
 		if (!handlerName) return;
 
 		const manager = this.getEventManager();
 		const handler = manager?.handlers?.[handlerName];
-		if (!handler) return;
+		if (!handler) {
+			inputLog('Router', `R3FRouter: no R3F manager / handler for ${handlerName}`, {
+				type: event.type,
+				entityId,
+			});
+			return;
+		}
 
+		inputLog('Router', `R3FRouter → R3F.${handlerName} for entity ${entityId}`, {
+			type: event.type,
+			entityId,
+			handlerName,
+		});
 		handler(event.native as PointerEvent);
 	}
 
 	isPointerClaimed(pointerId: number): boolean {
-		// Probes R3F's `internal.capturedMap`. Populated synchronously when
-		// a mesh handler calls `e.target.setPointerCapture(pointerId)`,
-		// cleared on `releasePointerCapture` / `lostpointercapture` /
-		// object removal. The InputManager calls this AFTER `route` runs,
-		// so a setPointerCapture from inside the mesh handler is visible
-		// on the same dispatch tick.
-		return this.getEventManager()?.isPointerCaptured?.(pointerId) ?? false;
+		const claimed = this.getEventManager()?.isPointerCaptured?.(pointerId) ?? false;
+		if (claimed) {
+			inputLog('Router', `R3FRouter: pointer ${pointerId} CLAIMED via setPointerCapture`, {
+				pointerId,
+			});
+		}
+		return claimed;
 	}
 }
