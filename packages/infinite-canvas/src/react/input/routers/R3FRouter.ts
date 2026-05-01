@@ -5,16 +5,22 @@ import type { InputEvent, InputEventType, Surface, WidgetSurfaceRouter } from '.
 /**
  * R3F event manager — the runtime shape we depend on. We avoid importing
  * `EventManager` from `@react-three/fiber` directly to keep this module
- * tree-shakeable for non-R3F consumers; the contract is the four pointer
- * dispatch methods. R3F's default factory (and `createR3FEventManager`)
- * exposes more (`onClick`, `onWheel`, etc.) but the InputManager only
- * routes raw pointer events — derived events stay R3F-internal.
+ * tree-shakeable for non-R3F consumers; the contract is the seven dispatch
+ * methods we actually invoke. R3F's default factory (and
+ * `createR3FEventManager`) exposes more (`onWheel`, etc.) but RFC-008 v6
+ * routes pointer + click families only. Click family was previously
+ * registered by R3F's own `connect` listener; v6 promotes them to first-
+ * class InputEvents and routes them through the same path as pointer
+ * events for consistent coexistence semantics.
  */
 interface R3FHandlerMap {
 	readonly onPointerDown?: (event: PointerEvent) => void;
 	readonly onPointerMove?: (event: PointerEvent) => void;
 	readonly onPointerUp?: (event: PointerEvent) => void;
 	readonly onPointerCancel?: (event: PointerEvent) => void;
+	readonly onClick?: (event: MouseEvent) => void;
+	readonly onDoubleClick?: (event: MouseEvent) => void;
+	readonly onContextMenu?: (event: MouseEvent) => void;
 }
 
 interface R3FEventManagerLike {
@@ -30,16 +36,21 @@ interface R3FEventManagerLike {
 }
 
 /**
- * Map raw `InputEventType`s to the R3F handler name that drives R3F's
- * mesh-dispatch machinery. Only the four raw pointer types are routed —
- * R3F synthesises clicks / hover-leave internally from the move stream
- * and has no router-driven need for them.
+ * Map `InputEventType`s to the R3F handler name that drives R3F's
+ * mesh-dispatch machinery. Pointer types feed R3F's hover-diff + capture
+ * pipeline; click family feeds R3F's click synthesis (`onClick`,
+ * `onDoubleClick`, `onContextMenu`). v6 routes clicks through this table
+ * so the InputManager pipeline is the single source for both engine and
+ * widget — no parallel `connect` listener registration on the container.
  */
 const HANDLER_BY_TYPE: Partial<Record<InputEventType, keyof R3FHandlerMap>> = {
 	down: 'onPointerDown',
 	move: 'onPointerMove',
 	up: 'onPointerUp',
 	cancel: 'onPointerCancel',
+	click: 'onClick',
+	dblclick: 'onDoubleClick',
+	contextmenu: 'onContextMenu',
 };
 
 /**
@@ -92,7 +103,12 @@ export class R3FRouter implements WidgetSurfaceRouter {
 			entityId,
 			handlerName,
 		});
-		handler(event.native as PointerEvent);
+		// R3F handlers all expect a DOM Event subtype (PointerEvent for
+		// pointer types, MouseEvent for click family). The handler-name
+		// → InputEventType mapping above is the runtime type guard; the
+		// native event was constructed by the matching adapter so the
+		// shape lines up. One cast covers both families.
+		(handler as (event: Event) => void)(event.native);
 	}
 
 	isPointerClaimed(pointerId: number): boolean {

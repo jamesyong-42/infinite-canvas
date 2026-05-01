@@ -65,6 +65,13 @@ export type InputEventType =
 	| 'up'
 	| 'cancel'
 	| 'wheel'
+	| 'pointerleave'
+	// Browser-derived, emitted by ClickAdapter (sit alongside raw pointer
+	// events in the pipeline so engine + widget see them via the same
+	// router/handler/recognizer path as down/move/up).
+	| 'click'
+	| 'dblclick'
+	| 'contextmenu'
 	// Synthetic, emitted by recognizers
 	| 'tap'
 	| 'double-tap'
@@ -209,8 +216,9 @@ export interface InputManager {
 
 	/**
 	 * Entry point. Adapters and recognizers call this. Order:
-	 *   1. If raw 'down'/'move'/'up'/'cancel' AND world coords hit an entity
-	 *      AND that entity's surface has a router → router.route(event, entityId).
+	 *   1. If raw pointer event ('down'/'move'/'up'/'cancel') OR browser-
+	 *      derived ('click'/'dblclick'/'contextmenu') AND world coords hit an
+	 *      entity AND that entity's surface has a router → router.route(event, entityId).
 	 *   2. Fire all registered handlers for event.type.
 	 *   3. Recognizers observe.
 	 *

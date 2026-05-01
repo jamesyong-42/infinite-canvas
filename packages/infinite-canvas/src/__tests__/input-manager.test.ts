@@ -284,6 +284,45 @@ describe('InputManager', () => {
 			expect(router.route).not.toHaveBeenCalled();
 		});
 
+		it.each([
+			'click',
+			'dblclick',
+			'contextmenu',
+		] as const)('routes %s family events through the surface router (v6 unification)', (type) => {
+			// Pre-v6 these were registered by R3F's `connect` listener and
+			// bypassed the InputManager entirely — the engine couldn't
+			// observe clicks, so capturing meshes broke widget selection.
+			// v6 puts them on the same path as down/move/up.
+			const engine = createStubEngine({
+				pickAt: () => 42 as EntityId,
+				getSurface: () => 'webgl',
+			});
+			const m = new InputManager(engine, makeContainer(), []);
+			const router: WidgetSurfaceRouter = {
+				surface: 'webgl',
+				route: vi.fn(),
+			};
+			m.setRouter(router);
+			m.dispatch(makeEvent(type));
+			expect(router.route).toHaveBeenCalledTimes(1);
+			expect(router.route).toHaveBeenCalledWith(expect.objectContaining({ type }), 42);
+		});
+
+		it('routing skipped for pointerleave (cursor exits — no entity to deliver to)', () => {
+			const engine = createStubEngine({
+				pickAt: () => 42 as EntityId,
+				getSurface: () => 'webgl',
+			});
+			const m = new InputManager(engine, makeContainer(), []);
+			const router: WidgetSurfaceRouter = {
+				surface: 'webgl',
+				route: vi.fn(),
+			};
+			m.setRouter(router);
+			m.dispatch(makeEvent('pointerleave'));
+			expect(router.route).not.toHaveBeenCalled();
+		});
+
 		it('setRouter returns an unsubscribe function', () => {
 			const engine = createStubEngine({
 				pickAt: () => 42 as EntityId,

@@ -21,6 +21,9 @@ interface MockManager {
 		onPointerMove: ReturnType<typeof vi.fn>;
 		onPointerUp: ReturnType<typeof vi.fn>;
 		onPointerCancel: ReturnType<typeof vi.fn>;
+		onClick: ReturnType<typeof vi.fn>;
+		onDoubleClick: ReturnType<typeof vi.fn>;
+		onContextMenu: ReturnType<typeof vi.fn>;
 	};
 }
 
@@ -31,6 +34,9 @@ function createMockManager(): MockManager {
 			onPointerMove: vi.fn(),
 			onPointerUp: vi.fn(),
 			onPointerCancel: vi.fn(),
+			onClick: vi.fn(),
+			onDoubleClick: vi.fn(),
+			onContextMenu: vi.fn(),
 		},
 	};
 }
@@ -60,10 +66,13 @@ describe('R3FRouter', () => {
 		['move', 'onPointerMove'],
 		['up', 'onPointerUp'],
 		['cancel', 'onPointerCancel'],
+		['click', 'onClick'],
+		['dblclick', 'onDoubleClick'],
+		['contextmenu', 'onContextMenu'],
 	] as const)('routes %s → %s with the native event', (eventType, handlerName) => {
 		const manager = createMockManager();
 		const router = new R3FRouter(() => manager as AnyManager);
-		const native = new Event('pointerdown');
+		const native = new Event(eventType);
 
 		router.route(createEvent(eventType, native), 42);
 

@@ -22,8 +22,9 @@ type OrbitCubeData = z.infer<typeof schema>;
  *
  *   - drag ON the cube → cube orbits, widget stays put
  *   - drag in the card chrome (around the cube) → widget moves on canvas
- *   - click on the cube → mesh `onClick` fires AND engine `tap` fires
- *     (both correct: cube logs to console, widget gets selected)
+ *   - click on the cube → mesh `onClick` fires AND engine `click` fires
+ *     (both correct: cube logs to console, widget gets selected — the
+ *     coexistence holds even when the prior pointerdown captured)
  *   - hover the cube → mesh hover diff highlights AND engine selection
  *     ring + cursor update — full coexistence
  */
@@ -41,7 +42,7 @@ function OrbitCubeScene({ data, width, height }: GeometryCardRenderProps<OrbitCu
 	const onPointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
 		// Stop R3F's bubble so the bubble doesn't fan out to other meshes
 		// in this widget. Note: this does NOT halt the InputManager
-		// pipeline — the engine's `tap` and `drag-start` handlers still
+		// pipeline — the engine's `click` and `drag-start` handlers still
 		// run. setPointerCapture below is what claims drag exclusivity.
 		e.stopPropagation();
 		// RFC-008 § Widget authoring — claim the drag for this mesh. The
@@ -82,7 +83,7 @@ function OrbitCubeScene({ data, width, height }: GeometryCardRenderProps<OrbitCu
 
 	const onClick = useCallback(
 		(e: ThreeEvent<MouseEvent>) => {
-			// Coexistence demo: this fires alongside the engine's `tap`
+			// Coexistence demo: this fires alongside the engine's `click`
 			// handler. Engine selects the widget; cube logs.
 			e.stopPropagation();
 			console.debug('[OrbitCubeCard] mesh click', { hue: data.hue });

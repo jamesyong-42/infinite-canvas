@@ -1,22 +1,12 @@
 import { screenToWorld } from '../../../ecs/math.js';
 import { inputLog } from '../debug.js';
 import type { Adapter, Button, InputEvent, InputManager, InputSource } from '../types.js';
-
-/**
- * Native HTML elements whose `pointerdown` should never start a canvas-level
- * drag, marquee, or selection — buttons, form fields, content-editable
- * surfaces. The browser's natural focus / activation / click synthesis runs
- * unimpeded; the canvas just stays out. Authors who want additional opt-out
- * elements call `e.stopPropagation()` from their own handler — it halts the
- * bubble before the native event reaches the canvas container, so the
- * adapter never sees it.
- */
-const NATIVE_INTERACTIVE_SELECTOR = 'button, input, textarea, select, [contenteditable]';
+import { NATIVE_INTERACTIVE_SELECTOR } from './native-interactive.js';
 
 /**
  * Native pointer-event adapter (RFC-008). Listens for pointerdown / move /
- * up / cancel on the canvas container, normalises into `InputEvent`s, and
- * dispatches via `manager.dispatch(...)`.
+ * up / cancel / pointerleave on the canvas container, normalises into
+ * `InputEvent`s, and dispatches via `manager.dispatch(...)`.
  *
  * Single-finger and multi-finger touch flow through this adapter via the
  * browser's touch-to-pointer synthesis (`touch-action: none` on the
@@ -26,18 +16,25 @@ const NATIVE_INTERACTIVE_SELECTOR = 'button, input, textarea, select, [contented
  * `preventDefault` discipline:
  *   - Pointer events: never. Bubble must continue so widget React handlers
  *     fire and so widgets can call `setPointerCapture` to claim drags.
- *   - `contextmenu`: always. Canvas isn't a place for browser context menus.
+ *   - `contextmenu`: handled by `ClickAdapter`, not here.
  *
  * `pointerdown` on a native interactive target (button, input, etc.) is
  * suppressed at the adapter so a button click inside a DOM widget can't
  * spawn a marquee or drag. Move / up / cancel still flow so hover chrome
  * stays accurate.
+ *
+ * `pointerleave` is dispatched as its own InputEvent type so engine hover
+ * chrome can clear when the cursor exits the canvas — without an inline
+ * listener outside the InputManager pipeline (RFC-008 v6 unification).
  */
 export class PointerAdapter implements Adapter {
 	attach(container: HTMLElement, manager: InputManager): () => void {
 		const lastByPointerId = new Map<number, { x: number; y: number }>();
 
-		const make = (type: 'down' | 'move' | 'up' | 'cancel', e: PointerEvent): InputEvent => {
+		const make = (
+			type: 'down' | 'move' | 'up' | 'cancel' | 'pointerleave',
+			e: PointerEvent,
+		): InputEvent => {
 			const rect = container.getBoundingClientRect();
 			const screen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 			const camera = manager.engine.getCamera();
@@ -124,22 +121,27 @@ export class PointerAdapter implements Adapter {
 			lastByPointerId.delete(e.pointerId);
 		};
 
-		const onContextMenu = (e: MouseEvent) => {
-			e.preventDefault();
+		const onLeave = (e: PointerEvent) => {
+			inputLog('Adapter', `pointerleave id=${e.pointerId} → InputManager`, {
+				pointerId: e.pointerId,
+				source: e.pointerType,
+			});
+			manager.dispatch(make('pointerleave', e));
+			lastByPointerId.delete(e.pointerId);
 		};
 
 		container.addEventListener('pointerdown', onDown);
 		container.addEventListener('pointermove', onMove);
 		container.addEventListener('pointerup', onUp);
 		container.addEventListener('pointercancel', onCancel);
-		container.addEventListener('contextmenu', onContextMenu);
+		container.addEventListener('pointerleave', onLeave);
 
 		return () => {
 			container.removeEventListener('pointerdown', onDown);
 			container.removeEventListener('pointermove', onMove);
 			container.removeEventListener('pointerup', onUp);
 			container.removeEventListener('pointercancel', onCancel);
-			container.removeEventListener('contextmenu', onContextMenu);
+			container.removeEventListener('pointerleave', onLeave);
 			lastByPointerId.clear();
 		};
 	}

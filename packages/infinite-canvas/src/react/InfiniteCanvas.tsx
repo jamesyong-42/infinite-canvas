@@ -19,6 +19,7 @@ import { WebGLManager } from '../webgl/WebGLManager.js';
 import { ContainerRefProvider } from './context/container-ref-context.js';
 import { EngineProvider } from './context/engine-context.js';
 import { useWidgetResolver } from './context/widget-resolver-context.js';
+import { ClickAdapter } from './input/adapters/ClickAdapter.js';
 import { PointerAdapter } from './input/adapters/PointerAdapter.js';
 import { WheelAdapter } from './input/adapters/WheelAdapter.js';
 import { InputManager } from './input/InputManager.js';
@@ -284,6 +285,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			const manager = new InputManager(engine, container, [
 				new PointerAdapter(),
 				new WheelAdapter(),
+				new ClickAdapter(),
 			]);
 
 			// Recognizer registration order is observation-only — pairwise
@@ -300,17 +302,8 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 
 			const offHandlers = installEngineHandlers(manager, engine, container);
 
-			// Hover-leave when the cursor exits the canvas container — no
-			// recognizer covers this case (HoverRecognizer only sees move
-			// events bounded by the container's own pointermove stream).
-			const onLeave = () => {
-				engine.setHoveredEntity(null);
-			};
-			container.addEventListener('pointerleave', onLeave);
-
 			const detach = manager.attach();
 			return () => {
-				container.removeEventListener('pointerleave', onLeave);
 				offHandlers();
 				detach();
 				// Clear the late-bound R3F manager ref. Without this, an

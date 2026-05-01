@@ -6,17 +6,19 @@ import type { WidgetRegistry } from '../../../r3f/compositor/WidgetRegistry.js';
 import { inputLog } from '../debug.js';
 
 /**
- * RFC-008 v5 — R3F event-manager factory tailored for the InputManager
- * pipeline. R3F's bubble + hover diff + click synthesis still run; pointer
- * events are driven externally by `R3FRouter` (which calls
- * `manager.handlers.onPointerDown(nativeEvent)` etc. from the InputManager
- * dispatch loop), but click / dblclick / contextmenu are NOT pointer
- * events — R3F's `handlePointer('onClick')` is invoked by the browser's
- * native `click` event, which has no equivalent in our pointer adapter.
- * The override below registers listeners ONLY for those three events
- * (skipping the pointer-event ones that PointerAdapter owns, and `wheel`
- * which WheelAdapter owns) so mesh `onClick` / `onDoubleClick` /
- * `onContextMenu` handlers continue to fire for R3F widgets.
+ * RFC-008 v6 — R3F event-manager factory tailored for the InputManager
+ * pipeline. R3F's bubble + hover diff + click synthesis still run, but
+ * R3F is now driven *entirely* by the InputManager: PointerAdapter feeds
+ * pointer events, ClickAdapter feeds click / dblclick / contextmenu, and
+ * `R3FRouter` invokes `manager.handlers.onPointerDown(nativeEvent)` /
+ * `onClick(...)` / etc. from the InputManager dispatch loop.
+ *
+ * `connect` / `disconnect` are no-ops. v5 used to register a parallel
+ * listener set on the canvas container for click / dblclick / contextmenu
+ * (because those events lived outside the InputManager pipeline). v6
+ * unifies them — no parallel native listeners, one dispatcher entry
+ * point. This eliminates the "click on a captured mesh doesn't select
+ * the widget" coexistence bug (RFC-008 v5 smell 5.1).
  *
  * The `compute` and `filter` overrides are inherited from the v3 EventRouter:
  *
@@ -33,18 +35,6 @@ import { inputLog } from '../debug.js';
  * event and read by `filter` for the same event. Single-threaded JS makes
  * this safe.
  */
-/**
- * R3F handler names mapped to the DOM event names whose native listeners
- * `connect` should register. Pointer events (`onPointer*`) are owned by
- * `PointerAdapter`; `onWheel` is owned by `WheelAdapter`. The remaining
- * three events are derived from the browser's native click chain and have
- * no pointer-adapter equivalent — let R3F handle them itself.
- */
-const R3F_DOM_EVENTS: Array<[handlerName: string, eventName: string]> = [
-	['onClick', 'click'],
-	['onDoubleClick', 'dblclick'],
-	['onContextMenu', 'contextmenu'],
-];
 /**
  * Optional `onCreate` callback fires once R3F's `<Canvas>` invokes the
  * factory and the manager object is constructed — this is the only way
@@ -128,11 +118,6 @@ export function createR3FEventManager(
 			return items.filter((hit) => isDescendantOf(hit.object, scene));
 		};
 
-		// State held across connect/disconnect so we can remove exactly
-		// the listeners we attached (R3F may invoke disconnect → connect
-		// when the canvas's eventSource changes).
-		let attached: { target: HTMLElement; bindings: Array<[string, EventListener]> } | null = null;
-
 		// R3F populates `internal.capturedMap` synchronously when a mesh
 		// handler calls `e.target.setPointerCapture(pointerId)`. Exposing
 		// this lets `R3FRouter.isPointerClaimed` tell the InputManager to
@@ -153,36 +138,16 @@ export function createR3FEventManager(
 			compute,
 			filter,
 			isPointerCaptured,
-			connect: (target: HTMLElement) => {
-				if (attached) return; // idempotent — R3F may double-call.
-				const bindings: Array<[string, EventListener]> = [];
-				const handlers = manager.handlers;
-				if (handlers) {
-					const handlerMap = handlers as unknown as Record<string, EventListener | undefined>;
-					for (const [handlerName, eventName] of R3F_DOM_EVENTS) {
-						const handler = handlerMap[handlerName];
-						if (!handler) continue;
-						target.addEventListener(eventName, handler);
-						bindings.push([eventName, handler]);
-					}
-				}
-				attached = { target, bindings };
-				inputLog(
-					'R3F',
-					`createR3FEventManager.connect: registered ${bindings.length} listeners on container (click/dblclick/contextmenu)`,
-					{
-						target: target.tagName,
-						bindings: bindings.map(([n]) => n),
-					},
-				);
+			// v6: no native listeners. R3F is driven entirely by the
+			// InputManager pipeline (PointerAdapter + ClickAdapter +
+			// WheelAdapter → R3FRouter → manager.handlers.*). connect /
+			// disconnect kept as required by R3F's EventManager contract,
+			// but they're empty.
+			connect: (_target: HTMLElement) => {
+				inputLog('R3F', 'createR3FEventManager.connect: no-op (driven by InputManager)');
 			},
 			disconnect: () => {
-				if (!attached) return;
-				for (const [eventName, handler] of attached.bindings) {
-					attached.target.removeEventListener(eventName, handler);
-				}
-				inputLog('R3F', `createR3FEventManager.disconnect: removed listeners`);
-				attached = null;
+				inputLog('R3F', 'createR3FEventManager.disconnect: no-op');
 			},
 		};
 		onCreate?.(manager);

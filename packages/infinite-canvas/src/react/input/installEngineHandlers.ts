@@ -79,28 +79,40 @@ export function installEngineHandlers(
 		}),
 	);
 
-	// --- Tap / double-tap ----------------------------------------------
+	// --- Click / double-click ------------------------------------------
+	//
+	// v6: drives selection / navigation off browser-native click events
+	// instead of TapRecognizer / DoubleTapRecognizer synthetics. The
+	// browser fires `click` / `dblclick` after the pointer cycle
+	// completes — including when a mesh held setPointerCapture during
+	// the down → up sequence (the previous tap-based path was skipped in
+	// that case, so capturing meshes never got selected). Recognizers
+	// still emit `tap` / `double-tap` for any external listener that
+	// wants gesture-style events; the engine just no longer consumes
+	// them.
 
 	offs.push(
-		manager.on('tap', (e) => {
-			const g = e.gesture as Extract<GestureDetail, { kind: 'tap' }>;
-			if (g.count !== 1) return;
+		manager.on('click', (e) => {
+			// Left button only. Browsers vary on whether middle / right
+			// dispatch `click` — we ignore those; right-click is
+			// `contextmenu`, middle-click has no canvas semantics yet.
+			if (e.button !== 0 && e.button !== null) return;
 			const entity = engine.pickAt(e.screen.x, e.screen.y);
 			if (entity !== null) {
-				inputLog('Engine', `tap on entity ${entity} → selectEntity (shift=${e.modifiers.shift})`);
+				inputLog('Engine', `click on entity ${entity} → selectEntity (shift=${e.modifiers.shift})`);
 				engine.selectEntity(entity, e.modifiers.shift);
 			} else {
-				inputLog('Engine', `tap on empty space → clearSelection`);
+				inputLog('Engine', `click on empty space → clearSelection`);
 				engine.clearSelection();
 			}
 		}),
 	);
 
 	offs.push(
-		manager.on('double-tap', (e) => {
+		manager.on('dblclick', (e) => {
 			const entity = engine.pickAt(e.screen.x, e.screen.y);
 			if (entity !== null) {
-				inputLog('Engine', `double-tap on entity ${entity} → enterContainer`);
+				inputLog('Engine', `dblclick on entity ${entity} → enterContainer`);
 				engine.enterContainer(entity);
 				return;
 			}
@@ -111,7 +123,7 @@ export function installEngineHandlers(
 					: camera.zoom < ZOOM_HIGH_THRESHOLD
 						? ZOOM_TARGETS[1]
 						: ZOOM_TARGETS[0];
-			inputLog('Engine', `double-tap on empty → zoomAtPoint target=${target}x`);
+			inputLog('Engine', `dblclick on empty → zoomAtPoint target=${target}x`);
 			engine.zoomAtPoint(e.screen.x, e.screen.y, (target - camera.zoom) / camera.zoom);
 		}),
 	);
@@ -226,6 +238,17 @@ export function installEngineHandlers(
 	offs.push(
 		manager.on('move', (e) => {
 			engine.updateHover(e.screen.x, e.screen.y);
+		}),
+	);
+
+	// Cursor exited the canvas container — clear hover chrome. v6: the
+	// pre-existing inline `pointerleave` listener in `InfiniteCanvas.tsx`
+	// is gone; PointerAdapter dispatches the event instead, so this
+	// handler runs through the same pipeline as every other input.
+	offs.push(
+		manager.on('pointerleave', () => {
+			inputLog('Engine', `pointerleave → setHoveredEntity(null)`);
+			engine.setHoveredEntity(null);
 		}),
 	);
 

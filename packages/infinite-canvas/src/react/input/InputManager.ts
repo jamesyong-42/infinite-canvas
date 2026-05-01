@@ -107,15 +107,20 @@ export class InputManager implements IInputManager {
 			world: event.world,
 		});
 
-		// 1. Surface routing for raw pointer events. Synthetic events
-		//    (recognizer-emitted) bypass routing — they're already at the
-		//    intent layer (drag, pinch, etc.) and don't need re-delivery
-		//    to widget surfaces.
+		// 1. Surface routing for raw pointer events + browser-derived click
+		//    family. Synthetic events (recognizer-emitted) bypass routing —
+		//    they're already at the intent layer (drag, pinch, etc.) and
+		//    don't need re-delivery to widget surfaces. `pointerleave` and
+		//    `wheel` also bypass routing — the cursor is exiting (no entity
+		//    to deliver to) or the event is whole-canvas (camera ops).
 		if (
 			(event.type === 'down' ||
 				event.type === 'move' ||
 				event.type === 'up' ||
-				event.type === 'cancel') &&
+				event.type === 'cancel' ||
+				event.type === 'click' ||
+				event.type === 'dblclick' ||
+				event.type === 'contextmenu') &&
 			event.source !== 'synthetic' &&
 			this.routers.size > 0
 		) {
