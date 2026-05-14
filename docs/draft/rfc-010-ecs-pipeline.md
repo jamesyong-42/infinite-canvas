@@ -1,8 +1,8 @@
 # RFC-010: Two-Pipeline ECS Refactor — Sync-Reactive Bus + Phased Tick Pipeline
 
-- **Status**: Draft v2
+- **Status**: Draft v2.1
 - **Author**: James Yong
-- **Date**: 2026-05-07
+- **Date**: 2026-05-14 (v2.1: post-Phase-3 corrections; v2: pre-implementation; v1: initial)
 - **Area**: ECS / Engine / Scheduler / `@jamesyong42/reactive-ecs` package
 - **Related**: RFC-003 (`dragPromoteSystem` reference predates its existence as a system), RFC-004 (Phase 5 `ParentFrame` ↔ `Active` reconcile observer + mid-system `navStack.changed` reset), RFC-009 (state systems assume a stable scheduler contract — this RFC supplies it).
 - **Supersedes**: The eight imperative observer wirings at `packages/infinite-canvas/src/ecs/engine/LayoutEngine.ts:130–248`, the two systems-in-disguise (`interaction.runFlyBackSystem`, `interaction.runCursorSystem`) called inline at lines 915–918, the inline tail of `engine.tick()` at lines 920–993 (visibility build, `FrameChanges` assembly, post-frame bookkeeping, tween keepalive), and ~6 redundant `engine.markDirty()` calls at the React boundary.
@@ -13,6 +13,11 @@
 - **`PhasedScheduler` is generic over the phase string set.** `as const` on the consumer's `phases` literal flows through `getPhase()`, `getPhases()`, and profiler hook arguments.
 - **No backwards-compat default.** v1 said "default phase is `'derive'` so existing systems work without modification." That conflated two things. The library no longer assumes any phase exists. Per-instance `defaultPhase?` option fills the same role for each consumer.
 - **Phase 2 of the migration plan now bundles the consumer-side phase declaration** (`ENGINE_PHASES`) with the `SystemScheduler → PhasedScheduler` swap. The reactive-ecs work itself shipped as v0.3.0 ahead of consumer Phase 1.
+
+### Corrections since v2 (post-Phase-3)
+
+- **Phase 2 prose ↔ table conflict resolved.** The v2 prose said "Stamp `phase: 'derive'` on the existing six systems," but the same paragraph also said "Drop `after: 'navigationFilter'` from `cullSystem` (also implicit)." Both can't be true unless `navigationFilter` is in an earlier phase. The "What goes in each phase" table was always the authoritative source: `navigationFilterSystem → control`, `transformTweenSystem → simulate`, the rest → `derive`. The Phase 2 prose is now rewritten to enumerate the per-system mapping explicitly. Implementation already followed the table.
+- **Pre-existing limitation documented in Appendix B.3.** `reactive-ecs` does not emit a change event on `removeComponent`, so the original `ParentFrame` observer never actually fired on remove despite a stale RFC-004 comment. The new `parentFrameActiveSystem` inherits the same gap (`queryChanged` skips removes). The "child returns to root" recovery happens via `navigationFilterSystem` on the next `navStack.changed`. Documented as a known limitation, not a regression.
 
 ---
 
@@ -380,7 +385,12 @@ The reactive-ecs piece is done — `PhasedScheduler<P>` + `PhasedSchedulerOption
 
 - New file: `packages/infinite-canvas/src/ecs/engine/phases.ts` — declares `ENGINE_PHASES = ['input', 'react', 'control', 'simulate', 'derive', 'present', 'cleanup'] as const` and the derived `EnginePhase` type.
 - `package.json`: bump `@jamesyong42/reactive-ecs` from `^0.2.0` to `^0.3.0`; `pnpm install`.
-- `LayoutEngine.ts`: swap `new SystemScheduler()` for `new PhasedScheduler({ phases: ENGINE_PHASES, defaultPhase: 'derive' })`. Stamp `phase: 'derive'` on the existing six systems and `phase: 'react'` on `dragPromoteSystem`. Drop `before: 'cull'` from `dragPromoteSystem` (now implicit by phase order). Drop `after: 'navigationFilter'` from `cullSystem` (also implicit).
+- `LayoutEngine.ts`: swap `new SystemScheduler()` for `new PhasedScheduler({ phases: ENGINE_PHASES, defaultPhase: 'derive' })`. Stamp each existing system with the phase it belongs in per § "What goes in each phase":
+  - `cardSystem`, `cullSystem`, `breakpointSystem`, `sortSystem` → `phase: 'derive'`
+  - `transformTweenSystem` → `phase: 'simulate'`
+  - `navigationFilterSystem` → `phase: 'control'`
+  - `dragPromoteSystem` → `phase: 'react'`
+- Drop `before: 'cull'` from `dragPromoteSystem` (now implicit: `react < derive`). Drop `after: 'navigationFilter'` from `cullSystem` (now implicit: `control < derive`). Keep within-phase constraints `breakpoint after: 'cull'` and `sort after: 'breakpoint'`.
 - New test: `packages/infinite-canvas/src/__tests__/engine-phases.test.ts` — verifies the phase order matches the documented vocabulary and that `getPhase('cull')` returns `'derive'`.
 
 **Rollback:** revert engine PR; pin `@jamesyong42/reactive-ecs` back to `^0.2.0` if needed (the v0.3.0 publish itself is non-revocable but is purely additive, so older callers continue to work against it).
@@ -598,11 +608,12 @@ For each migrated observer, the question is: does any code synchronously read th
 
 ### B.3 `parentFrameActiveSystem`
 
-- **Trigger**: `addComponent` / `setComponent` / `removeComponent` of `ParentFrame`.
+- **Trigger**: `addComponent` / `setComponent` of `ParentFrame`. **Not `removeComponent`** — see pre-existing limitation below.
 - **Output**: `Active` tag (toggled via `reconcileEntityActive`), and an engine-dirty flag.
 - **Synchronous readers of `Active` after `ParentFrame` mutation**: `cullSystem` reads `queryTagged(Active)` — but cull is in `derive` phase, two phases after `react`. Same-tick read sees the updated `Active` tag.
 - **Edge case**: a command that mutates `ParentFrame` and immediately reads `queryTagged(Active)` in the same call frame (e.g., a custom command implementation). Today: observer fires sync, read sees the new `Active`. After: `Active` is updated in the next tick's `react` phase. **Behavioural change.** Mitigation: search for any same-frame `queryTagged(Active)` after `ParentFrame` mutation; today there are none in the codebase. Add an assertion in dev mode if one shows up.
-- **Verdict**: behaviour-preserving for current callers; documented one-tick latency for hypothetical future same-frame readers.
+- **Pre-existing limitation — `ParentFrame` *remove* is not handled**: `reactive-ecs` does not emit a change event on `removeComponent`. The original `onComponentChanged(ParentFrame)` observer therefore never fired on remove, despite a stale RFC-004 § Phase 5 comment claiming otherwise. The new system inherits the same gap (`queryChanged` also skips removes). The "child returns to root" recovery path runs via `navigationFilterSystem` on the next `navStack.changed`. To fix properly, either (a) push `navStack.changed = true` from the remover, or (b) add `world.queryRemoved` to reactive-ecs.
+- **Verdict**: behaviour-preserving for current callers; documented one-tick latency for hypothetical future same-frame readers; the remove-path gap is a pre-existing bug, not a regression.
 
 ### B.4 `roleRefreshSystem`
 

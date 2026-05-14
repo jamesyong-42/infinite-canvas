@@ -25,19 +25,20 @@ describe('parentFrameActiveSystem', () => {
 		expect(engine.has(e, Active)).toBe(false);
 	});
 
-	it('keeps Active when ParentFrame is set to the current frame', () => {
+	it('reconcile is idempotent across redundant ParentFrame writes', () => {
 		const engine = createLayoutEngine();
 		const e = engine.createEntity([
 			[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
 		]);
 		engine.tick();
-		// Root is the active frame; entity is Active. Updating ParentFrame to a
-		// value that still doesn't match shouldn't toggle Active back on.
+
+		// Add ParentFrame pointing at a non-current container — Active drops.
 		engine.world.addComponent(e, ParentFrame, { id: 999 as EntityId });
 		engine.tick();
 		expect(engine.has(e, Active)).toBe(false);
 
-		// `setComponent` writes the same value back — reconcile is idempotent.
+		// `setComponent` writes the same value back — reconcile must be
+		// idempotent (still queryChanged-detected, but no Active flip).
 		engine.world.setComponent(e, ParentFrame, { id: 999 as EntityId });
 		engine.tick();
 		expect(engine.has(e, Active)).toBe(false);
