@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v1.3.0...infinite-canvas-v1.4.0) (2026-05-14)
+
+
+### Features
+
+* **rfc-010:** swap to PhasedScheduler + ENGINE_PHASES (Phase 2) ([#12](https://github.com/jamesyong-42/infinite-canvas/issues/12)) ([307855b](https://github.com/jamesyong-42/infinite-canvas/commit/307855b9eac12ab9a505b8763f3843c90a893117))
+
 ## [1.3.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v1.2.0...infinite-canvas-v1.3.0) (2026-05-14)
 
 
