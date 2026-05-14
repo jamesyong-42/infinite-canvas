@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v1.4.0...infinite-canvas-v1.5.0) (2026-05-14)
+
+
+### Features
+
+* **rfc-010:** migrate 3 remaining observers to react-phase systems (Phase 3) ([#14](https://github.com/jamesyong-42/infinite-canvas/issues/14)) ([a255e12](https://github.com/jamesyong-42/infinite-canvas/commit/a255e1212f9f2fd4f582acce26adabd28e52213f))
+
 ## [1.4.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v1.3.0...infinite-canvas-v1.4.0) (2026-05-14)
 
 
