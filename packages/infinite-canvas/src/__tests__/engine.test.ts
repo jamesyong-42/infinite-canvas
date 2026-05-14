@@ -370,14 +370,16 @@ describe('CanvasEngine', () => {
 		});
 
 		it('auto-attaches ContainerCamera when Container is added', () => {
-			// RFC-004 Phase 0c: an archetype observer attaches a default
-			// ContainerCamera to every entity that gets the Container tag.
+			// RFC-010 Phase 3: a `react`-phase `containerCameraSystem` attaches
+			// a default ContainerCamera to every entity that just received
+			// the Container component.
 			const engine = createTestEngine();
 			const container = engine.createEntity([
 				[Transform2D, { x: 0, y: 0, width: 400, height: 300, rotation: 0 }],
 				[Widget, { surface: 'dom', type: 'container' }],
 				[Container, { enterable: true }],
 			]);
+			engine.tick();
 			expect(engine.has(container, ContainerCamera)).toBe(true);
 			const cam = engine.get(container, ContainerCamera);
 			expect(cam).toEqual({ x: 0, y: 0, zoom: 1 });
@@ -829,6 +831,7 @@ describe('CanvasEngine', () => {
 				[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
 				[Selectable],
 			]);
+			engine.tick();
 
 			expect(engine.get(e, InteractionRole)?.role.type).toBe('select');
 			expect(engine.has(e, CursorHint)).toBe(false);
@@ -840,9 +843,11 @@ describe('CanvasEngine', () => {
 				[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
 				[Selectable],
 			]);
+			engine.tick();
 			expect(engine.get(e, InteractionRole)?.role.type).toBe('select');
 
 			engine.world.addTag(e, Draggable);
+			engine.tick();
 			expect(engine.get(e, InteractionRole)?.role.type).toBe('drag');
 			expect(engine.get(e, CursorHint)).toEqual({ hover: 'grab', active: 'grabbing' });
 		});
@@ -854,9 +859,11 @@ describe('CanvasEngine', () => {
 				[Selectable],
 				[Draggable],
 			]);
+			engine.tick();
 			expect(engine.get(e, InteractionRole)?.role.type).toBe('drag');
 
 			engine.world.removeTag(e, Draggable);
+			engine.tick();
 			expect(engine.get(e, InteractionRole)?.role.type).toBe('select');
 			// CursorHint is not auto-cleared on downgrade — harmless because
 			// select-only entities are never hovered into the dragging state.
@@ -867,6 +874,7 @@ describe('CanvasEngine', () => {
 			const e = engine.createEntity([
 				[Transform2D, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }],
 			]);
+			engine.tick();
 			expect(engine.has(e, InteractionRole)).toBe(false);
 		});
 
@@ -877,10 +885,12 @@ describe('CanvasEngine', () => {
 				[Selectable],
 				[Draggable],
 			]);
+			engine.tick();
 			expect(engine.has(e, InteractionRole)).toBe(true);
 
 			engine.world.removeTag(e, Draggable);
 			engine.world.removeTag(e, Selectable);
+			engine.tick();
 			expect(engine.has(e, InteractionRole)).toBe(false);
 			expect(engine.has(e, CursorHint)).toBe(false);
 		});

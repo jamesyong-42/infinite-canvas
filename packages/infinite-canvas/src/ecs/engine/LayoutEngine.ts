@@ -12,15 +12,12 @@ import type { Archetype, ArchetypeRegistry, SpawnOptions } from '../archetype.js
 import { createArchetypeRegistry } from '../archetype.js';
 import type { Command } from '../commands.js';
 import { CommandBuffer } from '../commands.js';
-import type { InteractionRoleType } from '../components.js';
 import {
 	Active,
 	Container,
 	ContainerCamera,
 	ContainerChildren,
-	CursorHint,
 	Draggable,
-	InteractionRole,
 	Layer,
 	ParentFrame,
 	Resizable,
@@ -53,10 +50,12 @@ import { SpatialIndex } from '../spatial/SpatialIndex.js';
 import {
 	breakpointSystem,
 	cardSystem,
+	containerCameraSystem,
 	cullSystem,
 	dragPromoteSystem,
 	navigationFilterSystem,
-	reconcileEntityActive,
+	parentFrameActiveSystem,
+	roleRefreshSystem,
 	sortSystem,
 	transformTweenSystem,
 } from '../systems/index.js';
@@ -124,6 +123,9 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	scheduler.register(breakpointSystem);
 	scheduler.register(sortSystem);
 	scheduler.register(dragPromoteSystem);
+	scheduler.register(containerCameraSystem);
+	scheduler.register(parentFrameActiveSystem);
+	scheduler.register(roleRefreshSystem);
 
 	const unsubscribers: Unsubscribe[] = [];
 
@@ -144,82 +146,16 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		}),
 	);
 
-	// Auto-attach ContainerCamera on Container-tag add, so every container
-	// entity has a usable camera component from birth (serialization round-
-	// trips cleanly; enterContainer can read without falling back). The
-	// prev === undefined guard scopes this to component *adds* only —
-	// updates of an existing Container value do not re-stamp a fresh camera.
-	unsubscribers.push(
-		world.onComponentChanged(Container, (entityId, prev, next) => {
-			if (prev === undefined && next !== undefined) {
-				if (!world.hasComponent(entityId, ContainerCamera)) {
-					world.addComponent(entityId, ContainerCamera, { x: 0, y: 0, zoom: 1 });
-				}
-			}
-		}),
-	);
-
-	// RFC-004 § Phase 5 — keep `Active` in sync with mid-session
-	// ParentFrame mutations. Covers the consume path (child gets
-	// `ParentFrame`, should leave the current frame), re-parent (id
-	// changes), and undo (ParentFrame removed, child returns to root).
-	// Without this, a consumed card retains `Active` at root until the
-	// next nav-stack change and renders visibly on top of its own
-	// container. The nav-stack-change branch of `navigationFilterSystem`
-	// still handles the full refilter when the user navigates.
-	unsubscribers.push(
-		world.onComponentChanged(ParentFrame, (entityId) => {
-			reconcileEntityActive(world, entityId);
-			markDirtyInternal();
-		}),
-	);
-
-	// Auto-attach InteractionRole and CursorHint based on Draggable/Selectable
-	// tag presence. Entities with an explicit non-drag/non-select role
-	// (rotate/connect/etc.) are left alone.
-	function refreshInteractionRole(entity: EntityId): void {
-		const current = world.getComponent(entity, InteractionRole);
-		if (
-			current &&
-			current.role.type !== 'drag' &&
-			current.role.type !== 'select' &&
-			current.role.type !== 'canvas'
-		) {
-			return;
-		}
-
-		const hasDraggable = world.hasTag(entity, Draggable);
-		const hasSelectable = world.hasTag(entity, Selectable);
-		const desiredRole: InteractionRoleType | null = hasDraggable
-			? { type: 'drag' }
-			: hasSelectable
-				? { type: 'select' }
-				: null;
-
-		if (desiredRole === null) {
-			if (current) world.removeComponent(entity, InteractionRole);
-			if (world.hasComponent(entity, CursorHint)) world.removeComponent(entity, CursorHint);
-			return;
-		}
-
-		if (!current) {
-			world.addComponent(entity, InteractionRole, { layer: 5, role: desiredRole });
-		} else if (current.role.type !== desiredRole.type) {
-			world.setComponent(entity, InteractionRole, { role: desiredRole });
-		}
-
-		if (desiredRole.type === 'drag' && !world.hasComponent(entity, CursorHint)) {
-			world.addComponent(entity, CursorHint, { hover: 'grab', active: 'grabbing' });
-		}
-	}
-	unsubscribers.push(world.onTagAdded(Draggable, refreshInteractionRole));
-	unsubscribers.push(world.onTagRemoved(Draggable, refreshInteractionRole));
-	unsubscribers.push(world.onTagAdded(Selectable, refreshInteractionRole));
-	unsubscribers.push(world.onTagRemoved(Selectable, refreshInteractionRole));
-
-	// Drag-promote is implemented as `dragPromoteSystem` (RFC-010 Phase 1),
-	// registered above. It runs `before: 'cull'` and uses the presence of
-	// `PreDragLayer` as a diff signal — no observers required.
+	// RFC-010 Phase 3 — the former imperative observers
+	//   - `Container` add → `ContainerCamera` auto-attach
+	//   - `ParentFrame` change → `reconcileEntityActive`
+	//   - `Draggable`/`Selectable` add/remove → `refreshInteractionRole`
+	// now live as `react`-phase systems (`containerCameraSystem`,
+	// `parentFrameActiveSystem`, `roleRefreshSystem`), registered above.
+	// Drag-promote (RFC-010 Phase 1) is also a `react`-phase system.
+	// All five remaining observers in this file went away with that
+	// migration; what stays is the two-handler sync-reactive bus for the
+	// spatial index (Transform2D upsert + onEntityDestroyed) above.
 
 	// Pre-register widgets and archetypes from config
 	if (config?.widgets) {
