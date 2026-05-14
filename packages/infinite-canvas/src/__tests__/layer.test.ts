@@ -36,7 +36,11 @@ describe('Layer system (RFC-003 Phase 1)', () => {
 	});
 });
 
-describe('dragPromoteSystem (RFC-003 Phase 3)', () => {
+describe('dragPromoteSystem (RFC-010 Phase 1 — per-tick system)', () => {
+	// Post RFC-010 Phase 1 the promote/restore logic lives in
+	// `dragPromoteSystem` instead of two sync observers, so each Dragging-tag
+	// mutation must be followed by `engine.tick()` to let the system run.
+
 	it('promotes a dragged Card widget to overlay and restores on drop', () => {
 		const engine = createLayoutEngine();
 		const e = engine.createEntity([
@@ -46,9 +50,11 @@ describe('dragPromoteSystem (RFC-003 Phase 3)', () => {
 		]);
 
 		engine.world.addTag(e, Dragging);
+		engine.tick();
 		expect(engine.get(e, Layer)).toEqual({ name: 'overlay' });
 
 		engine.world.removeTag(e, Dragging);
+		engine.tick();
 		expect(engine.get(e, Layer)).toEqual({ name: 'base' });
 	});
 
@@ -62,9 +68,11 @@ describe('dragPromoteSystem (RFC-003 Phase 3)', () => {
 		]);
 
 		engine.world.addTag(e, Dragging);
+		engine.tick();
 		expect(engine.get(e, Layer)).toEqual({ name: 'overlay' });
 
 		engine.world.removeTag(e, Dragging);
+		engine.tick();
 		expect(engine.get(e, Layer)).toEqual({ name: 'background' });
 	});
 
@@ -76,9 +84,11 @@ describe('dragPromoteSystem (RFC-003 Phase 3)', () => {
 		]);
 
 		engine.world.addTag(e, Dragging);
+		engine.tick();
 		expect(engine.get(e, Layer)).toEqual({ name: 'overlay' });
 
 		engine.world.removeTag(e, Dragging);
+		engine.tick();
 		expect(engine.get(e, Layer)).toEqual({ name: 'base' });
 	});
 
@@ -92,6 +102,7 @@ describe('dragPromoteSystem (RFC-003 Phase 3)', () => {
 		]);
 
 		engine.world.addTag(e, Dragging);
+		engine.tick();
 		expect(engine.get(e, Layer)).toEqual({ name: 'base' });
 	});
 
@@ -105,6 +116,7 @@ describe('dragPromoteSystem (RFC-003 Phase 3)', () => {
 		]);
 
 		engine.world.addTag(e, Dragging);
+		engine.tick();
 		// R3F widget chrome would occlude its own 3D content if promoted —
 		// promotion is intentionally a DOM-only mechanism.
 		expect(engine.get(e, Layer)).toEqual({ name: 'base' });
@@ -119,14 +131,17 @@ describe('dragPromoteSystem (RFC-003 Phase 3)', () => {
 		]);
 
 		engine.world.addTag(e, Dragging);
-		// (Some other system or test could spuriously re-fire; the
-		// PreDragLayer guard must prevent overwriting 'background' with
-		// the now-current 'overlay'.)
-		engine.world.addTag(e, Dragging); // no-op in reactive-ecs (already set), but exercise the guard
-		// Force the listener again by removing + re-adding within the test.
+		engine.tick();
+		// PreDragLayer is now stashed with 'background'. A spurious re-add
+		// must not overwrite it with the now-current 'overlay'.
+		engine.world.addTag(e, Dragging); // no-op in reactive-ecs (already set)
+		engine.tick();
 		engine.world.removeTag(e, Dragging);
+		engine.tick();
 		engine.world.addTag(e, Dragging);
+		engine.tick();
 		engine.world.removeTag(e, Dragging);
+		engine.tick();
 
 		expect(engine.get(e, Layer)).toEqual({ name: 'background' });
 	});

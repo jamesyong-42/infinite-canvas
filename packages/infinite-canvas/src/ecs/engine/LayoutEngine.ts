@@ -15,17 +15,14 @@ import { CommandBuffer } from '../commands.js';
 import type { InteractionRoleType } from '../components.js';
 import {
 	Active,
-	Card,
 	Container,
 	ContainerCamera,
 	ContainerChildren,
 	CursorHint,
 	Draggable,
-	Dragging,
 	InteractionRole,
 	Layer,
 	ParentFrame,
-	PreDragLayer,
 	Resizable,
 	Selectable,
 	Selected,
@@ -57,6 +54,7 @@ import {
 	breakpointSystem,
 	cardSystem,
 	cullSystem,
+	dragPromoteSystem,
 	navigationFilterSystem,
 	reconcileEntityActive,
 	sortSystem,
@@ -121,6 +119,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	scheduler.register(cullSystem);
 	scheduler.register(breakpointSystem);
 	scheduler.register(sortSystem);
+	scheduler.register(dragPromoteSystem);
 
 	const unsubscribers: Unsubscribe[] = [];
 
@@ -214,38 +213,9 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	unsubscribers.push(world.onTagAdded(Selectable, refreshInteractionRole));
 	unsubscribers.push(world.onTagRemoved(Selectable, refreshInteractionRole));
 
-	// Drag-promote (RFC-003): while a DOM card is dragged, hoist it to
-	// the 'overlay' layer so it visually pops above the R3F canvas.
-	//
-	// Gated on the `Card` component. R3F cards skip promotion — they
-	// handle their own stacking via the compositor (uDraggedRect clip +
-	// renderOrder bump). DOM widgets without Card are bare debug-style
-	// surfaces that shouldn't acquire card-shaped affordances.
-	unsubscribers.push(
-		world.onTagAdded(Dragging, (entity) => {
-			if (world.hasComponent(entity, PreDragLayer)) return;
-			if (!world.hasComponent(entity, Card)) return;
-			const widget = world.getComponent(entity, WidgetComp);
-			if (widget?.surface === 'webgl') return;
-			const prev = world.getComponent(entity, Layer)?.name ?? 'base';
-			world.addComponent(entity, PreDragLayer, { name: prev });
-			if (world.hasComponent(entity, Layer)) {
-				world.setComponent(entity, Layer, { name: 'overlay' });
-			} else {
-				world.addComponent(entity, Layer, { name: 'overlay' });
-			}
-			markDirtyInternal();
-		}),
-	);
-	unsubscribers.push(
-		world.onTagRemoved(Dragging, (entity) => {
-			const stash = world.getComponent(entity, PreDragLayer);
-			if (!stash) return;
-			world.setComponent(entity, Layer, { name: stash.name });
-			world.removeComponent(entity, PreDragLayer);
-			markDirtyInternal();
-		}),
-	);
+	// Drag-promote is implemented as `dragPromoteSystem` (RFC-010 Phase 1),
+	// registered above. It runs `before: 'cull'` and uses the presence of
+	// `PreDragLayer` as a diff signal — no observers required.
 
 	// Pre-register widgets and archetypes from config
 	if (config?.widgets) {
