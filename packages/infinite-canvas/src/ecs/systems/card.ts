@@ -12,6 +12,7 @@ import { CardPresetsResource } from '../resources.js';
  */
 export const cardSystem = defineSystem({
 	name: 'card',
+	phase: 'derive',
 	execute: (world: World) => {
 		const resource = world.getResource(CardPresetsResource);
 		if (!resource) return;

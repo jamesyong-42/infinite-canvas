@@ -6,6 +6,7 @@ import { defineSystem } from '@jamesyong42/reactive-ecs';
  */
 export const sortSystem = defineSystem({
 	name: 'sort',
+	phase: 'derive',
 	after: 'breakpoint',
 	execute: (_world: World) => {
 		// Sorting is done in engine.tick() after systems run

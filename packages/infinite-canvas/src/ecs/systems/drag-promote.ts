@@ -13,14 +13,13 @@ import { Card, Dragging, Layer, PreDragLayer, Widget } from '../components.js';
  *   Dragging present, no PreDragLayer  → promote (stash old layer, set overlay)
  *   PreDragLayer present, no Dragging  → restore (write back stashed layer)
  *
- * RFC-010 Phase 1 — migrates the two `onTagAdded(Dragging)` /
- * `onTagRemoved(Dragging)` observers out of `LayoutEngine.ts` into a
- * `SystemScheduler` system. The `before: 'cull'` constraint is conservative
- * and becomes implicit once RFC-010 Phase 2 stamps `phase: 'react'`.
+ * RFC-010 — runs in the `react` phase so the promote/restore is settled
+ * before `derive`-phase systems (`cull`, `breakpoint`, `sort`) and the
+ * `present`-phase visibility / frame-changes assembly run.
  */
 export const dragPromoteSystem = defineSystem({
 	name: 'dragPromote',
-	before: 'cull',
+	phase: 'react',
 	execute: (world: World) => {
 		for (const entity of world.queryTagged(Dragging)) {
 			if (world.hasComponent(entity, PreDragLayer)) continue;

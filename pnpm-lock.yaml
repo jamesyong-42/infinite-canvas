@@ -85,8 +85,8 @@ importers:
   packages/infinite-canvas:
     dependencies:
       '@jamesyong42/reactive-ecs':
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.3.0
+        version: 0.3.0
     devDependencies:
       '@arethetypeswrong/cli':
         specifier: ^0.18.2
@@ -401,8 +401,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@jamesyong42/reactive-ecs@0.2.0':
-    resolution: {integrity: sha512-vE0U4Jk65y2AmVaTdqFBSrqBOxQnunBRdP+MPjPBSbeurCkJ0NiBVEtifQ/J6whIEYOJSEYtjlUwmCTw32Yrcw==}
+  '@jamesyong42/reactive-ecs@0.3.0':
+    resolution: {integrity: sha512-00B/F4+KXwPNMy1H0cPVI6OU/aQ4hmoh+odpdcSI8I1WSM9bmz43PIw98I6nZYeM8Kwr3EIFStPEbL3LhAwBMg==}
     engines: {node: '>=20'}
 
   '@jridgewell/gen-mapping@0.3.13':
@@ -2177,7 +2177,7 @@ snapshots:
   '@esbuild/win32-x64@0.27.7':
     optional: true
 
-  '@jamesyong42/reactive-ecs@0.2.0': {}
+  '@jamesyong42/reactive-ecs@0.3.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

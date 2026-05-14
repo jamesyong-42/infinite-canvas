@@ -40,6 +40,7 @@ export function applyEasing(p: number, easing: TweenEasing): number {
  */
 export const transformTweenSystem = defineSystem({
 	name: 'transformTween',
+	phase: 'simulate',
 	execute: (world: World) => {
 		const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
 		for (const entity of world.query(TransformTween)) {
