@@ -10,6 +10,7 @@ import { BreakpointConfigResource, CameraResource } from '../resources.js';
  */
 export const breakpointSystem = defineSystem({
 	name: 'breakpoint',
+	phase: 'derive',
 	after: 'cull',
 	execute: (world: World) => {
 		const camera = world.getResource(CameraResource);

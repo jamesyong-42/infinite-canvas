@@ -15,7 +15,7 @@ import { CameraResource, SpatialIndexResource, ViewportResource } from '../resou
  */
 export const cullSystem = defineSystem({
 	name: 'cull',
-	after: 'navigationFilter',
+	phase: 'derive',
 	execute: (world: World) => {
 		const camera = world.getResource(CameraResource);
 		const viewport = world.getResource(ViewportResource);

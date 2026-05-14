@@ -30,6 +30,7 @@ export function reconcileEntityActive(world: World, entity: number): void {
  */
 export const navigationFilterSystem = defineSystem({
 	name: 'navigationFilter',
+	phase: 'control',
 	execute: (world: World) => {
 		const navStack = world.getResource(NavigationStackResource);
 		const stackChanged = navStack.changed;

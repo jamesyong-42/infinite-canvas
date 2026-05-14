@@ -6,7 +6,7 @@ import type {
 	TagType,
 	Unsubscribe,
 } from '@jamesyong42/reactive-ecs';
-import { createWorld, SystemScheduler } from '@jamesyong42/reactive-ecs';
+import { createWorld, PhasedScheduler } from '@jamesyong42/reactive-ecs';
 import { Profiler } from '../../profiler/Profiler.js';
 import type { Archetype, ArchetypeRegistry, SpawnOptions } from '../archetype.js';
 import { createArchetypeRegistry } from '../archetype.js';
@@ -61,6 +61,7 @@ import {
 	transformTweenSystem,
 } from '../systems/index.js';
 import { createInteractionRuntime } from './interaction.js';
+import { ENGINE_PHASES } from './phases.js';
 import type {
 	FrameChanges,
 	LayoutEngine,
@@ -80,7 +81,10 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	config?: LayoutEngineConfig<W>,
 ): LayoutEngine<W> {
 	const world = createWorld();
-	const scheduler = new SystemScheduler();
+	const scheduler = new PhasedScheduler({
+		phases: ENGINE_PHASES,
+		defaultPhase: 'derive',
+	});
 	const spatialIndex = new SpatialIndex();
 	const profiler = new Profiler();
 	scheduler.profiler = profiler;
