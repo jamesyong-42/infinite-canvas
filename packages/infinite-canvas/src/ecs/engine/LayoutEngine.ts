@@ -18,7 +18,6 @@ import {
 	ContainerCamera,
 	ContainerChildren,
 	Draggable,
-	Layer,
 	ParentFrame,
 	Resizable,
 	Selectable,
@@ -27,9 +26,6 @@ import {
 	SnapSource,
 	SnapTarget,
 	Transform2D,
-	TransformTween,
-	Visible,
-	WidgetBreakpoint,
 	Widget as WidgetComp,
 	WidgetData,
 	ZIndex,
@@ -39,10 +35,14 @@ import {
 	BreakpointConfigResource,
 	CameraResource,
 	CardPresetsResource,
+	EngineDirtyResource,
+	FrameChangesResource,
 	NavigationStackResource,
 	RootCameraResource,
 	SpatialIndexResource,
+	TickFlagsResource,
 	ViewportResource,
+	VisibleEntitiesResource,
 	ZoomConfigResource,
 } from '../resources.js';
 import type { StandardSchemaV1 } from '../schema.js';
@@ -50,14 +50,21 @@ import { SpatialIndex } from '../spatial/SpatialIndex.js';
 import {
 	breakpointSystem,
 	cardSystem,
+	clearDirtySystem,
 	containerCameraSystem,
 	cullSystem,
 	dragPromoteSystem,
+	emitFrameSystem,
+	frameChangesSystem,
+	incrementTickSystem,
 	navigationFilterSystem,
+	navStackCaptureSystem,
 	parentFrameActiveSystem,
 	roleRefreshSystem,
 	sortSystem,
 	transformTweenSystem,
+	tweenKeepaliveSystem,
+	visibilitySystem,
 } from '../systems/index.js';
 import { createInteractionRuntime } from './interaction.js';
 import { ENGINE_PHASES } from './phases.js';
@@ -115,17 +122,26 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	let snapThreshold = config?.snap?.threshold ?? 5;
 	let snapGuidesVisible = config?.snap?.guidesVisible ?? true;
 
-	// Register built-in systems.
-	scheduler.register(cardSystem);
-	scheduler.register(transformTweenSystem);
-	scheduler.register(navigationFilterSystem);
-	scheduler.register(cullSystem);
-	scheduler.register(breakpointSystem);
-	scheduler.register(sortSystem);
-	scheduler.register(dragPromoteSystem);
-	scheduler.register(containerCameraSystem);
-	scheduler.register(parentFrameActiveSystem);
-	scheduler.register(roleRefreshSystem);
+	// Register built-in systems. `flyBackSystem` / `cursorSystem` are
+	// registered after the interaction runtime is created (they capture
+	// its closure state).
+	scheduler.register(navStackCaptureSystem); // input
+	scheduler.register(dragPromoteSystem); // react
+	scheduler.register(containerCameraSystem); // react
+	scheduler.register(parentFrameActiveSystem); // react
+	scheduler.register(roleRefreshSystem); // react
+	scheduler.register(navigationFilterSystem); // control
+	scheduler.register(transformTweenSystem); // simulate
+	scheduler.register(cardSystem); // derive
+	scheduler.register(cullSystem); // derive
+	scheduler.register(breakpointSystem); // derive
+	scheduler.register(sortSystem); // derive
+	scheduler.register(visibilitySystem); // present
+	scheduler.register(frameChangesSystem); // present
+	scheduler.register(clearDirtySystem); // cleanup
+	scheduler.register(incrementTickSystem); // cleanup
+	scheduler.register(emitFrameSystem); // cleanup
+	scheduler.register(tweenKeepaliveSystem); // cleanup
 
 	const unsubscribers: Unsubscribe[] = [];
 
@@ -168,26 +184,20 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	// Initialize navigation — mark root entities as Active on first tick
 	world.setResource(NavigationStackResource, { changed: true });
 
-	// Frame-level state
-	let dirty = false;
-	let cameraChangedThisTick = false;
-	let selectionChangedThisTick = false;
-	let prevVisible = new Set<EntityId>();
-	let currentVisible: VisibleEntity[] = [];
-	let frameChanges: FrameChanges = {
-		positionsChanged: [],
-		breakpointsChanged: [],
-		zIndicesChanged: [],
-		entered: [],
-		exited: [],
-		cameraChanged: false,
-		navigationChanged: false,
-		selectionChanged: false,
-		layersChanged: false,
-	};
+	// RFC-010 Phase 4 — per-frame state lives in resources, not closure
+	// vars, so the `present` / `cleanup` phase systems can read & write it:
+	//   EngineDirtyResource    — the rAF-gate dirty flag
+	//   TickFlagsResource      — camera/selection/navigation per-tick flags
+	//   VisibleEntitiesResource — visibilitySystem output (+ prev set)
+	//   FrameChangesResource   — frameChangesSystem output
+	// All four have defaults, so no explicit initialization is needed.
 
 	function markDirtyInternal() {
-		dirty = true;
+		world.setResource(EngineDirtyResource, { dirty: true });
+	}
+
+	function markCameraChanged() {
+		world.setResource(TickFlagsResource, { cameraChanged: true });
 	}
 
 	// Compose the pointer / selection state machine.
@@ -197,7 +207,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		commandBuffer,
 		markDirty: markDirtyInternal,
 		notifySelectionChanged: () => {
-			selectionChangedThisTick = true;
+			world.setResource(TickFlagsResource, { selectionChanged: true });
 		},
 		getSnapEnabled: () => snapEnabled,
 		getSnapThreshold: () => snapThreshold,
@@ -207,6 +217,12 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		// to "no gate, static contract check only."
 		getWidgetInteraction: (type: string) => widgetRegistry.get(type)?.interaction,
 	});
+
+	// `control`-phase systems that capture the interaction runtime closure
+	// (RFC-010 Phase 4 — formerly `interaction.runFlyBackSystem()` /
+	// `runCursorSystem()` called inline after `scheduler.execute`).
+	scheduler.register(interaction.flyBackSystem);
+	scheduler.register(interaction.cursorSystem);
 
 	const engine: LayoutEngine<W> = {
 		world,
@@ -435,7 +451,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			const camera = world.getResource(CameraResource);
 			camera.x -= dx / camera.zoom;
 			camera.y -= dy / camera.zoom;
-			cameraChangedThisTick = true;
+			markCameraChanged();
 			markDirtyInternal();
 		},
 
@@ -444,7 +460,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			const viewport = world.getResource(ViewportResource);
 			camera.x = worldX - viewport.width / (2 * camera.zoom);
 			camera.y = worldY - viewport.height / (2 * camera.zoom);
-			cameraChangedThisTick = true;
+			markCameraChanged();
 			markDirtyInternal();
 		},
 
@@ -457,7 +473,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			camera.zoom = newZoom;
 			camera.x = worldBefore.x - screenX / newZoom;
 			camera.y = worldBefore.y - screenY / newZoom;
-			cameraChangedThisTick = true;
+			markCameraChanged();
 			markDirtyInternal();
 		},
 
@@ -470,7 +486,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			camera.zoom = clamp(zoom, zoomConfig.min, zoomConfig.max);
 			camera.x = centerWorldX - viewport.width / (2 * camera.zoom);
 			camera.y = centerWorldY - viewport.height / (2 * camera.zoom);
-			cameraChangedThisTick = true;
+			markCameraChanged();
 			markDirtyInternal();
 		},
 
@@ -485,7 +501,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			const camera = world.getResource(CameraResource);
 			if (camera.gesturing === active) return;
 			camera.gesturing = active;
-			cameraChangedThisTick = true;
+			markCameraChanged();
 			markDirtyInternal();
 		},
 
@@ -523,7 +539,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			camera.zoom = zoom;
 			camera.x = minX - padding - (viewport.width / zoom - contentWidth) / 2;
 			camera.y = minY - padding - (viewport.height / zoom - contentHeight) / 2;
-			cameraChangedThisTick = true;
+			markCameraChanged();
 			markDirtyInternal();
 		},
 
@@ -747,7 +763,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			camera.zoom = incoming.zoom;
 
 			interaction.clearSelection();
-			cameraChangedThisTick = true;
+			markCameraChanged();
 			markDirtyInternal();
 		},
 
@@ -782,7 +798,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 			camera.zoom = incoming.zoom;
 
 			interaction.clearSelection();
-			cameraChangedThisTick = true;
+			markCameraChanged();
 			markDirtyInternal();
 		},
 
@@ -803,108 +819,23 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 
 		profiler,
 
+		// RFC-010 Phase 4 — the entire former inline tail
+		// (navStack capture, fly-back/cursor, visibility build,
+		// FrameChanges assembly, clearDirty/incrementTick/emitFrame,
+		// tween keepalive) is now phase-ordered systems run by the
+		// PhasedScheduler. `tick()` is just the profiler frame bracket
+		// around `scheduler.execute`.
 		tick() {
 			profiler.beginFrame(world.currentTick);
-
-			// INVARIANT (RFC-004 Phase 0c): capture `navStack.changed` into a
-			// local `const` BEFORE `scheduler.execute` runs. `navigationFilter`
-			// mutates `navStack.changed = false` mid-tick as its reset signal;
-			// reading the flag after systems execute would always see false
-			// and this-tick navigation pushes/pops would silently miss their
-			// FrameChanges.navigationChanged notification. Do not reorder.
-			const navStackPreTick = world.getResource(NavigationStackResource);
-			const navigationChangedThisTick = navStackPreTick?.changed ?? false;
-
-			// Run all systems
 			scheduler.execute(world);
-
-			// RFC-004 § Phase 4 — fly-back completion poll. Runs after the
-			// tween system so an in-flight tween has had a chance to
-			// remove itself this tick; if it's gone and we're still in
-			// `flyingBack` mode, finalize (remove Dragging, restore ZIndex).
-			interaction.runFlyBackSystem();
-
-			// Derive cursor from interaction state + hover.
-			interaction.runCursorSystem();
-
-			// Compute visible entities for renderers
-			profiler.beginVisibility();
-			const newVisible: VisibleEntity[] = [];
-			const newVisibleSet = new Set<EntityId>();
-
-			for (const entity of world.query(WidgetComp, Visible)) {
-				const t = world.getComponent(entity, Transform2D);
-				const widget = world.getComponent(entity, WidgetComp);
-				const bp = world.getComponent(entity, WidgetBreakpoint);
-				const zIdx = world.getComponent(entity, ZIndex);
-				if (!t || !widget) continue;
-
-				newVisibleSet.add(entity);
-				newVisible.push({
-					entityId: entity,
-					x: t.x,
-					y: t.y,
-					width: t.width,
-					height: t.height,
-					breakpoint: bp?.current ?? 'normal',
-					zIndex: zIdx?.value ?? 0,
-					surface: widget.surface,
-					widgetType: widget.type,
-				});
-			}
-
-			newVisible.sort((a, b) => a.zIndex - b.zIndex);
-			profiler.endVisibility();
-
-			const entered: EntityId[] = [];
-			const exited: EntityId[] = [];
-			for (const entity of newVisibleSet) {
-				if (!prevVisible.has(entity)) entered.push(entity);
-			}
-			for (const entity of prevVisible) {
-				if (!newVisibleSet.has(entity)) exited.push(entity);
-			}
-
-			frameChanges = {
-				positionsChanged: world.queryChanged(Transform2D),
-				breakpointsChanged: world.queryChanged(WidgetBreakpoint),
-				zIndicesChanged: world.queryChanged(ZIndex),
-				entered,
-				exited,
-				cameraChanged: cameraChangedThisTick,
-				navigationChanged: navigationChangedThisTick,
-				selectionChanged: selectionChangedThisTick,
-				layersChanged: world.queryChanged(Layer).length > 0,
-			};
-
-			currentVisible = newVisible;
-			prevVisible = newVisibleSet;
-			cameraChangedThisTick = false;
-			selectionChangedThisTick = false;
-
-			profiler.endFrame(world.entityCount, newVisible.length);
-
-			world.clearDirty();
-			world.incrementTick();
-			world.emitFrame();
-
-			dirty = false;
-
-			// RFC-004 § Phase 2/4 — keep the rAF loop alive while any
-			// `TransformTween` is still running. The `Transform2D` reactive
-			// observer deliberately skips `markDirty` (it only refreshes the
-			// spatial index), so a tween's own Transform2D writes don't
-			// re-dirty the engine. Without this post-reset re-dirty, the
-			// engine would tick once into the animation and then freeze the
-			// card mid-fly-back. Cheap: bails after one iteration.
-			for (const _ of world.query(TransformTween)) {
-				dirty = true;
-				break;
-			}
+			profiler.endFrame(
+				world.entityCount,
+				world.getResource(VisibleEntitiesResource).current.length,
+			);
 		},
 
 		flushIfDirty(): boolean {
-			if (!dirty) return false;
+			if (!world.getResource(EngineDirtyResource).dirty) return false;
 			engine.tick();
 			return true;
 		},
@@ -912,11 +843,11 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		// === Output ===
 
 		getVisibleEntities(): VisibleEntity[] {
-			return currentVisible;
+			return world.getResource(VisibleEntitiesResource).current;
 		},
 
 		getFrameChanges(): FrameChanges {
-			return frameChanges;
+			return world.getResource(FrameChangesResource).changes;
 		},
 
 		getSpatialIndex(): SpatialIndex {

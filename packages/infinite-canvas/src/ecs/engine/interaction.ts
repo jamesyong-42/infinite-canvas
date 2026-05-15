@@ -1,4 +1,5 @@
 import type { EntityId, World } from '@jamesyong42/reactive-ecs';
+import { defineSystem } from '@jamesyong42/reactive-ecs';
 import type { CommandBuffer, EntitySnapshot } from '../commands.js';
 import { ConsumeCommand, MoveCommand, ResizeCommand, snapshotEntity } from '../commands.js';
 import type { CSSCursor, InteractionRoleData, ResizeHandlePos } from '../components.js';
@@ -543,6 +544,33 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 
 		world.setResource(CursorResource, { cursor });
 	}
+
+	// RFC-010 Phase 4 — expose `runFlyBackSystem` and `runCursorSystem` as
+	// schedulable `SystemDef`s so the engine no longer calls them inline
+	// after `scheduler.execute`.
+	//
+	// Phase placement (corrects the RFC-010 § "What goes in each phase"
+	// table, which put both in `control`): `flyBack` is the *completion
+	// poll* for the fly-back `TransformTween`, so it must run AFTER
+	// `transformTweenSystem` has had a chance to remove the finished tween
+	// this tick — hence `simulate`, `after: 'transformTween'`. Putting it
+	// in `control` (before `simulate`) made it observe the pre-tween state
+	// and finalize one tick late, breaking drop-outcome fly-back. `cursor`
+	// derives `CursorResource` (a render output) from the post-flyBack
+	// interaction state, so it runs in `present` (after `simulate`); the
+	// phase order alone sequences it after `flyBack` (no cross-phase
+	// `after`, which the scheduler rejects).
+	const flyBackSystem = defineSystem({
+		name: 'flyBack',
+		phase: 'simulate',
+		after: 'transformTween',
+		execute: () => runFlyBackSystem(),
+	});
+	const cursorSystem = defineSystem({
+		name: 'cursor',
+		phase: 'present',
+		execute: () => runCursorSystem(),
+	});
 
 	// ------------------------------------------------------------------
 	// RFC-008 Phase 3b — internal helpers operating in world coordinates.
@@ -1215,8 +1243,8 @@ export function createInteractionRuntime(ctx: InteractionContext) {
 		handlePointerMove,
 		handlePointerUp,
 		handlePointerCancel,
-		runCursorSystem,
-		runFlyBackSystem,
+		flyBackSystem,
+		cursorSystem,
 		selectEntity,
 		clearSelection,
 		getHoveredEntity: () => hoveredEntity,
