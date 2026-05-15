@@ -1,6 +1,7 @@
 import type { EntityId } from '@jamesyong42/reactive-ecs';
 import { defineResource } from '@jamesyong42/reactive-ecs';
 import type { CardPreset, CSSCursor } from './components.js';
+import type { FrameChanges, VisibleEntity } from './engine/types.js';
 import type { SpatialIndex } from './spatial/SpatialIndex.js';
 
 /**
@@ -146,4 +147,93 @@ export type LayerOrderData = {
 
 export const LayerOrderResource = defineResource<LayerOrderData>('LayerOrder', {
 	layers: ['background', 'base', 'overlay'],
+});
+
+// === RFC-010 Phase 4 — per-frame engine state ===
+
+/**
+ * Output of `visibilitySystem` (`present` phase). `current` is what
+ * `engine.getVisibleEntities()` returns; `prev` is the previous tick's
+ * entityId set, used by `frameChangesSystem` to compute entered/exited.
+ *
+ * RFC-010 Phase 4 — replaces the closure vars `currentVisible` /
+ * `prevVisible` in `createLayoutEngine`.
+ */
+export type VisibleEntitiesResourceData = {
+	current: VisibleEntity[];
+	prev: Set<EntityId>;
+};
+
+export const VisibleEntitiesResource = defineResource<VisibleEntitiesResourceData>(
+	'VisibleEntities',
+	{
+		current: [],
+		prev: new Set<EntityId>(),
+	},
+);
+
+/**
+ * Output of `frameChangesSystem` (`present` phase, after `visibility`).
+ * What `engine.getFrameChanges()` returns. RFC-010 Phase 4 — replaces the
+ * closure var `frameChanges` in `createLayoutEngine`.
+ */
+export type FrameChangesResourceData = {
+	changes: FrameChanges;
+};
+
+export const FrameChangesResource = defineResource<FrameChangesResourceData>('FrameChanges', {
+	changes: {
+		positionsChanged: [],
+		breakpointsChanged: [],
+		zIndicesChanged: [],
+		entered: [],
+		exited: [],
+		cameraChanged: false,
+		navigationChanged: false,
+		selectionChanged: false,
+		layersChanged: false,
+	},
+});
+
+/**
+ * Per-tick boolean flags set by engine APIs and read by
+ * `frameChangesSystem` to populate `FrameChanges.cameraChanged` /
+ * `selectionChanged` / `navigationChanged`.
+ *
+ * - `cameraChanged` — set by camera/zoom/setGesturing/zoomToFit/
+ *   enterContainer/exitContainer; read + reset by `frameChangesSystem`.
+ * - `selectionChanged` — set via the interaction runtime's
+ *   `notifySelectionChanged` callback; read + reset by `frameChangesSystem`.
+ * - `navigationChangedSnapshot` — captured by `navStackCaptureSystem`
+ *   (`input` phase) **before** `navigationFilterSystem` resets
+ *   `NavigationStackResource.changed`. Read by `frameChangesSystem`.
+ *
+ * RFC-010 Phase 4 — replaces the closure vars `cameraChangedThisTick` /
+ * `selectionChangedThisTick` and the inline `navStackPreTick` capture in
+ * `createLayoutEngine`.
+ */
+export type TickFlagsResourceData = {
+	cameraChanged: boolean;
+	selectionChanged: boolean;
+	navigationChangedSnapshot: boolean;
+};
+
+export const TickFlagsResource = defineResource<TickFlagsResourceData>('TickFlags', {
+	cameraChanged: false,
+	selectionChanged: false,
+	navigationChangedSnapshot: false,
+});
+
+/**
+ * Engine-level dirty flag. Set by mutation APIs in `createLayoutEngine`
+ * and by `tweenKeepaliveSystem` (when any `TransformTween` is alive).
+ * Cleared by the cleanup-phase `clearDirtySystem`. Read by `flushIfDirty`
+ * to gate the next rAF tick.
+ *
+ * RFC-010 Phase 4 — replaces the closure var `dirty` in
+ * `createLayoutEngine`. Phase 5 will fold most of the explicit setters
+ * into a mutation proxy.
+ */
+export const EngineDirtyResource = defineResource<{ dirty: boolean }>('EngineDirty', {
+	dirty: false,
 });
