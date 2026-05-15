@@ -1,8 +1,8 @@
 # RFC-010: Two-Pipeline ECS Refactor — Sync-Reactive Bus + Phased Tick Pipeline
 
-- **Status**: Draft v2.1
+- **Status**: Draft v2.2
 - **Author**: James Yong
-- **Date**: 2026-05-14 (v2.1: post-Phase-3 corrections; v2: pre-implementation; v1: initial)
+- **Date**: 2026-05-15 (v2.2: post-Phase-4 corrections; v2.1: post-Phase-3; v2: pre-implementation; v1: initial)
 - **Area**: ECS / Engine / Scheduler / `@jamesyong42/reactive-ecs` package
 - **Related**: RFC-003 (`dragPromoteSystem` reference predates its existence as a system), RFC-004 (Phase 5 `ParentFrame` ↔ `Active` reconcile observer + mid-system `navStack.changed` reset), RFC-009 (state systems assume a stable scheduler contract — this RFC supplies it).
 - **Supersedes**: The eight imperative observer wirings at `packages/infinite-canvas/src/ecs/engine/LayoutEngine.ts:130–248`, the two systems-in-disguise (`interaction.runFlyBackSystem`, `interaction.runCursorSystem`) called inline at lines 915–918, the inline tail of `engine.tick()` at lines 920–993 (visibility build, `FrameChanges` assembly, post-frame bookkeeping, tween keepalive), and ~6 redundant `engine.markDirty()` calls at the React boundary.
@@ -18,6 +18,11 @@
 
 - **Phase 2 prose ↔ table conflict resolved.** The v2 prose said "Stamp `phase: 'derive'` on the existing six systems," but the same paragraph also said "Drop `after: 'navigationFilter'` from `cullSystem` (also implicit)." Both can't be true unless `navigationFilter` is in an earlier phase. The "What goes in each phase" table was always the authoritative source: `navigationFilterSystem → control`, `transformTweenSystem → simulate`, the rest → `derive`. The Phase 2 prose is now rewritten to enumerate the per-system mapping explicitly. Implementation already followed the table.
 - **Pre-existing limitation documented in Appendix B.3.** `reactive-ecs` does not emit a change event on `removeComponent`, so the original `ParentFrame` observer never actually fired on remove despite a stale RFC-004 comment. The new `parentFrameActiveSystem` inherits the same gap (`queryChanged` skips removes). The "child returns to root" recovery happens via `navigationFilterSystem` on the next `navStack.changed`. Documented as a known limitation, not a regression.
+
+### Corrections since v2.1 (post-Phase-4)
+
+- **`flyBack` / `cursor` phase placement corrected.** The "What goes in each phase" table and the Phase 4 migration plan put both `flyBackSystem` and `cursorSystem` in `control`. That is wrong: `flyBackSystem` is the *completion poll* for the fly-back `TransformTween`, so it must run **after** `transformTweenSystem` (phase `simulate`) has had a chance to remove the finished tween this tick. Placed in `control` (which runs *before* `simulate`), it observed the pre-tween state and finalized the fly-back one tick late — `drop-outcome.test.ts` ("fly-back completion: after tween finishes, Dragging is removed") caught this during Phase 4 implementation. Corrected placement: `flyBackSystem` → `simulate`, `after: 'transformTween'`; `cursorSystem` → `present` (it derives the `CursorResource` *render output* from the post-flyBack interaction state; phase order alone sequences it after `flyBack`, and a cross-phase `after` would be rejected by the scheduler). The table, the architecture diagram, the Phase 4 plan, and the file-layout note below are all updated to match.
+- **`Profiler.beginVisibility` / `endVisibility` retired.** Phase 4 drops the dedicated visibility timer; the `visibilityMs` stat field is now vestigial (no consumer reads it) and `systemAvg.visibility` from the scheduler profiler carries the same signal. Not a behavioural change.
 
 ---
 
@@ -44,7 +49,7 @@ Net delta: roughly **−400 LOC, +250 LOC** across `LayoutEngine.ts`, `interacti
 | Smell | Location | Root cause | Resolution |
 |---|---|---|---|
 | 10.1 Eight observers wired imperatively at engine creation | `LayoutEngine.ts:130–248` | Side effects expressed as `world.onX` subscriptions, with no documented ordering, no profiler hooks, no test seam | Six become `react`-phase systems; two stay sync (spatial index) with a published one-shot contract |
-| 10.2 Two systems-in-disguise called inline after `scheduler.execute` | `LayoutEngine.ts:915–918` | `runFlyBackSystem` and `runCursorSystem` bypass the scheduler — invisible to the system profiler, no `after`/`before` semantics, no registration | Become `control`-phase systems registered like the rest |
+| 10.2 Two systems-in-disguise called inline after `scheduler.execute` | `LayoutEngine.ts:915–918` | `runFlyBackSystem` and `runCursorSystem` bypass the scheduler — invisible to the system profiler, no `after`/`before` semantics, no registration | Become scheduled `SystemDef`s registered like the rest (`flyBack` → `simulate after transformTween`; `cursor` → `present` — see "Corrections since v2.1") |
 | 10.3 Visibility, `FrameChanges`, tween-keepalive as inline tail logic | `LayoutEngine.ts:920–993` | ~70 LOC of bookkeeping wedged inside `tick()` | Become `present`/`cleanup`-phase systems |
 | 10.4 56 `markDirty()` sites with no central contract | 25 inside engine APIs, 23 inside `interaction.ts`, 6 redundant at React boundary, 2 legit at React boundary | Every mutation site explicitly marks dirty | Engine APIs become implicit-mark-on-mutation; redundant boundary calls deleted; legit boundary calls (CSS-vars / shader-uniform external state) keep their explicit `markDirty()` |
 | 10.5 Cross-loop ordering is undocumented | — | Spatial-index observer happens to fire before `cull` reads the index because mutations precede rAF; only a 7-line comment at line 127 acknowledges this | The sync-reactive bus contract makes this explicit; phase order makes within-tick ordering enforced |
@@ -132,10 +137,10 @@ other 5 mutate components which themselves mark dirty.
 │     phase: input      [navStackChangedCapture]                  │
 │     phase: react      [containerCamera, parentFrameActive,      │
 │                        roleRefresh, dragPromote]                │
-│     phase: control    [navigationFilter, flyBack, cursor]       │
-│     phase: simulate   [transformTween]                          │
+│     phase: control    [navigationFilter]                        │
+│     phase: simulate   [transformTween, flyBack]                 │
 │     phase: derive     [card, cull, breakpoint, sort]            │
-│     phase: present    [visibility, frameChanges]                │
+│     phase: present    [visibility, frameChanges, cursor]        │
 │     phase: cleanup    [clearDirty, incrementTick, emitFrame,    │
 │                        tweenKeepalive]                          │
 └────────────────────────────────────────────────────────────────┘
@@ -160,17 +165,17 @@ The phase order is total. Within a phase, the existing `after` / `before` constr
 ```
 packages/infinite-canvas/src/ecs/
   systems/
-   +  drag-promote.ts          (new — ex-observer at LayoutEngine.ts:225, 241)
-   +  container-camera.ts      (new — ex-observer at LayoutEngine.ts:150)
-   +  parent-frame-active.ts   (new — ex-observer at LayoutEngine.ts:168)
-   +  role-refresh.ts          (new — ex-observer at LayoutEngine.ts:212–215)
-   +  fly-back.ts              (new — ex-runFlyBackSystem)
-   +  cursor.ts                (new — ex-runCursorSystem)
-   +  visibility.ts            (new — ex-tail-of-tick lines 921–947)
-   +  frame-changes.ts         (new — ex-tail-of-tick lines 958–968)
-   +  cleanup.ts               (new — ex-tail-of-tick lines 977–981)
-   +  tween-keepalive.ts       (new — ex-tail-of-tick lines 990–993)
-   +  nav-stack-capture.ts     (new — ex-pre-scheduler capture, lines 905–906)
+   +  drag-promote.ts          (new — ex-observer; Phase 1)
+   +  container-camera.ts      (new — ex-observer; Phase 3)
+   +  parent-frame-active.ts   (new — ex-observer; Phase 3)
+   +  role-refresh.ts          (new — ex-observer; Phase 3)
+   +  nav-stack-capture.ts     (new — ex-pre-scheduler capture; Phase 4)
+   +  visibility.ts            (new — ex-tail-of-tick; Phase 4)
+   +  frame-changes.ts         (new — ex-tail-of-tick; Phase 4)
+   +  cleanup.ts               (new — clearDirty/incrementTick/emitFrame/
+                                tweenKeepalive, all four in one file; Phase 4)
+      (no fly-back.ts / cursor.ts — `flyBackSystem` / `cursorSystem` are
+       SystemDefs inside interaction.ts, capturing its closure; Phase 4)
       breakpoint.ts            (unchanged body, +phase: 'derive')
       card.ts                  (unchanged body, +phase: 'derive')
       cull.ts                  (unchanged body, +phase: 'derive')
@@ -326,13 +331,13 @@ for (const [name, entry] of this.entries) {
 
 | Phase | Systems | Notes |
 |---|---|---|
-| `input` | `navStackCaptureSystem` | Reads `NavigationStackResource.changed` and stores it in a transient `FrameInputResource`; needed because `navigationFilter` resets the flag during `control`. RFC-009 will populate this phase further with input-event-drain systems. |
+| `input` | `navStackCaptureSystem` | Snapshots `NavigationStackResource.changed` into `TickFlagsResource.navigationChangedSnapshot`; needed because `navigationFilter` resets the flag during `control`. RFC-009 will populate this phase further with input-event-drain systems. |
 | `react` | `containerCameraSystem`, `parentFrameActiveSystem`, `roleRefreshSystem`, `dragPromoteSystem` | Six ex-observers consolidated. |
-| `control` | `navigationFilterSystem`, `flyBackSystem`, `cursorSystem` | Two ex-inline systems join the existing `navigationFilter`. |
-| `simulate` | `transformTweenSystem` | Unchanged. |
+| `control` | `navigationFilterSystem` | `flyBack`/`cursor` were *here* in v2.1; corrected — see `simulate`/`present` and "Corrections since v2.1". |
+| `simulate` | `transformTweenSystem`, `flyBackSystem` (`after: 'transformTween'`) | `flyBackSystem` is the completion poll for the fly-back tween, so it runs in the same phase right after `transformTween` removes a finished tween. |
 | `derive` | `cardSystem`, `cullSystem`, `breakpointSystem`, `sortSystem` | Unchanged bodies. `cull` keeps `after: 'navigationFilter'`? **No** — `navigationFilter` is now in an earlier phase, so the constraint is implicit. Remove the explicit `after`. Same for `breakpoint`'s `after: 'cull'` (within-phase, keep) and `sort`'s `after: 'breakpoint'` (within-phase, keep). |
-| `present` | `visibilitySystem`, `frameChangesSystem` | Build `currentVisible` array and `frameChanges` object that `engine.getVisibleEntities()` and `engine.getFrameChanges()` return. |
-| `cleanup` | `clearDirtySystem`, `incrementTickSystem`, `emitFrameSystem`, `tweenKeepaliveSystem` | `tweenKeepaliveSystem` runs `after: 'clearDirtySystem'` so it can re-set the engine-level dirty bit if any `TransformTween` is alive. |
+| `present` | `visibilitySystem`, `frameChangesSystem` (`after: 'visibility'`), `cursorSystem` | First two build the `VisibleEntitiesResource` / `FrameChangesResource` that `engine.getVisibleEntities()` / `getFrameChanges()` return. `cursorSystem` derives the `CursorResource` render output from post-flyBack interaction state; runs after `flyBack` purely by phase order (`simulate` < `present`) — no cross-phase `after` (the scheduler rejects those). |
+| `cleanup` | `clearDirtySystem`, `incrementTickSystem` (`after: 'clearDirty'`), `emitFrameSystem` (`after: 'incrementTick'`), `tweenKeepaliveSystem` (`after: 'emitFrame'`) | `clearDirty` resets the World dirty buffers + `EngineDirtyResource`; `tweenKeepaliveSystem` runs last and re-sets `EngineDirtyResource.dirty` if any `TransformTween` is alive, so the rAF loop keeps the animation going. |
 
 ---
 
@@ -409,13 +414,13 @@ Each migration includes its Appendix-B audit, a focused test file, and deletion 
 
 ### Phase 4 — Inline tail of `tick()` → systems
 
-Extract the inline tail in five PRs:
+Shipped as **one PR** (#17), not five — same rationale as Phase 3's single PR.
 
-1. `flyBackSystem` (`control` phase) — replaces `interaction.runFlyBackSystem()` at line 915.
-2. `cursorSystem` (`control` phase) — replaces `interaction.runCursorSystem()` at line 918.
-3. `visibilitySystem` (`present` phase) — replaces lines 920–947. Writes a new `VisibleEntitiesResource` that `engine.getVisibleEntities()` reads.
-4. `frameChangesSystem` (`present` phase) — replaces lines 958–968. Writes a `FrameChangesResource` that `engine.getFrameChanges()` reads. Also subsumes `navStackCaptureSystem` from `input` phase (it captures `navigationChanged` from a snapshot taken before `control`).
-5. `cleanupSystems` (`cleanup` phase) — replaces lines 977–981 and 990–993. Four small systems: `clearDirty`, `incrementTick`, `emitFrame`, `tweenKeepalive`.
+1. `flyBackSystem` (**`simulate` phase, `after: 'transformTween'`** — *not* `control`; see "Corrections since v2.1") — replaces `interaction.runFlyBackSystem()`. Exposed from `interaction.ts` as a `SystemDef` capturing the runtime closure; registered after `createInteractionRuntime`.
+2. `cursorSystem` (**`present` phase** — *not* `control`) — replaces `interaction.runCursorSystem()`. Derives `CursorResource` from post-flyBack state; sequenced after `flyBack` by phase order alone.
+3. `visibilitySystem` (`present` phase) — replaces the inline visible-entity build. Writes `VisibleEntitiesResource` (`{ current, prev }`) that `engine.getVisibleEntities()` reads.
+4. `frameChangesSystem` (`present` phase, `after: 'visibility'`) — replaces the inline `FrameChanges` assembly. Writes `FrameChangesResource` that `engine.getFrameChanges()` reads; resets the per-tick camera/selection flags. The `navStackCaptureSystem` lives in the `input` phase (not subsumed here) and snapshots `navigationChanged` into `TickFlagsResource` before `control` resets it.
+5. `clearDirtySystem` / `incrementTickSystem` / `emitFrameSystem` / `tweenKeepaliveSystem` (`cleanup` phase, chained via within-phase `after:`) — replace `world.clearDirty/incrementTick/emitFrame` + the tween-keepalive re-dirty. `clearDirty` also resets `EngineDirtyResource`; the 6 closure vars (`dirty`, `cameraChangedThisTick`, `selectionChangedThisTick`, `prevVisible`, `currentVisible`, `frameChanges`) are gone, replaced by `EngineDirtyResource` / `TickFlagsResource` / `VisibleEntitiesResource` / `FrameChangesResource`.
 
 After phase 4, `tick()` body is:
 
