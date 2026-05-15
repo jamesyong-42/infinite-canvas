@@ -150,26 +150,14 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 		useImperativeHandle(
 			ref,
 			() => ({
-				panTo: (x, y) => {
-					engine.panTo(x, y);
-					engine.markDirty();
-				},
-				zoomTo: (zoom) => {
-					engine.zoomTo(zoom);
-					engine.markDirty();
-				},
-				zoomToFit: (padding) => {
-					engine.zoomToFit(undefined, padding);
-					engine.markDirty();
-				},
-				undo: () => {
-					engine.undo();
-					engine.markDirty();
-				},
-				redo: () => {
-					engine.redo();
-					engine.markDirty();
-				},
+				// RFC-010 Phase 5 — these engine methods self-dirty (camera
+				// methods keep their explicit markDirty; undo/redo dirty via
+				// the mutation proxy), so no extra invalidate is needed.
+				panTo: (x, y) => engine.panTo(x, y),
+				zoomTo: (zoom) => engine.zoomTo(zoom),
+				zoomToFit: (padding) => engine.zoomToFit(undefined, padding),
+				undo: () => engine.undo(),
+				redo: () => engine.redo(),
 				getEngine: () => engine,
 			}),
 			[engine],
@@ -247,7 +235,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			if (snapGuides) {
 				manager.setSnapGuideConfig(snapGuides);
 			}
-			engine.markDirty();
+			engine.invalidatePresent();
 		}, [engine, grid, selection, snapGuides]);
 
 		// Apply overlap-glow config: write CSS vars on the canvas container
@@ -259,7 +247,7 @@ export const InfiniteCanvas = React.forwardRef<InfiniteCanvasHandle, InfiniteCan
 			const container = containerRef.current;
 			if (container) applyOverlapGlowVars(container, merged);
 			applyOverlapGlowShaderUniforms(merged);
-			engine.markDirty();
+			engine.invalidatePresent();
 		}, [engine, overlapGlow]);
 
 		// RFC-008 — late-bound R3F event manager. R3F's `<Canvas events={...}>`

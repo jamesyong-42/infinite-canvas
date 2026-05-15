@@ -21,21 +21,17 @@ import { R3FAnimationSignal, type R3FPhase, R3FRenderState } from './state.js';
 export function useWidgetAnimation(entityId: EntityId, active: boolean): void {
 	const engine = useLayoutEngine();
 	useEffect(() => {
+		// The tag mutation auto-dirties the engine via the RFC-010 Phase 5
+		// mutation proxy, so the state machine picks up the Hot/Cold
+		// transition on the next rAF without an explicit invalidate.
 		if (active) {
 			engine.world.addTag(entityId, R3FAnimationSignal);
-			// Force an engine tick so the state machine sees the new tag and
-			// transitions the widget to Hot — without this, the page would
-			// stay still until *something else* (drag, pan, etc.) ticks the
-			// engine and lets the state machine pick up the signal.
-			engine.markDirty();
 			return () => {
 				engine.world.removeTag(entityId, R3FAnimationSignal);
-				engine.markDirty();
 			};
 		}
 		// Ensure clean-up if the active → inactive transition happens mid-effect.
 		engine.world.removeTag(entityId, R3FAnimationSignal);
-		engine.markDirty();
 		return undefined;
 	}, [engine, entityId, active]);
 }

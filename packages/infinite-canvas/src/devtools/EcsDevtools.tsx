@@ -56,8 +56,7 @@ function EcsDevtoolsInner({ onClose }: { onClose?: () => void }) {
 
 	const handleSpawn = () => {
 		if (!spawnType) return;
-		const id = engine.spawnAtCameraCenter(spawnType);
-		engine.markDirty();
+		const id = engine.spawnAtCameraCenter(spawnType); // proxy auto-dirties
 		setManualFocusId(id);
 	};
 
@@ -157,8 +156,7 @@ function EntityRow({
 				type="button"
 				className="ic-ecs-btn ic-ecs-btn-danger ic-ecs-btn-sm"
 				onClick={() => {
-					engine.destroyEntity(entity);
-					engine.markDirty();
+					engine.destroyEntity(entity); // proxy auto-dirties
 				}}
 				title="Destroy entity"
 			>
