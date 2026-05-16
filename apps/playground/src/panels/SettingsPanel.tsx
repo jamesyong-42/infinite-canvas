@@ -93,7 +93,7 @@ export function SettingsPanel({
 			normal: bpNormal,
 			expanded: bpExpanded,
 		});
-		engine.markDirty();
+		engine.invalidatePresent();
 	};
 
 	// Helper to update a grid field
@@ -523,7 +523,7 @@ export function SettingsPanel({
 						className={btnCls}
 						onClick={() => {
 							engine.zoomToFit();
-							engine.markDirty();
+							engine.invalidatePresent();
 						}}
 					>
 						Zoom to Fit
@@ -534,7 +534,7 @@ export function SettingsPanel({
 						onClick={() => {
 							if (engine.getNavigationDepth() > 0) {
 								engine.exitContainer();
-								engine.markDirty();
+								engine.invalidatePresent();
 							}
 						}}
 					>
@@ -595,7 +595,7 @@ export function SettingsPanel({
 										]);
 									}
 									engine.zoomToFit();
-									engine.markDirty();
+									engine.invalidatePresent();
 								}}
 							>
 								+{count}

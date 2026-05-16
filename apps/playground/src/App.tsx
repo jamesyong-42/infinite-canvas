@@ -225,7 +225,7 @@ export function App() {
 	useEffect(() => {
 		document.documentElement.classList.toggle('dark', dark);
 		localStorage.setItem('ic-dark-mode', String(dark));
-		engine.markDirty();
+		engine.invalidatePresent();
 	}, [dark, engine]);
 
 	// Drive the library's --canvas-bg var from user-controlled theme colors.
@@ -275,19 +275,19 @@ export function App() {
 			if (mod && !e.shiftKey && e.key === 'z') {
 				e.preventDefault();
 				engine.undo();
-				engine.markDirty();
+				engine.invalidatePresent();
 			}
 			// Redo: Cmd/Ctrl+Shift+Z
 			if (mod && e.shiftKey && e.key === 'z') {
 				e.preventDefault();
 				engine.redo();
-				engine.markDirty();
+				engine.invalidatePresent();
 			}
 			// Exit container: Escape
 			if (e.key === 'Escape') {
 				if (engine.getNavigationDepth() > 0) {
 					engine.exitContainer();
-					engine.markDirty();
+					engine.invalidatePresent();
 				}
 			}
 			// Delete selected: Backspace or Delete (skip when focus is on an input)
@@ -298,7 +298,7 @@ export function App() {
 				for (const id of selected) {
 					engine.destroyEntity(id);
 				}
-				if (selected.length > 0) engine.markDirty();
+				if (selected.length > 0) engine.invalidatePresent();
 			}
 		};
 

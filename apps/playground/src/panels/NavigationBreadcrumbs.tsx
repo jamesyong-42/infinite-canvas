@@ -69,7 +69,7 @@ export function NavigationBreadcrumbs({ engine }: NavigationBreadcrumbsProps) {
 	const goBack = () => {
 		if (!canGoBack) return;
 		engine.exitContainer();
-		engine.markDirty();
+		engine.invalidatePresent();
 	};
 
 	const jumpToDepth = (targetDepth: number) => {
@@ -81,7 +81,7 @@ export function NavigationBreadcrumbs({ engine }: NavigationBreadcrumbsProps) {
 		for (let i = 0; i < steps; i++) {
 			engine.exitContainer();
 		}
-		engine.markDirty();
+		engine.invalidatePresent();
 	};
 
 	return (

@@ -46,7 +46,7 @@ function CardContainerBody({ entityId, data }: { entityId: EntityId; data: CardC
 
 	const enterFolder = () => {
 		engine.enterContainer(entityId);
-		engine.markDirty();
+		engine.invalidatePresent();
 	};
 
 	const onDoubleClick = (event: ReactMouseEvent) => {
