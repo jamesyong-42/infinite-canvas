@@ -26,25 +26,6 @@ interface SettingsPanelProps {
 	onClose: () => void;
 }
 
-function rgb01ToHex(rgb: [number, number, number]): string {
-	return `#${rgb
-		.map((v) =>
-			Math.round(v * 255)
-				.toString(16)
-				.padStart(2, '0'),
-		)
-		.join('')}`;
-}
-
-function hexToRgb01(hex: string): [number, number, number] {
-	const s = hex.replace('#', '').padEnd(6, '0').slice(0, 6);
-	return [
-		Number.parseInt(s.slice(0, 2), 16) / 255,
-		Number.parseInt(s.slice(2, 4), 16) / 255,
-		Number.parseInt(s.slice(4, 6), 16) / 255,
-	];
-}
-
 const inputCls =
 	'w-full rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-right dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200';
 const labelCls = 'text-neutral-400 dark:text-neutral-500';

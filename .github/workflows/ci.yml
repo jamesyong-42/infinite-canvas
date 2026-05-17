@@ -29,8 +29,15 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Type check
+      - name: Type check (library)
         run: pnpm exec tsc --noEmit -p packages/infinite-canvas/tsconfig.json
+
+      # RFC-010 Phase 5 regression: the markDirty→invalidatePresent rename
+      # broke 13 call sites in apps/playground, but CI only typechecked the
+      # library so it passed. Gate the playground too — it consumes the
+      # public API and is the canonical example consumer.
+      - name: Type check (playground)
+        run: pnpm exec tsc --noEmit -p apps/playground/tsconfig.json
 
       - name: Build
         run: pnpm build
