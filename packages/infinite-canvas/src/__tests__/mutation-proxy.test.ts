@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createLayoutEngine, Selectable, Transform2D } from '../index.js';
+import {
+	CameraResource,
+	createLayoutEngine,
+	MoveCommand,
+	Selectable,
+	Transform2D,
+} from '../index.js';
 
 // RFC-010 Phase 5 — a mutation-observing proxy wraps the World so every
 // entity/component/tag mutation auto-sets EngineDirtyResource. These tests
@@ -102,6 +108,44 @@ describe('mutation proxy (RFC-010 Phase 5)', () => {
 		// mutation, but the present pipeline must still re-run.
 		engine.invalidatePresent();
 		expect(engine.flushIfDirty()).toBe(true);
+		expect(engine.flushIfDirty()).toBe(false);
+	});
+
+	it('undo()/redo() auto-dirty via the proxied world (no explicit markDirty on those methods)', () => {
+		const engine = createLayoutEngine();
+		const e = engine.createEntity([
+			[Transform2D, { x: 0, y: 0, width: 10, height: 10, rotation: 0 }],
+		]);
+		engine.execute(new MoveCommand([e], 25, 25, Transform2D));
+		// Drain everything the execute() produced.
+		while (engine.flushIfDirty()) {}
+		expect(engine.flushIfDirty()).toBe(false);
+
+		// `undo()` has NO explicit markDirty — it relies entirely on the
+		// command mutating through the proxied `world` passed to
+		// `commandBuffer.undo(world)`.
+		engine.undo();
+		expect(engine.get(e, Transform2D)?.x).toBe(0);
+		expect(engine.flushIfDirty()).toBe(true);
+		expect(engine.flushIfDirty()).toBe(false);
+
+		// Same for `redo()`.
+		engine.redo();
+		expect(engine.get(e, Transform2D)?.x).toBe(25);
+		expect(engine.flushIfDirty()).toBe(true);
+	});
+
+	it('does NOT dirty on setResource (recursion-safety contract — setResource is not a dirtying method)', () => {
+		const engine = createLayoutEngine();
+		engine.tick();
+		expect(engine.flushIfDirty()).toBe(false);
+
+		// `setResource` is deliberately excluded from the proxy's dirtying
+		// methods (it would recurse on the EngineDirtyResource write and fire
+		// on every system's per-tick resource writes). A direct resource
+		// write must NOT flip the engine-dirty flag — only the engine's own
+		// camera/viewport/nav methods (which keep an explicit markDirty) do.
+		engine.world.setResource(CameraResource, { x: 5, y: 5 });
 		expect(engine.flushIfDirty()).toBe(false);
 	});
 });

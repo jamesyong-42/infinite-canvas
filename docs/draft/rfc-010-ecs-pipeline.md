@@ -1,8 +1,8 @@
 # RFC-010: Two-Pipeline ECS Refactor — Sync-Reactive Bus + Phased Tick Pipeline
 
-- **Status**: Draft v2.2
+- **Status**: Draft v2.3
 - **Author**: James Yong
-- **Date**: 2026-05-15 (v2.2: post-Phase-4 corrections; v2.1: post-Phase-3; v2: pre-implementation; v1: initial)
+- **Date**: 2026-05-17 (v2.3: post-Phase-5 corrections; v2.2: post-Phase-4; v2.1: post-Phase-3; v2: pre-implementation; v1: initial)
 - **Area**: ECS / Engine / Scheduler / `@jamesyong42/reactive-ecs` package
 - **Related**: RFC-003 (`dragPromoteSystem` reference predates its existence as a system), RFC-004 (Phase 5 `ParentFrame` ↔ `Active` reconcile observer + mid-system `navStack.changed` reset), RFC-009 (state systems assume a stable scheduler contract — this RFC supplies it).
 - **Supersedes**: The eight imperative observer wirings at `packages/infinite-canvas/src/ecs/engine/LayoutEngine.ts:130–248`, the two systems-in-disguise (`interaction.runFlyBackSystem`, `interaction.runCursorSystem`) called inline at lines 915–918, the inline tail of `engine.tick()` at lines 920–993 (visibility build, `FrameChanges` assembly, post-frame bookkeeping, tween keepalive), and ~6 redundant `engine.markDirty()` calls at the React boundary.
@@ -23,6 +23,12 @@
 
 - **`flyBack` / `cursor` phase placement corrected.** The "What goes in each phase" table and the Phase 4 migration plan put both `flyBackSystem` and `cursorSystem` in `control`. That is wrong: `flyBackSystem` is the *completion poll* for the fly-back `TransformTween`, so it must run **after** `transformTweenSystem` (phase `simulate`) has had a chance to remove the finished tween this tick. Placed in `control` (which runs *before* `simulate`), it observed the pre-tween state and finalized the fly-back one tick late — `drop-outcome.test.ts` ("fly-back completion: after tween finishes, Dragging is removed") caught this during Phase 4 implementation. Corrected placement: `flyBackSystem` → `simulate`, `after: 'transformTween'`; `cursorSystem` → `present` (it derives the `CursorResource` *render output* from the post-flyBack interaction state; phase order alone sequences it after `flyBack`, and a cross-phase `after` would be rejected by the scheduler). The table, the architecture diagram, the Phase 4 plan, and the file-layout note below are all updated to match.
 - **`Profiler.beginVisibility` / `endVisibility` retired.** Phase 4 drops the dedicated visibility timer; the `visibilityMs` stat field is now vestigial (no consumer reads it) and `systemAvg.visibility` from the scheduler profiler carries the same signal. Not a behavioural change.
+
+### Corrections since v2.2 (post-Phase-5)
+
+- **The `markDirty()` → `invalidatePresent()` rename had a wider blast radius than the spec scoped.** The Phase 5 plan said "Rename `engine.markDirty()` → `engine.invalidatePresent()`. Update the two legitimate external callers (`InfiniteCanvas.tsx:250, 262`)." That undercounted: `apps/playground/src/` had **13** more call sites (App.tsx ×5, SettingsPanel.tsx ×4, NavigationBreadcrumbs.tsx ×2, InspectorPanel.tsx ×1, CardContainer.tsx ×1). The initial Phase 5 commit broke the playground (runtime `TypeError`, `tsc` failure); a follow-up commit (`be5c543`) did the behaviour-preserving 1:1 rename across all 13 (`invalidatePresent()` is the verbatim rename of the old `markDirty()` — identical implementation). Caught by a post-implementation spec-review pass, not by CI (the lint/test gate never typechecked `apps/playground`). **Process note:** the migration-plan "what gets deleted / renamed" inventory must enumerate `apps/**` consumers, not just library-internal ones; a `tsc` step over the playground would have caught this pre-merge.
+- **`engine.execute(command)` retains an explicit `markDirtyInternal()`.** The Phase 5 plan said "the 25 explicit `markDirtyInternal()` calls in `LayoutEngine.ts` collapse to zero." In practice `execute()` keeps one: `commandBuffer.execute(command, world)` mutates via the proxied world for any command that touches an entity/component/tag (so the proxy already auto-dirties), but the explicit call is retained as a correct fallback for a hypothetical zero-mutation command. This is harmless (idempotent double-set) and deliberate. The "collapse to zero" wording was aspirational; the accurate statement is "collapse to the resource-/closure-mutation paths the proxy cannot observe (camera in-place, `setResource` viewport/nav, snap closure flags) **plus** the `execute()` fallback."
+- **`mutation-proxy.test.ts` gaps closed.** v2.2's test set proved per-mutation auto-dirty, read-only-doesn't-dirty, getter survival, and `invalidatePresent()`. Phase 5 review flagged two unpinned paths: (1) `undo()`/`redo()` flowing through the proxied world via `commandBuffer`, and (2) `setResource` deliberately *not* dirtying (recursion-safety contract). Both now have explicit tests so a future regression (e.g. adding `setResource` to `DIRTYING_METHODS`) fails loudly.
 
 ---
 
@@ -437,10 +443,10 @@ tick() {
 ### Phase 5 — `markDirty()` consolidation
 
 1. Add a mutation-observing proxy over `world` inside `createLayoutEngine`.
-2. Delete the 25 explicit `markDirtyInternal()` calls inside `LayoutEngine.ts` mutation APIs (CRUD, command execute, undo/redo, snap config setters, navigation, viewport, camera). Keep the three resource-mutation `dirty = true` lines (camera methods).
+2. Delete the explicit `markDirtyInternal()` calls inside `LayoutEngine.ts` mutation APIs (CRUD, undo/redo). Keep the ones the proxy *cannot* observe: camera in-place `CameraResource` mutation, `setViewport`/navigation via `setResource`, snap closure flags, and the `execute()` fallback for a hypothetical zero-mutation command (see "Corrections since v2.2" — "collapse to zero" was aspirational).
 3. Delete the 6 redundant React-boundary calls (`InfiniteCanvas.tsx:155, 159, 163, 167, 171`; `compositor/hooks.ts:30, 33, 38`).
-4. Rename `engine.markDirty()` → `engine.invalidatePresent()`. Update the two legitimate external callers (`InfiniteCanvas.tsx:250, 262`).
-5. `interaction.ts` is left for RFC-009; the mutation proxy already handles its 23 calls implicitly, so they become dead code that RFC-009 deletes.
+4. Rename `engine.markDirty()` → `engine.invalidatePresent()`. Update **all** callers — the two legit `InfiniteCanvas.tsx` sites **plus the 13 in `apps/playground/src/`** (the v2.2 plan undercounted; see "Corrections since v2.2"). A `tsc` pass over `apps/**` is the gate that should catch a missed consumer.
+5. `interaction.ts` is left for RFC-009; the mutation proxy already handles its ~23 calls implicitly, so they become dead code that RFC-009 deletes.
 
 **Rollback:** revert proxy commit; explicit calls remain valid.
 
