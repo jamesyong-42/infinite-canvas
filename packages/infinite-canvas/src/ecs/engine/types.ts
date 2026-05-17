@@ -289,7 +289,13 @@ export interface LayoutEngine<W extends WidgetBinding = Widget> {
 
 	// Frame
 
-	markDirty(): void;
+	/**
+	 * Signal that *non-ECS* state changed (CSS vars, WebGL/shader
+	 * uniforms, etc.) and the present pipeline should re-run on the next
+	 * rAF. ECS mutations do not need this — the engine's mutation proxy
+	 * auto-dirties (RFC-010 Phase 5). Formerly `markDirty()`.
+	 */
+	invalidatePresent(): void;
 	tick(): void;
 	flushIfDirty(): boolean;
 

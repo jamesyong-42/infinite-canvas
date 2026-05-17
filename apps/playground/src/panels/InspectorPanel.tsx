@@ -267,7 +267,7 @@ export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 							onClick={() => {
 								const p = engine.profiler;
 								p.setEnabled(!p.isEnabled());
-								engine.markDirty();
+								engine.invalidatePresent();
 							}}
 						>
 							{metrics.profilerEnabled ? 'ON' : 'OFF'}
@@ -321,7 +321,7 @@ export function InspectorPanel({ engine, onClose }: InspectorPanelProps) {
 										</div>
 										<div className="space-y-0.5">
 											{Object.entries(stats.ecs.systemAvg)
-												.sort((a, b) => b[1] - a[1])
+												.toSorted((a, b) => b[1] - a[1])
 												.map(([name, avg]) => (
 													<div key={name} className="flex justify-between">
 														<span className="text-neutral-400 dark:text-neutral-500 truncate mr-2">

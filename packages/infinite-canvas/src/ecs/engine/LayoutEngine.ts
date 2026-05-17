@@ -5,6 +5,7 @@ import type {
 	SystemDef,
 	TagType,
 	Unsubscribe,
+	World,
 } from '@jamesyong42/reactive-ecs';
 import { createWorld, PhasedScheduler } from '@jamesyong42/reactive-ecs';
 import { Profiler } from '../../profiler/Profiler.js';
@@ -86,7 +87,41 @@ import { createWidgetRegistry } from './widget-binding.js';
 export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 	config?: LayoutEngineConfig<W>,
 ): LayoutEngine<W> {
-	const world = createWorld();
+	const rawWorld = createWorld();
+
+	// RFC-010 Phase 5 — mutation-observing proxy. Any entity / component /
+	// tag mutation auto-sets `EngineDirtyResource`, so the engine's CRUD
+	// methods, command undo/redo, interaction.ts, and devtools no longer
+	// need explicit `markDirty()` calls. Resource-level changes (camera
+	// in-place mutation, `setResource` for viewport / navigation, snap
+	// closure flags) are NOT caught here — those keep their explicit
+	// `markDirtyInternal()` (see the camera / viewport / nav methods).
+	// `setResource` is deliberately not proxied: it would recurse on the
+	// `EngineDirtyResource` write below and fire on every system's
+	// per-tick resource writes.
+	const DIRTYING_METHODS = new Set([
+		'createEntity',
+		'destroyEntity',
+		'addComponent',
+		'removeComponent',
+		'setComponent',
+		'addTag',
+		'removeTag',
+	]);
+	const world = new Proxy(rawWorld, {
+		get(target, prop, receiver) {
+			if (typeof prop === 'string' && DIRTYING_METHODS.has(prop)) {
+				const fn = Reflect.get(target, prop, target) as (...a: unknown[]) => unknown;
+				return (...args: unknown[]) => {
+					const result = fn.apply(target, args);
+					rawWorld.setResource(EngineDirtyResource, { dirty: true });
+					return result;
+				};
+			}
+			return Reflect.get(target, prop, receiver);
+		},
+	}) as World;
+
 	const scheduler = new PhasedScheduler({
 		phases: ENGINE_PHASES,
 		defaultPhase: 'derive',
@@ -241,7 +276,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 					}
 				}
 			}
-			markDirtyInternal();
+			// Mutation proxy auto-dirties (RFC-010 Phase 5).
 			return entity;
 		},
 
@@ -387,8 +422,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 
 		destroyEntity(id: EntityId) {
 			spatialIndex.remove(id);
-			world.destroyEntity(id);
-			markDirtyInternal();
+			world.destroyEntity(id); // mutation proxy auto-dirties
 		},
 
 		get<T>(entity: EntityId, type: ComponentType<T>): T | undefined {
@@ -396,8 +430,7 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		},
 
 		set<T>(entity: EntityId, type: ComponentType<T>, data: Partial<T>) {
-			world.setComponent(entity, type, data);
-			markDirtyInternal();
+			world.setComponent(entity, type, data); // mutation proxy auto-dirties
 		},
 
 		has(entity: EntityId, type: ComponentType | TagType): boolean {
@@ -406,23 +439,19 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		},
 
 		addComponent<T>(entity: EntityId, type: ComponentType<T>, data?: T) {
-			world.addComponent(entity, type, data ?? type.defaults);
-			markDirtyInternal();
+			world.addComponent(entity, type, data ?? type.defaults); // proxy auto-dirties
 		},
 
 		removeComponent(entity: EntityId, type: ComponentType) {
-			world.removeComponent(entity, type);
-			markDirtyInternal();
+			world.removeComponent(entity, type); // mutation proxy auto-dirties
 		},
 
 		addTag(entity: EntityId, type: TagType) {
-			world.addTag(entity, type);
-			markDirtyInternal();
+			world.addTag(entity, type); // mutation proxy auto-dirties
 		},
 
 		removeTag(entity: EntityId, type: TagType) {
-			world.removeTag(entity, type);
-			markDirtyInternal();
+			world.removeTag(entity, type); // mutation proxy auto-dirties
 		},
 
 		getSchemaFor(entity: EntityId): StandardSchemaV1 | undefined {
@@ -566,15 +595,13 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 		},
 
 		undo(): boolean {
-			const did = commandBuffer.undo(world);
-			if (did) markDirtyInternal();
-			return did;
+			// Commands mutate via the proxied world, which auto-dirties when
+			// `did` (RFC-010 Phase 5).
+			return commandBuffer.undo(world);
 		},
 
 		redo(): boolean {
-			const did = commandBuffer.redo(world);
-			if (did) markDirtyInternal();
-			return did;
+			return commandBuffer.redo(world);
 		},
 
 		canUndo(): boolean {
@@ -813,7 +840,11 @@ export function createLayoutEngine<W extends WidgetBinding = WidgetBinding>(
 
 		// === Frame ===
 
-		markDirty() {
+		// RFC-010 Phase 5 — external callers use this to signal that
+		// *non-ECS* state changed (CSS vars, WebGL/shader uniforms) and the
+		// present pipeline should re-run. ECS mutations no longer need it —
+		// the mutation proxy auto-dirties.
+		invalidatePresent() {
 			markDirtyInternal();
 		},
 
