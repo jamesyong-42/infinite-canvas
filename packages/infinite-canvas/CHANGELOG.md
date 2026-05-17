@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v1.5.0...infinite-canvas-v1.6.0) (2026-05-17)
+
+
+### Features
+
+* **rfc-010:** extract tick() inline tail into phase systems (Phase 4) ([#17](https://github.com/jamesyong-42/infinite-canvas/issues/17)) ([3db5566](https://github.com/jamesyong-42/infinite-canvas/commit/3db5566ec4aec519262e0fdbb79ac94426039f95))
+* **rfc-010:** markDirty consolidation via mutation proxy (Phase 5 — final) ([#20](https://github.com/jamesyong-42/infinite-canvas/issues/20)) ([f06b7b0](https://github.com/jamesyong-42/infinite-canvas/commit/f06b7b07bdf19f1a007cda4887406887a6b81a5d))
+
 ## [1.5.0](https://github.com/jamesyong-42/infinite-canvas/compare/infinite-canvas-v1.4.0...infinite-canvas-v1.5.0) (2026-05-14)
 
 
